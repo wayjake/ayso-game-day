@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+}
+
+:root {
+	--bg: #F8FAFC;
+	--surface: #FFFFFF;
+	--text: #1F2937; /* Darker for better contrast */
+	--muted: #4B5563; /* Darker muted text for better readability */
+	--primary: #0EA5E9; /* Cyan-Blue */
+	--primary-600: #0284C7;
+	--accent: #EF4444; /* AYSO red hint */
+	--danger: #DC2626;
+	--warning: #D97706; /* Darker for better contrast */
+	--success: #059669; /* Darker for better contrast */
+	--border: #D1D5DB; /* Slightly darker for better definition */
+}
+
+html,
+body {
+	background-color: var(--bg);
+	color: var(--text);
+}
