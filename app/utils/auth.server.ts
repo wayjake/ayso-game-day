@@ -72,13 +72,24 @@ export async function requireUserId(request: Request) {
   return userId;
 }
 
-export async function getUser(request: Request) {
-  const userId = await requireUserId(request);
+export async function getUser(request: Request, shouldRedirect = true) {
+  const session = await getSession(request.headers.get("Cookie"));
+  const userId = session.get("userId");
+  
+  if (!userId) {
+    if (shouldRedirect) {
+      throw redirect("/user/login");
+    }
+    return null;
+  }
   
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   
   if (!user) {
-    throw redirect("/user/login");
+    if (shouldRedirect) {
+      throw redirect("/user/login");
+    }
+    return null;
   }
   
   return user;

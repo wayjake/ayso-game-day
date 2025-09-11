@@ -177,7 +177,6 @@ const formations11v11 = [
       { number: 2, abbreviation: 'RB', position: 'Right Back' },
       { number: 3, abbreviation: 'LB', position: 'Left Back' },
       { number: 4, abbreviation: 'CB', position: 'Center Back' },
-      { number: 5, abbreviation: 'CB', position: 'Center Back' },
       { number: 6, abbreviation: 'CDM', position: 'Holding Midfielder' },
       { number: 8, abbreviation: 'CM', position: 'Central Midfielder' },
       { number: 10, abbreviation: 'CAM', position: 'Attacking Midfielder' },

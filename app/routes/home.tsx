@@ -1,5 +1,12 @@
 import type { Route } from "./+types/home";
 import { useState } from "react";
+import { data } from "react-router";
+import { getUser } from "~/utils/auth.server";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const user = await getUser(request, false); // Don't redirect if not logged in
+  return data({ isLoggedIn: !!user });
+}
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -8,7 +15,8 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function Home() {
+export default function Home({ loaderData }: Route.ComponentProps) {
+  const { isLoggedIn } = loaderData;
   const [openFaq, setOpenFaq] = useState<string | null>(null);
 
   const toggleFaq = (id: string) => {
@@ -30,8 +38,14 @@ export default function Home() {
             <li><a className="text-[var(--muted)] hover:text-[var(--text)] transition" href="#faq">FAQ</a></li>
           </ul>
           <div className="flex items-center gap-2">
-            <a className="hidden sm:inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition" href="/user/login">Sign In</a>
-            <a className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/user/signup">Get Started</a>
+            {isLoggedIn ? (
+              <a className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/dashboard">Dashboard</a>
+            ) : (
+              <>
+                <a className="hidden sm:inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition" href="/user/login">Sign In</a>
+                <a className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/user/signup">Get Started</a>
+              </>
+            )}
           </div>
         </nav>
       </header>
@@ -50,8 +64,8 @@ export default function Home() {
               Create fair play rotations, track sit-outs, and keep everyone aligned—before you even hit the field.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="/user/signup" className="inline-flex items-center justify-center px-5 py-3 text-base rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0">
-                Start Free
+              <a href={isLoggedIn ? "/dashboard" : "/user/signup"} className="inline-flex items-center justify-center px-5 py-3 text-base rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0">
+                {isLoggedIn ? "Go to Dashboard" : "Start Free"}
               </a>
               <a href="#features" className="inline-flex items-center justify-center px-5 py-3 text-base rounded font-medium border border-[var(--primary)] bg-transparent text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition hover:-translate-y-0.5 active:translate-y-0">
                 See Features
@@ -102,15 +116,15 @@ export default function Home() {
                   <div className="p-5">
                     <div className="text-sm text-[var(--muted)] mb-2">Starting 9</div>
                     <ul className="space-y-1">
-                      <li className="flex justify-between"><span>GK</span><span className="font-medium">Mack</span></li>
-                      <li className="flex justify-between"><span>CB</span><span className="font-medium">Charlie</span></li>
-                      <li className="flex justify-between"><span>RB</span><span className="font-medium">Gabriel</span></li>
-                      <li className="flex justify-between"><span>LB</span><span className="font-medium">Nihit</span></li>
-                      <li className="flex justify-between"><span>CM</span><span className="font-medium">Flip</span></li>
-                      <li className="flex justify-between"><span>RW</span><span className="font-medium">Ricky</span></li>
-                      <li className="flex justify-between"><span>LW</span><span className="font-medium">Andrew</span></li>
-                      <li className="flex justify-between"><span>ST</span><span className="font-medium">Emmet</span></li>
-                      <li className="flex justify-between"><span>ST</span><span className="font-medium">Kanai</span></li>
+                      <li className="flex justify-between"><span>GK</span><span className="font-medium">Maya</span></li>
+                      <li className="flex justify-between"><span>CB</span><span className="font-medium">Ethan</span></li>
+                      <li className="flex justify-between"><span>RB</span><span className="font-medium">Zoe</span></li>
+                      <li className="flex justify-between"><span>LB</span><span className="font-medium">Liam</span></li>
+                      <li className="flex justify-between"><span>CM</span><span className="font-medium">Ava</span></li>
+                      <li className="flex justify-between"><span>RW</span><span className="font-medium">Noah</span></li>
+                      <li className="flex justify-between"><span>LW</span><span className="font-medium">Sofia</span></li>
+                      <li className="flex justify-between"><span>ST</span><span className="font-medium">Tyler</span></li>
+                      <li className="flex justify-between"><span>ST</span><span className="font-medium">Emma</span></li>
                     </ul>
                   </div>
                 </div>
@@ -118,10 +132,10 @@ export default function Home() {
                   <div className="p-5">
                     <div className="text-sm text-[var(--muted)] mb-2">Sit-outs (per quarter)</div>
                     <div className="grid grid-cols-2 gap-2">
-                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q1: Dane</span>
-                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q2: Nihit</span>
-                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q3: Charlie</span>
-                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q4: Gabriel</span>
+                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q1: Mia</span>
+                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q2: Lucas</span>
+                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q3: Aria</span>
+                      <span className="rounded-full px-3 py-1 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">Q4: Jake</span>
                     </div>
                     <button className="mt-3 w-full inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--primary)] bg-transparent text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition hover:-translate-y-0.5 active:translate-y-0">
                       Auto-balance

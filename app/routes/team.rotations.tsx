@@ -70,8 +70,8 @@ export default function TeamRotations({ loaderData }: Route.ComponentProps) {
   const { team, upcomingGames, players } = loaderData;
   
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-7xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">{team.name} Rotations</h1>

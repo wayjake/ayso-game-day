@@ -152,8 +152,8 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
   const { team, players } = loaderData;
   
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-7xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>

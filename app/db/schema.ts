@@ -34,7 +34,8 @@ export const players = sqliteTable('players', {
   coachId: integer('coach_id').references(() => users.id), // Historical record
   name: text('name').notNull(),
   description: text('description'), // Notes about player (e.g., "Fast, good at defense")
-  profilePicture: text('profile_picture'), // URL or base64
+  profilePicture: text('profile_picture'), // Legacy single URL
+  profileImageBase: text('profile_image_base'), // Base URL for multi-size images (e.g., "https://utfs.io/f/abc123")
   preferredPositions: text('preferred_positions'), // JSON array of position IDs
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),

@@ -72,7 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   try {
     // Create game
-    await db.insert(games).values({
+    const [newGame] = await db.insert(games).values({
       teamId: teamId,
       opponent: opponent.trim(),
       gameDate: gameDate,
@@ -80,9 +80,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       field: field?.trim() || null,
       homeAway: homeAway as 'home' | 'away',
       notes: notes?.trim() || null,
-    });
+    }).returning();
     
-    return redirect(`/dashboard/team/${teamId}/games`);
+    // Redirect to lineup planning page for the new game
+    return redirect(`/dashboard/team/${teamId}/games/${newGame.id}/lineup`);
   } catch (error) {
     console.error("Error creating game:", error);
     return data(
@@ -104,8 +105,8 @@ export default function NewGame({ loaderData, actionData }: Route.ComponentProps
   const error = actionData?.error;
   
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-2xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-2xl">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Schedule New Game</h1>
@@ -149,6 +150,9 @@ export default function NewGame({ loaderData, actionData }: Route.ComponentProps
                   name="gameDate"
                   type="date"
                   required
+                  onClick={(e) => {
+                    e.currentTarget.showPicker?.();
+                  }}
                   className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
                 />
               </div>
@@ -161,6 +165,9 @@ export default function NewGame({ loaderData, actionData }: Route.ComponentProps
                   id="gameTime"
                   name="gameTime"
                   type="time"
+                  onClick={(e) => {
+                    e.currentTarget.showPicker?.();
+                  }}
                   className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
                 />
               </div>

@@ -202,15 +202,6 @@ export default function Login({ loaderData }: Route.ComponentProps) {
             </div>
           </Form>
 
-          {/* Demo credentials (dev only) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <h3 className="text-sm font-medium text-yellow-800 mb-2">Demo Account</h3>
-              <p className="text-xs text-yellow-700">
-                For testing purposes, you can sign up with any email and password, or use existing demo accounts if available.
-              </p>
-            </div>
-          )}
         </div>
       </section>
     </div>

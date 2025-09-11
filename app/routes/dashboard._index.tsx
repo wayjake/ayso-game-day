@@ -165,8 +165,8 @@ function OverviewDashboard({ loaderData }: { loaderData: any }) {
   const { stats, user, upcomingGames, recentTeams } = loaderData;
 
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-7xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Welcome header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">
@@ -232,10 +232,10 @@ function OverviewDashboard({ loaderData }: { loaderData: any }) {
                       {game.field && <div className="text-sm text-[var(--muted)]">Field: {game.field}</div>}
                     </div>
                     <Link
-                      to={`/dashboard/team/${game.teamId}`}
+                      to={`/dashboard/team/${game.teamId}/games/${game.id}/lineup`}
                       className="text-[var(--primary)] hover:underline text-sm"
                     >
-                      View Team
+                      View Game
                     </Link>
                   </div>
                 ))}
@@ -308,8 +308,8 @@ function TeamDashboard({ loaderData }: { loaderData: any }) {
   const { selectedTeam, stats, upcomingGames, recentPlayers } = loaderData;
 
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-7xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Team header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">

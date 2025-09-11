@@ -13,11 +13,11 @@ const f = createUploadthing({
 
 // 🎯 FileRouter for AYSO team management app
 export const uploadRouter = {
-  // Player profile picture uploader
+  // Player profile picture uploader (supports multiple sizes)
   playerImage: f({
     image: {
       maxFileSize: "4MB",
-      maxFileCount: 1,
+      maxFileCount: 3, // Allow 3 files for thumbnail, medium, and large
       acceptedFileTypes: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
     },
   })
@@ -31,12 +31,8 @@ export const uploadRouter = {
       return { uploadedBy: "user" };
     })
     .onUploadComplete(async ({ metadata, file }) => {
-      // This code runs on the server after upload
-      console.log("✅ Upload complete for userId:", metadata.uploadedBy);
-      console.log("📸 File url:", file.url);
-      
       // Return data to be sent to the client
-      return { uploadedBy: metadata.uploadedBy, url: file.url };
+      return { uploadedBy: metadata.uploadedBy, url: file.ufsUrl || file.url };
     }),
     
   // Team logo uploader (for future use)
@@ -52,8 +48,7 @@ export const uploadRouter = {
       return { uploadedBy: "user" };
     })
     .onUploadComplete(async ({ metadata, file }) => {
-      console.log("🛡️ Team logo uploaded:", file.url);
-      return { url: file.url };
+      return { url: file.ufsUrl || file.url };
     }),
 } satisfies FileRouter;
 

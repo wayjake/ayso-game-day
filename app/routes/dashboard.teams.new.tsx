@@ -73,8 +73,8 @@ export default function NewTeam({ loaderData, actionData }: Route.ComponentProps
   const error = actionData?.error;
   
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-2xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-2xl">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Create New Team</h1>

@@ -4,7 +4,7 @@ import { getUser } from "~/utils/auth.server";
 import { db, teams, games, players, assignments, positions } from "~/db";
 import { eq, and, or } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -575,8 +575,8 @@ function PositionSlot({
   
   return (
     <div
-      className="absolute transform -translate-x-1/2 -translate-y-1/2"
-      style={{ left: `${position.x}%`, top: `${position.y}%` }}
+      className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showDropdown ? 'z-[10000]' : 'z-10'}`}
+      style={{ left: `${100 - position.x}%`, top: `${position.y}%` }}
     >
       <div className="relative">
         <div
@@ -601,9 +601,9 @@ function PositionSlot({
           )}
         </div>
         
-        {/* Hover tooltip for assigned player */}
-        {assignedPlayer && !showDropdown && (
-          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded px-2 py-1 opacity-0 hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+        {/* Player name below position circle */}
+        {assignedPlayer && (
+          <div className="absolute top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none z-20">
             {assignedPlayer.name}
           </div>
         )}
@@ -612,7 +612,7 @@ function PositionSlot({
         {showDropdown && (
           <div 
             ref={dropdownRef}
-            className="absolute z-[9999] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
+            className="absolute z-[10001] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
           >
             <div className="p-2">
               {assignedPlayer ? (
@@ -682,6 +682,9 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [quarterAssignments, setQuarterAssignments] = useState<Map<number, Map<number, any>>>(new Map());
   const [sittingOut, setSittingOut] = useState<Map<number, Set<number>>>(new Map());
   const [showInstructions, setShowInstructions] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const lastSavedDataRef = useRef<string>('');
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -731,6 +734,40 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     }
   }, [showInstructions]);
   
+  // Helper function to serialize assignments for comparison
+  const serializeAssignments = useCallback((assignmentsMap: Map<number, Map<number, any>>, sitOutMap: Map<number, Set<number>>, quarters: number, positions: any[]) => {
+    const allAssignments: any[] = [];
+    
+    for (let quarter = 1; quarter <= quarters; quarter++) {
+      const quarterLineup = assignmentsMap.get(quarter) || new Map();
+      const quarterSitOuts = sitOutMap.get(quarter) || new Set();
+      
+      // Add field positions
+      for (const [positionNumber, assignment] of quarterLineup.entries()) {
+        allAssignments.push({
+          playerId: assignment.playerId,
+          positionNumber,
+          positionName: positions.find((p: any) => p.number === positionNumber)?.abbreviation || '',
+          quarter,
+          isSittingOut: false,
+        });
+      }
+      
+      // Add sitting out players
+      for (const playerId of quarterSitOuts) {
+        allAssignments.push({
+          playerId,
+          positionNumber: 0,
+          positionName: 'SUB',
+          quarter,
+          isSittingOut: true,
+        });
+      }
+    }
+    
+    return allAssignments;
+  }, []);
+
   // Initialize existing assignments per quarter
   useEffect(() => {
     const quarterMap = new Map<number, Map<number, any>>();
@@ -763,7 +800,11 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     
     setQuarterAssignments(quarterMap);
     setSittingOut(sitOutMap);
-  }, [assignments, players]);
+    
+    // Store initial state as last saved
+    const initialData = serializeAssignments(quarterMap, sitOutMap, totalQuarters, formationPositions);
+    lastSavedDataRef.current = JSON.stringify(initialData);
+  }, [assignments, players, serializeAssignments, formationPositions]);
   
   const handleDragStart = (player: any) => {
     setDraggedPlayer(player);
@@ -795,6 +836,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     
     newQuarterAssignments.set(currentQuarter, currentLineup);
     setQuarterAssignments(newQuarterAssignments);
+    setHasChanges(true);
   };
   
   const handleClearPosition = (position: any) => {
@@ -803,6 +845,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     currentLineup.delete(position.number);
     newQuarterAssignments.set(currentQuarter, currentLineup);
     setQuarterAssignments(newQuarterAssignments);
+    setHasChanges(true);
   };
   
   const handleSitOut = (player: any) => {
@@ -823,6 +866,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     quarterSitOuts.add(player.id);
     newSittingOut.set(currentQuarter, quarterSitOuts);
     setSittingOut(newSittingOut);
+    setHasChanges(true);
   };
   
   const handleUnsitPlayer = (playerId: number) => {
@@ -831,9 +875,79 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     quarterSitOuts.delete(playerId);
     newSittingOut.set(currentQuarter, quarterSitOuts);
     setSittingOut(newSittingOut);
+    setHasChanges(true);
   };
   
+  // Auto-save functionality
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const performAutoSave = useCallback(() => {
+    const allAssignments = serializeAssignments(quarterAssignments, sittingOut, totalQuarters, formationPositions);
+    const currentData = JSON.stringify(allAssignments);
+    
+    // Only save if data has actually changed
+    if (currentData === lastSavedDataRef.current) {
+      setHasChanges(false);
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    fetcher.submit(
+      {
+        _action: "saveLineup",
+        lineupData: JSON.stringify({ assignments: allAssignments }),
+      },
+      { method: "post" }
+    );
+    
+    // Store the data we just saved
+    lastSavedDataRef.current = currentData;
+    
+    // Reset saving state after a brief delay
+    setTimeout(() => {
+      setIsSaving(false);
+      setHasChanges(false);
+    }, 1000);
+  }, [quarterAssignments, sittingOut, fetcher, formationPositions, serializeAssignments]);
+  
+  // Auto-save when assignments change
+  useEffect(() => {
+    // Skip if no changes have been made
+    if (!hasChanges) {
+      return;
+    }
+    
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    // Set new timeout for auto-save (debounced by 2 seconds)
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 2000);
+    
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [quarterAssignments, sittingOut, hasChanges, performAutoSave]);
+  
+  // Don't update state when fetcher returns to prevent overwriting local changes
+  useEffect(() => {
+    if (fetcher.state === 'idle' && fetcher.data?.success) {
+      // Data was successfully saved, but don't update local state
+      // Local state is already correct and updating would cause flicker
+    }
+  }, [fetcher.state, fetcher.data]);
+  
   const handleSaveLineup = () => {
+    // Clear auto-save timeout and save immediately
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
     const allAssignments: any[] = [];
     
     // Convert all quarter assignments to array format
@@ -892,8 +1006,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   };
   
   return (
-    <div className="py-8">
-      <div className="container mx-auto px-6 max-w-7xl">
+    <div className="py-4">
+      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-2">
@@ -979,26 +1093,90 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                       <span>Quarter {quarter}</span>
                       <span className="text-xs opacity-75">{quarterFormation?.name || formationKeys[0].replace(/-/g, ' ')}</span>
                     </div>
-                    {(quarterAssignments.get(quarter)?.size || 0) > 0 && (
-                      <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[var(--primary)] text-white">
-                        {quarterAssignments.get(quarter)?.size || 0}
-                      </span>
-                    )}
                   </button>
                 );
               })}
+              
+              {/* Overview Tab */}
+              <button
+                onClick={() => setCurrentQuarter('overview' as any)}
+                className={`py-2 px-4 border-b-2 font-medium text-sm transition ${
+                  currentQuarter === 'overview'
+                    ? 'border-[var(--primary)] text-[var(--primary)]'
+                    : 'border-transparent text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--border)]'
+                }`}
+              >
+                Overview
+              </button>
             </nav>
           </div>
         </div>
         
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Available Players */}
-          <div className="lg:col-span-1 space-y-6">
+        {currentQuarter === 'overview' ? (
+          <div className="space-y-6">
+            {/* Playing Time Summary */}
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <h3 className="text-lg font-semibold text-green-800 mb-4">Playing Time Summary</h3>
+              <div className="space-y-2">
+                {players.map((player: any) => {
+                  let quarterCount = 0;
+                  let sitOutCount = 0;
+                  for (let q = 1; q <= totalQuarters; q++) {
+                    const qLineup = quarterAssignments.get(q) || new Map();
+                    const qSitOuts = sittingOut.get(q) || new Set();
+                    
+                    const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
+                    const isSittingOut = qSitOuts.has(player.id);
+                    
+                    if (isPlaying) quarterCount++;
+                    if (isSittingOut) sitOutCount++;
+                  }
+                  
+                  const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
+                  
+                  return (
+                    <div key={player.id} className={`text-sm flex justify-between p-2 rounded ${!isCompliant ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      <span className="font-medium">{player.name}</span>
+                      <span>
+                        Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4
+                        {!isCompliant && ' ⚠️'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Auto-save Status */}
+            <div className="pt-4 border-t border-[var(--border)]">
+              <div className="text-center text-sm text-[var(--muted)]">
+                {isSaving ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="animate-pulse">💾</span>
+                    Auto-saving...
+                  </span>
+                ) : hasChanges ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="animate-pulse">⏱</span>
+                    Changes pending...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    ✓ All changes saved
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-8 lg:grid-cols-3">
+            {/* Available Players */}
+            <div className="lg:col-span-1 space-y-6">
             {/* Available Players */}
             <div>
               <h2 className="text-lg font-semibold mb-4">Available Players</h2>
               <div className="space-y-2 border border-[var(--border)] rounded-lg p-2">
-                <div className="space-y-2 max-h-60 overflow-y-auto">
+                <div className="space-y-2">
                   {availablePlayers.length > 0 ? (
                     availablePlayers.map((player: any) => (
                       <PlayerCard 
@@ -1059,60 +1237,26 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               </p>
             </div>
             
-            {/* Playing Time Summary */}
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <h3 className="text-sm font-medium text-green-800 mb-2">Playing Time Summary</h3>
-              <div className="space-y-1">
-                {players.map((player: any) => {
-                  let quarterCount = 0;
-                  let sitOutCount = 0;
-                  for (let q = 1; q <= totalQuarters; q++) {
-                    const qLineup = quarterAssignments.get(q) || new Map();
-                    const qSitOuts = sittingOut.get(q) || new Set();
-                    
-                    const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
-                    const isSittingOut = qSitOuts.has(player.id);
-                    
-                    if (isPlaying) quarterCount++;
-                    if (isSittingOut) sitOutCount++;
-                  }
-                  
-                  const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
-                  
-                  return (
-                    <div key={player.id} className={`text-xs flex justify-between ${!isCompliant ? 'text-red-700' : 'text-green-700'}`}>
-                      <span>{player.name}</span>
-                      <span>
-                        Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4
-                        {!isCompliant && ' ⚠️'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
             
-            {/* Save Lineup */}
+            {/* Auto-save Status */}
             <div className="pt-4 border-t border-[var(--border)]">
-              <button
-                onClick={handleSaveLineup}
-                disabled={fetcher.state !== "idle"}
-                className="w-full inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {fetcher.state !== "idle" ? "Saving..." : "Save All Quarters"}
-              </button>
-              
-              {fetcher.data?.success && (
-                <div className="mt-2 text-sm text-green-600 text-center">
-                  {fetcher.data.message}
-                </div>
-              )}
-              
-              {fetcher.data?.error && (
-                <div className="mt-2 text-sm text-red-600 text-center">
-                  {fetcher.data.error}
-                </div>
-              )}
+              <div className="text-center text-sm text-[var(--muted)]">
+                {isSaving ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="animate-pulse">💾</span>
+                    Auto-saving...
+                  </span>
+                ) : hasChanges ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="animate-pulse">⏱</span>
+                    Changes pending...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    ✓ All changes saved
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           
@@ -1177,7 +1321,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               ))}
             </div>
           </div>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
