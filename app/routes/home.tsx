@@ -43,7 +43,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             ) : (
               <>
                 <a className="hidden sm:inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition" href="/user/login">Sign In</a>
-                <a className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/user/signup">Get Started</a>
+                <a className="hidden sm:inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/user/signup">Get Started</a>
+                <a className="inline-flex sm:hidden items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0" href="/user/login">Login</a>
               </>
             )}
           </div>

@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.games.game.lineup";
 import { data, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { db, teams, games, players, assignments, positions } from "~/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 
@@ -72,12 +72,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .from(assignments)
     .where(eq(assignments.gameId, gameId));
   
+  // Parse saved quarter formations from game notes
+  const savedFormations = game.notes ? JSON.parse(game.notes) : {};
+  const quarterFormations = savedFormations.quarterFormations || {};
+
   return data({
     team,
     game,
     players: teamPlayers,
     positions: availablePositions,
     assignments: existingAssignments,
+    quarterFormations,
   });
 }
 
@@ -102,6 +107,160 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   
   const action = formData.get("_action") as string;
+  
+  if (action === "assignPlayer") {
+    try {
+      const playerId = parseInt(formData.get("playerId") as string);
+      const positionNumber = parseInt(formData.get("positionNumber") as string);
+      const positionName = formData.get("positionName") as string;
+      const quarter = parseInt(formData.get("quarter") as string);
+      
+      // Remove any existing assignment for this player in this quarter
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.playerId, playerId),
+          eq(assignments.quarter, quarter)
+        )
+      );
+      
+      // Remove any existing assignment for this position in this quarter
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.positionNumber, positionNumber),
+          eq(assignments.quarter, quarter),
+          eq(assignments.isSittingOut, false)
+        )
+      );
+      
+      // Insert new assignment
+      await db.insert(assignments).values({
+        gameId,
+        playerId,
+        positionNumber,
+        positionName,
+        quarter,
+        isSittingOut: false,
+      });
+      
+      return data({ success: true, action: "assignPlayer" });
+    } catch (error) {
+      console.error("Error assigning player:", error);
+      return data(
+        { success: false, error: "Failed to assign player" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  if (action === "sitOutPlayer") {
+    try {
+      const playerId = parseInt(formData.get("playerId") as string);
+      const quarter = parseInt(formData.get("quarter") as string);
+      
+      // Remove any existing assignment for this player in this quarter
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.playerId, playerId),
+          eq(assignments.quarter, quarter)
+        )
+      );
+      
+      // Insert sitting out assignment
+      await db.insert(assignments).values({
+        gameId,
+        playerId,
+        positionNumber: 0,
+        positionName: 'SUB',
+        quarter,
+        isSittingOut: true,
+      });
+      
+      return data({ success: true, action: "sitOutPlayer" });
+    } catch (error) {
+      console.error("Error sitting out player:", error);
+      return data(
+        { success: false, error: "Failed to sit out player" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  if (action === "clearPosition") {
+    try {
+      const positionNumber = parseInt(formData.get("positionNumber") as string);
+      const quarter = parseInt(formData.get("quarter") as string);
+      
+      // Remove assignment for this position
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.positionNumber, positionNumber),
+          eq(assignments.quarter, quarter),
+          eq(assignments.isSittingOut, false)
+        )
+      );
+      
+      return data({ success: true, action: "clearPosition" });
+    } catch (error) {
+      console.error("Error clearing position:", error);
+      return data(
+        { success: false, error: "Failed to clear position" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  if (action === "saveFormation") {
+    try {
+      const quarter = parseInt(formData.get("quarter") as string);
+      const formationIndex = parseInt(formData.get("formationIndex") as string);
+      
+      // Get current game to read existing quarter formations
+      const [currentGame] = await db
+        .select()
+        .from(games)
+        .where(eq(games.id, gameId))
+        .limit(1);
+      
+      if (!currentGame) {
+        return data(
+          { success: false, error: "Game not found" },
+          { status: 404 }
+        );
+      }
+      
+      // Parse existing quarter formations or create new object
+      const existingFormations = currentGame.notes ? JSON.parse(currentGame.notes) : {};
+      const quarterFormations = existingFormations.quarterFormations || {};
+      
+      // Update the formation for this quarter
+      quarterFormations[quarter] = formationIndex;
+      
+      // Save back to the notes field (temporary solution)
+      const updatedNotes = JSON.stringify({
+        ...existingFormations,
+        quarterFormations
+      });
+      
+      await db.update(games)
+        .set({ 
+          notes: updatedNotes,
+          updatedAt: sql`CURRENT_TIMESTAMP`
+        })
+        .where(eq(games.id, gameId));
+      
+      return data({ success: true, action: "saveFormation" });
+    } catch (error) {
+      console.error("Error saving formation:", error);
+      return data(
+        { success: false, error: "Failed to save formation" },
+        { status: 500 }
+      );
+    }
+  }
   
   if (action === "saveLineup") {
     try {
@@ -349,7 +508,6 @@ function PlayerCard({
 }) {
   const preferredPositions = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
   const [showDropdown, setShowDropdown] = useState(false);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   
@@ -360,39 +518,15 @@ function PlayerCard({
   
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onAssign && cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect();
-      const dropdownWidth = 192; // 48 * 4 (w-48)
-      const dropdownHeight = 200; // Approximate dropdown height
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-      
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const spaceRight = viewportWidth - rect.left;
-      
-      // Position dropdown above if not enough space below
-      const shouldPositionAbove = spaceBelow < dropdownHeight && spaceAbove > dropdownHeight;
-      
-      // Adjust horizontal position if dropdown would go off-screen
-      let leftPosition = rect.left + window.scrollX;
-      if (spaceRight < dropdownWidth) {
-        leftPosition = rect.right + window.scrollX - dropdownWidth;
-      }
-      
-      setDropdownPosition({
-        top: shouldPositionAbove 
-          ? rect.top + window.scrollY - dropdownHeight - 4
-          : rect.bottom + window.scrollY + 4,
-        left: leftPosition
-      });
+    e.preventDefault();
+    if (onAssign) {
       setShowDropdown(!showDropdown);
     }
   };
   
   const handlePositionSelect = (position: any) => {
     if (onAssign) {
-      onAssign(player, position);
+      onAssign(position, player);
     }
     setShowDropdown(false);
   };
@@ -407,7 +541,11 @@ function PlayerCard({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const isClickOnDropdown = dropdownRef.current?.contains(target);
+      const isClickOnThisCard = target && (target as Element).closest && (target as Element).closest(`[data-player-card="${player.id}"]`);
+      
+      if (!isClickOnDropdown && !isClickOnThisCard) {
         setShowDropdown(false);
       }
     };
@@ -416,16 +554,17 @@ function PlayerCard({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showDropdown]);
+  }, [showDropdown, player.id]);
   
   return (
-    <>
+    <div className="relative">
       <div
         ref={cardRef}
         draggable
         onDragStart={handleDragStart}
         onClick={handleClick}
         className="flex items-center gap-2 p-2 border border-[var(--border)] rounded bg-[var(--surface)] cursor-pointer hover:shadow-md transition-shadow active:cursor-grabbing"
+        data-player-card={player.id}
       >
         {getImageUrl(player.profilePicture) ? (
           <img
@@ -452,11 +591,7 @@ function PlayerCard({
       {showDropdown && availablePositions && (
         <div 
           ref={dropdownRef}
-          className="fixed z-[9999] w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
-          style={{
-            top: `${dropdownPosition.top}px`,
-            left: `${dropdownPosition.left}px`
-          }}
+          className="absolute z-[10001] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
         >
           <div className="p-2">
             <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
@@ -497,7 +632,7 @@ function PlayerCard({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -508,7 +643,9 @@ function PositionSlot({
   onClear,
   onSitOut,
   availablePlayers,
-  onAssignPlayer
+  onAssignPlayer,
+  openDropdownPosition,
+  setOpenDropdownPosition
 }: { 
   position: any; 
   assignedPlayer: any; 
@@ -517,8 +654,10 @@ function PositionSlot({
   onSitOut?: (player: any) => void;
   availablePlayers?: any[];
   onAssignPlayer?: (position: any, player: any) => void;
+  openDropdownPosition: number | null;
+  setOpenDropdownPosition: (position: number | null) => void;
 }) {
-  const [showDropdown, setShowDropdown] = useState(false);
+  const showDropdown = openDropdownPosition === position.number;
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   const handleDragOver = (e: React.DragEvent) => {
@@ -536,14 +675,15 @@ function PositionSlot({
   
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setShowDropdown(!showDropdown);
+    e.preventDefault();
+    setOpenDropdownPosition(showDropdown ? null : position.number);
   };
   
   const handlePlayerSelect = (player: any) => {
     if (onAssignPlayer) {
       onAssignPlayer(position, player);
     }
-    setShowDropdown(false);
+    setOpenDropdownPosition(null);
   };
   
   const handleSitOutClick = () => {
@@ -551,19 +691,23 @@ function PositionSlot({
       const player = { id: assignedPlayer.playerId, name: assignedPlayer.name };
       onSitOut(player);
     }
-    setShowDropdown(false);
+    setOpenDropdownPosition(null);
   };
   
   const handleClearClick = () => {
     onClear(position);
-    setShowDropdown(false);
+    setOpenDropdownPosition(null);
   };
   
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
+      const target = event.target as Node;
+      const isClickOnDropdown = dropdownRef.current?.contains(target);
+      const isClickOnThisPosition = target && (target as Element).closest && (target as Element).closest(`[data-position="${position.number}"]`);
+      
+      if (!isClickOnDropdown && !isClickOnThisPosition) {
+        setOpenDropdownPosition(null);
       }
     };
     
@@ -571,19 +715,20 @@ function PositionSlot({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showDropdown]);
+  }, [showDropdown, setOpenDropdownPosition, position.number]);
   
   return (
     <div
       className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showDropdown ? 'z-[10000]' : 'z-10'}`}
       style={{ left: `${100 - position.x}%`, top: `${position.y}%` }}
+      data-position={position.number}
     >
       <div className="relative">
         <div
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           onClick={handleClick}
-          className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
             assignedPlayer
               ? 'bg-[var(--primary)] border-[var(--primary)] text-white hover:bg-[var(--primary-600)]'
               : 'bg-[var(--surface)] border-[var(--border)] border-dashed hover:border-[var(--primary)]'
@@ -603,8 +748,8 @@ function PositionSlot({
         
         {/* Player name below position circle */}
         {assignedPlayer && (
-          <div className="absolute top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none z-20">
-            {assignedPlayer.name}
+          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-1 sm:px-2 py-1 pointer-events-none z-20 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap">
+            {assignedPlayer.name.length > 12 ? `${assignedPlayer.name.substring(0, 10)}...` : assignedPlayer.name}
           </div>
         )}
         
@@ -620,12 +765,6 @@ function PositionSlot({
                   <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
                     {assignedPlayer.name}
                   </div>
-                  <button
-                    onClick={handleClearClick}
-                    className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-[var(--bg)] transition"
-                  >
-                    ↩️ Remove from Position
-                  </button>
                   {onSitOut && (
                     <button
                       onClick={handleSitOutClick}
@@ -660,7 +799,7 @@ function PositionSlot({
                       })
                     ) : (
                       <div className="text-xs text-[var(--muted)] px-2 py-2">
-                        No available players
+                        No substitutes available
                       </div>
                     )}
                   </div>
@@ -675,16 +814,14 @@ function PositionSlot({
 }
 
 export default function GameLineup({ loaderData }: Route.ComponentProps) {
-  const { team, game, players, positions, assignments } = loaderData;
+  const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations } = loaderData;
   const fetcher = useFetcher();
   const [draggedPlayer, setDraggedPlayer] = useState<any>(null);
-  const [currentQuarter, setCurrentQuarter] = useState(1);
+  const [currentQuarter, setCurrentQuarter] = useState<number | 'overview'>(1);
   const [quarterAssignments, setQuarterAssignments] = useState<Map<number, Map<number, any>>>(new Map());
   const [sittingOut, setSittingOut] = useState<Map<number, Set<number>>>(new Map());
   const [showInstructions, setShowInstructions] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const lastSavedDataRef = useRef<string>('');
+  const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -693,8 +830,17 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const formationKeys = Object.keys(formationOptions);
   const [quarterFormations, setQuarterFormations] = useState<Map<number, number>>(new Map());
   
+  // Initialize quarter formations from saved data
+  useEffect(() => {
+    const formationsMap = new Map<number, number>();
+    Object.entries(savedQuarterFormations).forEach(([quarter, formationIndex]) => {
+      formationsMap.set(parseInt(quarter), formationIndex as number);
+    });
+    setQuarterFormations(formationsMap);
+  }, [savedQuarterFormations]);
+  
   // Get current quarter's formation
-  const currentFormationIndex = quarterFormations.get(currentQuarter) ?? 0;
+  const currentFormationIndex = typeof currentQuarter === 'number' ? quarterFormations.get(currentQuarter) ?? 0 : 0;
   const currentFormationKey = formationKeys[currentFormationIndex];
   const currentFormation = (formationOptions as any)[currentFormationKey];
   const formationPositions = currentFormation?.positions || [];
@@ -702,17 +848,45 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const totalQuarters = 4; // Standard for AYSO games
   
   const handlePrevFormation = () => {
+    if (typeof currentQuarter !== 'number') return;
+    
     const newIndex = currentFormationIndex === 0 ? formationKeys.length - 1 : currentFormationIndex - 1;
+    
+    // Optimistic update - update local state immediately
     const newQuarterFormations = new Map(quarterFormations);
     newQuarterFormations.set(currentQuarter, newIndex);
     setQuarterFormations(newQuarterFormations);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "saveFormation",
+        quarter: currentQuarter.toString(),
+        formationIndex: newIndex.toString(),
+      },
+      { method: "post" }
+    );
   };
   
   const handleNextFormation = () => {
+    if (typeof currentQuarter !== 'number') return;
+    
     const newIndex = (currentFormationIndex + 1) % formationKeys.length;
+    
+    // Optimistic update - update local state immediately
     const newQuarterFormations = new Map(quarterFormations);
     newQuarterFormations.set(currentQuarter, newIndex);
     setQuarterFormations(newQuarterFormations);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "saveFormation",
+        quarter: currentQuarter.toString(),
+        formationIndex: newIndex.toString(),
+      },
+      { method: "post" }
+    );
   };
   
   // Close instructions tooltip when clicking outside
@@ -734,61 +908,36 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     }
   }, [showInstructions]);
   
-  // Helper function to serialize assignments for comparison
-  const serializeAssignments = useCallback((assignmentsMap: Map<number, Map<number, any>>, sitOutMap: Map<number, Set<number>>, quarters: number, positions: any[]) => {
-    const allAssignments: any[] = [];
-    
-    for (let quarter = 1; quarter <= quarters; quarter++) {
-      const quarterLineup = assignmentsMap.get(quarter) || new Map();
-      const quarterSitOuts = sitOutMap.get(quarter) || new Set();
-      
-      // Add field positions
-      for (const [positionNumber, assignment] of quarterLineup.entries()) {
-        allAssignments.push({
-          playerId: assignment.playerId,
-          positionNumber,
-          positionName: positions.find((p: any) => p.number === positionNumber)?.abbreviation || '',
-          quarter,
-          isSittingOut: false,
-        });
-      }
-      
-      // Add sitting out players
-      for (const playerId of quarterSitOuts) {
-        allAssignments.push({
-          playerId,
-          positionNumber: 0,
-          positionName: 'SUB',
-          quarter,
-          isSittingOut: true,
-        });
-      }
-    }
-    
-    return allAssignments;
-  }, []);
 
   // Initialize existing assignments per quarter
   useEffect(() => {
     const quarterMap = new Map<number, Map<number, any>>();
     const sitOutMap = new Map<number, Set<number>>();
     
-    // Initialize all quarters
+    // Initialize all quarters with all players sitting out by default
     for (let q = 1; q <= totalQuarters; q++) {
       quarterMap.set(q, new Map());
-      sitOutMap.set(q, new Set());
+      const allPlayerIds = new Set(players.map((p: any) => p.id));
+      sitOutMap.set(q, allPlayerIds);
     }
     
-    // Load existing assignments
+    // Load existing assignments and override defaults
     assignments.forEach((assignment: any) => {
       const quarter = assignment.quarter || 1;
       const player = players.find((p: any) => p.id === assignment.playerId);
       
       if (assignment.isSittingOut) {
+        // Player is explicitly sitting out (already in sitOut by default)
         const quarterSitOuts = sitOutMap.get(quarter) || new Set();
         quarterSitOuts.add(assignment.playerId);
         sitOutMap.set(quarter, quarterSitOuts);
       } else {
+        // Player is assigned to field position - remove from sitting out
+        const quarterSitOuts = sitOutMap.get(quarter) || new Set();
+        quarterSitOuts.delete(assignment.playerId);
+        sitOutMap.set(quarter, quarterSitOuts);
+        
+        // Add to field position
         const quarterLineup = quarterMap.get(quarter) || new Map();
         quarterLineup.set(assignment.positionNumber, {
           playerId: assignment.playerId,
@@ -800,17 +949,16 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     
     setQuarterAssignments(quarterMap);
     setSittingOut(sitOutMap);
-    
-    // Store initial state as last saved
-    const initialData = serializeAssignments(quarterMap, sitOutMap, totalQuarters, formationPositions);
-    lastSavedDataRef.current = JSON.stringify(initialData);
-  }, [assignments, players, serializeAssignments, formationPositions]);
+  }, [assignments, players, formationPositions]);
   
   const handleDragStart = (player: any) => {
     setDraggedPlayer(player);
   };
   
   const handlePositionAssignment = (position: any, player: any) => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
     const newQuarterAssignments = new Map(quarterAssignments);
     const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
     
@@ -836,19 +984,45 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     
     newQuarterAssignments.set(currentQuarter, currentLineup);
     setQuarterAssignments(newQuarterAssignments);
-    setHasChanges(true);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "assignPlayer",
+        playerId: player.id.toString(),
+        positionNumber: position.number.toString(),
+        positionName: position.abbreviation,
+        quarter: currentQuarter.toString(),
+      },
+      { method: "post" }
+    );
   };
   
   const handleClearPosition = (position: any) => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
     const newQuarterAssignments = new Map(quarterAssignments);
     const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
     currentLineup.delete(position.number);
     newQuarterAssignments.set(currentQuarter, currentLineup);
     setQuarterAssignments(newQuarterAssignments);
-    setHasChanges(true);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "clearPosition",
+        positionNumber: position.number.toString(),
+        quarter: currentQuarter.toString(),
+      },
+      { method: "post" }
+    );
   };
   
   const handleSitOut = (player: any) => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
     // Remove from field positions
     const newQuarterAssignments = new Map(quarterAssignments);
     const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
@@ -866,138 +1040,38 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     quarterSitOuts.add(player.id);
     newSittingOut.set(currentQuarter, quarterSitOuts);
     setSittingOut(newSittingOut);
-    setHasChanges(true);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "sitOutPlayer",
+        playerId: player.id.toString(),
+        quarter: currentQuarter.toString(),
+      },
+      { method: "post" }
+    );
   };
   
   const handleUnsitPlayer = (playerId: number) => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
     const newSittingOut = new Map(sittingOut);
     const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
     quarterSitOuts.delete(playerId);
     newSittingOut.set(currentQuarter, quarterSitOuts);
     setSittingOut(newSittingOut);
-    setHasChanges(true);
-  };
-  
-  // Auto-save functionality
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const performAutoSave = useCallback(() => {
-    const allAssignments = serializeAssignments(quarterAssignments, sittingOut, totalQuarters, formationPositions);
-    const currentData = JSON.stringify(allAssignments);
     
-    // Only save if data has actually changed
-    if (currentData === lastSavedDataRef.current) {
-      setHasChanges(false);
-      return;
-    }
-    
-    setIsSaving(true);
-    
-    fetcher.submit(
-      {
-        _action: "saveLineup",
-        lineupData: JSON.stringify({ assignments: allAssignments }),
-      },
-      { method: "post" }
-    );
-    
-    // Store the data we just saved
-    lastSavedDataRef.current = currentData;
-    
-    // Reset saving state after a brief delay
-    setTimeout(() => {
-      setIsSaving(false);
-      setHasChanges(false);
-    }, 1000);
-  }, [quarterAssignments, sittingOut, fetcher, formationPositions, serializeAssignments]);
-  
-  // Auto-save when assignments change
-  useEffect(() => {
-    // Skip if no changes have been made
-    if (!hasChanges) {
-      return;
-    }
-    
-    // Clear existing timeout
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    
-    // Set new timeout for auto-save (debounced by 2 seconds)
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      performAutoSave();
-    }, 2000);
-    
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, [quarterAssignments, sittingOut, hasChanges, performAutoSave]);
-  
-  // Don't update state when fetcher returns to prevent overwriting local changes
-  useEffect(() => {
-    if (fetcher.state === 'idle' && fetcher.data?.success) {
-      // Data was successfully saved, but don't update local state
-      // Local state is already correct and updating would cause flicker
-    }
-  }, [fetcher.state, fetcher.data]);
-  
-  const handleSaveLineup = () => {
-    // Clear auto-save timeout and save immediately
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    const allAssignments: any[] = [];
-    
-    // Convert all quarter assignments to array format
-    for (let quarter = 1; quarter <= totalQuarters; quarter++) {
-      const quarterLineup = quarterAssignments.get(quarter) || new Map();
-      const quarterSitOuts = sittingOut.get(quarter) || new Set();
-      
-      // Add field positions
-      for (const [positionNumber, assignment] of quarterLineup.entries()) {
-        allAssignments.push({
-          playerId: assignment.playerId,
-          positionNumber,
-          positionName: formationPositions.find((p: any) => p.number === positionNumber)?.abbreviation || '',
-          quarter,
-          isSittingOut: false,
-        });
-      }
-      
-      // Add sitting out players
-      for (const playerId of quarterSitOuts) {
-        allAssignments.push({
-          playerId,
-          positionNumber: 0,
-          positionName: 'SUB',
-          quarter,
-          isSittingOut: true,
-        });
-      }
-    }
-    
-    fetcher.submit(
-      {
-        _action: "saveLineup",
-        lineupData: JSON.stringify({ assignments: allAssignments }),
-      },
-      { method: "post" }
-    );
+    // Note: This removes the player from sitting out but doesn't assign them anywhere
+    // The player becomes "available" but not assigned to any position
+    // This functionality might need to be handled differently in the UI
   };
   
   // Get current quarter data
-  const currentLineup = quarterAssignments.get(currentQuarter) || new Map();
-  const currentSittingOut = sittingOut.get(currentQuarter) || new Set();
+  const currentLineup = typeof currentQuarter === 'number' ? quarterAssignments.get(currentQuarter) || new Map() : new Map();
+  const currentSittingOut = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set() : new Set();
   
-  // Get available players (not assigned and not sitting out in current quarter)
-  const assignedPlayerIds = new Set(Array.from(currentLineup.values()).map(a => a.playerId));
-  const availablePlayers = players.filter((player: any) => 
-    !assignedPlayerIds.has(player.id) && !currentSittingOut.has(player.id)
-  );
-  
-  // Get sitting out players for current quarter
+  // Get sitting out players for current quarter (these are now the "available" players)
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
   
   // Get available positions for current quarter (not already assigned)
@@ -1070,15 +1144,11 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
         
-        {/* Quarter Tabs */}
-        <div className="mb-6">
+        {/* Quarter Tabs - Desktop Only */}
+        <div className="mb-6 hidden sm:block">
           <div className="border-b border-[var(--border)]">
             <nav className="-mb-px flex space-x-4">
               {[1, 2, 3, 4].map((quarter) => {
-                const quarterFormationIndex = quarterFormations.get(quarter) ?? 0;
-                const quarterFormationKey = formationKeys[quarterFormationIndex];
-                const quarterFormation = (formationOptions as any)[quarterFormationKey];
-                
                 return (
                   <button
                     key={quarter}
@@ -1089,17 +1159,14 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         : 'border-transparent text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--border)]'
                     }`}
                   >
-                    <div className="flex flex-col items-center">
-                      <span>Quarter {quarter}</span>
-                      <span className="text-xs opacity-75">{quarterFormation?.name || formationKeys[0].replace(/-/g, ' ')}</span>
-                    </div>
+                    Quarter {quarter}
                   </button>
                 );
               })}
               
               {/* Overview Tab */}
               <button
-                onClick={() => setCurrentQuarter('overview' as any)}
+                onClick={() => setCurrentQuarter('overview')}
                 className={`py-2 px-4 border-b-2 font-medium text-sm transition ${
                   currentQuarter === 'overview'
                     ? 'border-[var(--primary)] text-[var(--primary)]'
@@ -1146,39 +1213,18 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 })}
               </div>
             </div>
-            
-            {/* Auto-save Status */}
-            <div className="pt-4 border-t border-[var(--border)]">
-              <div className="text-center text-sm text-[var(--muted)]">
-                {isSaving ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="animate-pulse">💾</span>
-                    Auto-saving...
-                  </span>
-                ) : hasChanges ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="animate-pulse">⏱</span>
-                    Changes pending...
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-2">
-                    ✓ All changes saved
-                  </span>
-                )}
-              </div>
-            </div>
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-3">
-            {/* Available Players */}
-            <div className="lg:col-span-1 space-y-6">
-            {/* Available Players */}
+          <div className="flex flex-col lg:grid lg:gap-8 lg:grid-cols-3 space-y-6 lg:space-y-0">
+            {/* Substitutes / Available Players */}
+            <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
+            {/* Subs - Sitting Out Players */}
             <div>
-              <h2 className="text-lg font-semibold mb-4">Available Players</h2>
-              <div className="space-y-2 border border-[var(--border)] rounded-lg p-2">
+              <h2 className="text-lg font-semibold mb-4">Substitutes - Q{currentQuarter}</h2>
+              <div className="space-y-2 min-h-[200px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50">
                 <div className="space-y-2">
-                  {availablePlayers.length > 0 ? (
-                    availablePlayers.map((player: any) => (
+                  {sittingOutPlayers.length > 0 ? (
+                    sittingOutPlayers.map((player: any) => (
                       <PlayerCard 
                         key={player.id}
                         player={player} 
@@ -1189,79 +1235,17 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                       />
                     ))
                   ) : (
-                    <p className="text-sm text-[var(--muted)] text-center py-4">
-                      All players assigned or sitting out
+                    <p className="text-sm text-amber-700 text-center py-4">
+                      All players are on the field
                     </p>
                   )}
                 </div>
               </div>
             </div>
-            
-            {/* Sitting Out */}
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Sitting Out - Q{currentQuarter}</h2>
-              <div className="space-y-2 min-h-[100px] border border-dashed border-red-300 rounded-lg p-2 bg-red-50">
-                {sittingOutPlayers.length > 0 ? (
-                  sittingOutPlayers.map((player: any) => (
-                    <div key={player.id} className="flex items-center gap-2">
-                      <div className="flex-1 flex items-center gap-2 p-2 border border-red-200 rounded bg-white">
-                        {getImageUrl(player.profilePicture) ? (
-                          <img
-                            src={getImageUrl(player.profilePicture)!}
-                            alt={player.name}
-                            className="w-6 h-6 rounded-full object-cover border border-[var(--border)]"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-                            {player.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <span className="text-sm font-medium">{player.name}</span>
-                      </div>
-                      <button
-                        onClick={() => handleUnsitPlayer(player.id)}
-                        className="px-2 py-1 text-xs rounded border border-green-300 bg-green-100 text-green-700 hover:bg-green-200 transition"
-                      >
-                        Return
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-red-600 text-center py-4">
-                    No players sitting out this quarter
-                  </p>
-                )}
-              </div>
-              <p className="text-xs text-[var(--muted)] mt-2">
-                AYSO Fair Play: Players should not sit out more than one quarter
-              </p>
-            </div>
-            
-            
-            {/* Auto-save Status */}
-            <div className="pt-4 border-t border-[var(--border)]">
-              <div className="text-center text-sm text-[var(--muted)]">
-                {isSaving ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="animate-pulse">💾</span>
-                    Auto-saving...
-                  </span>
-                ) : hasChanges ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="animate-pulse">⏱</span>
-                    Changes pending...
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-2">
-                    ✓ All changes saved
-                  </span>
-                )}
-              </div>
-            </div>
           </div>
           
           {/* Formation Field */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 order-1 lg:order-2">
             {/* Formation Selector */}
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Field Formation</h2>
@@ -1275,8 +1259,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <span className="px-3 py-1 min-w-[140px] text-center text-sm font-medium border border-[var(--border)] rounded bg-[var(--surface)]">
-                  Q{currentQuarter}: {currentFormation?.name || 'Default'}
+                <span className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium border border-[var(--border)] rounded bg-[var(--surface)]">
+                  {currentFormationKey}
                 </span>
                 <button
                   onClick={handleNextFormation}
@@ -1289,21 +1273,21 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 </button>
               </div>
             </div>
-            <div className="relative bg-green-700 rounded-lg" style={{ aspectRatio: '3/2', minHeight: '400px' }}>
+            <div className="relative bg-green-700 rounded-lg h-[28rem] sm:h-[32rem] w-full">
               {/* Field markings */}
-              <div className="absolute inset-3 border-2 border-white rounded">
+              <div className="absolute inset-2 border-2 border-white rounded">
                 {/* Center line */}
                 <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white"></div>
                 {/* Center circle */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 border-2 border-white rounded-full"></div>
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-16 sm:h-16 border-2 border-white rounded-full"></div>
                 {/* Top penalty area */}
-                <div className="absolute top-0 left-1/3 w-1/3 h-12 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-1/3 w-1/3 h-8 sm:h-12 border-b-2 border-l-2 border-r-2 border-white"></div>
                 {/* Top goal area */}
-                <div className="absolute top-0 left-[40%] w-1/5 h-6 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-[40%] w-1/5 h-4 sm:h-6 border-b-2 border-l-2 border-r-2 border-white"></div>
                 {/* Bottom penalty area */}
-                <div className="absolute bottom-0 left-1/3 w-1/3 h-12 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-1/3 w-1/3 h-8 sm:h-12 border-t-2 border-l-2 border-r-2 border-white"></div>
                 {/* Bottom goal area */}
-                <div className="absolute bottom-0 left-[40%] w-1/5 h-6 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-[40%] w-1/5 h-4 sm:h-6 border-t-2 border-l-2 border-r-2 border-white"></div>
               </div>
               
               {/* Position slots */}
@@ -1315,8 +1299,10 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   onDrop={handlePositionAssignment}
                   onClear={handleClearPosition}
                   onSitOut={handleSitOut}
-                  availablePlayers={availablePlayers}
+                  availablePlayers={sittingOutPlayers}
                   onAssignPlayer={handlePositionAssignment}
+                  openDropdownPosition={openDropdownPosition}
+                  setOpenDropdownPosition={setOpenDropdownPosition}
                 />
               ))}
             </div>
@@ -1324,6 +1310,38 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </div>
+      
+      {/* Mobile Bottom Navigation - Fixed to bottom */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[var(--border)] shadow-2xl z-30">
+        <div className="grid grid-cols-5 text-center">
+          {[1, 2, 3, 4].map((quarter) => (
+            <button
+              key={quarter}
+              onClick={() => setCurrentQuarter(quarter)}
+              className={`py-5 px-2 text-sm font-bold transition ${
+                currentQuarter === quarter
+                  ? 'text-[var(--primary)] bg-[var(--bg)]'
+                  : 'text-gray-700 hover:text-black hover:bg-[var(--bg)]'
+              }`}
+            >
+              Q{quarter}
+            </button>
+          ))}
+          <button
+            onClick={() => setCurrentQuarter('overview' as any)}
+            className={`py-5 px-2 text-sm font-bold transition ${
+              currentQuarter === 'overview'
+                ? 'text-[var(--primary)] bg-[var(--bg)]'
+                : 'text-gray-700 hover:text-black hover:bg-[var(--bg)]'
+            }`}
+          >
+            Summary
+          </button>
+        </div>
+      </div>
+      
+      {/* Mobile padding bottom to account for fixed navigation */}
+      <div className="sm:hidden h-20"></div>
     </div>
   );
 }
