@@ -1,7 +1,7 @@
 import type { Route } from "./+types/team.games.game.lineup";
 import { data, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { db, teams, games, players, assignments, positions } from "~/db";
+import { db, teams, games, players, assignments, positions, sitOuts } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -71,6 +71,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })
     .from(assignments)
     .where(eq(assignments.gameId, gameId));
+
+  // Get absent/injured players for this game
+  const absentInjuredPlayers = await db
+    .select({
+      playerId: sitOuts.playerId,
+      quarter: sitOuts.quarter,
+      reason: sitOuts.reason,
+    })
+    .from(sitOuts)
+    .where(and(
+      eq(sitOuts.gameId, gameId),
+      or(
+        eq(sitOuts.reason, 'absent'),
+        eq(sitOuts.reason, 'injured')
+      )
+    ));
   
   // Parse saved quarter formations from game notes
   const savedFormations = game.notes ? JSON.parse(game.notes) : {};
@@ -83,6 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     positions: availablePositions,
     assignments: existingAssignments,
     quarterFormations,
+    absentInjuredPlayers,
   });
 }
 
@@ -257,6 +274,72 @@ export async function action({ request, params }: Route.ActionArgs) {
       console.error("Error saving formation:", error);
       return data(
         { success: false, error: "Failed to save formation" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  if (action === "markAbsentInjured") {
+    try {
+      const playerId = parseInt(formData.get("playerId") as string);
+      const quarter = parseInt(formData.get("quarter") as string);
+      const reason = formData.get("reason") as string; // 'absent' or 'injured'
+      
+      // Remove any existing assignment for this player in this quarter
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.playerId, playerId),
+          eq(assignments.quarter, quarter)
+        )
+      );
+      
+      // Remove any existing absent/injured record for this player and quarter
+      await db.delete(sitOuts).where(
+        and(
+          eq(sitOuts.gameId, gameId),
+          eq(sitOuts.playerId, playerId),
+          eq(sitOuts.quarter, quarter)
+        )
+      );
+      
+      // Insert new absent/injured record
+      await db.insert(sitOuts).values({
+        gameId,
+        playerId,
+        quarter,
+        reason,
+      });
+      
+      return data({ success: true, action: "markAbsentInjured" });
+    } catch (error) {
+      console.error("Error marking player absent/injured:", error);
+      return data(
+        { success: false, error: "Failed to mark player absent/injured" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  if (action === "clearAbsentInjured") {
+    try {
+      const playerId = parseInt(formData.get("playerId") as string);
+      const quarter = parseInt(formData.get("quarter") as string);
+      
+      // Remove absent/injured record
+      await db.delete(sitOuts).where(
+        and(
+          eq(sitOuts.gameId, gameId),
+          eq(sitOuts.playerId, playerId),
+          eq(sitOuts.quarter, quarter)
+        )
+      );
+      
+      return data({ success: true, action: "clearAbsentInjured" });
+    } catch (error) {
+      console.error("Error clearing absent/injured status:", error);
+      return data(
+        { success: false, error: "Failed to clear absent/injured status" },
         { status: 500 }
       );
     }
@@ -814,13 +897,15 @@ function PositionSlot({
 }
 
 export default function GameLineup({ loaderData }: Route.ComponentProps) {
-  const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations } = loaderData;
+  const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations, absentInjuredPlayers } = loaderData;
   const fetcher = useFetcher();
   const [draggedPlayer, setDraggedPlayer] = useState<any>(null);
-  const [currentQuarter, setCurrentQuarter] = useState<number | 'overview'>(1);
+  const [currentQuarter, setCurrentQuarter] = useState<number>(1);
   const [quarterAssignments, setQuarterAssignments] = useState<Map<number, Map<number, any>>>(new Map());
   const [sittingOut, setSittingOut] = useState<Map<number, Set<number>>>(new Map());
+  const [absentInjured, setAbsentInjured] = useState<Map<number, Map<number, string>>>(new Map()); // quarter -> playerId -> reason
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showOverview, setShowOverview] = useState(false);
   const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -913,13 +998,28 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   useEffect(() => {
     const quarterMap = new Map<number, Map<number, any>>();
     const sitOutMap = new Map<number, Set<number>>();
+    const absentInjuredMap = new Map<number, Map<number, string>>();
     
     // Initialize all quarters with all players sitting out by default
     for (let q = 1; q <= totalQuarters; q++) {
       quarterMap.set(q, new Map());
       const allPlayerIds = new Set(players.map((p: any) => p.id));
       sitOutMap.set(q, allPlayerIds);
+      absentInjuredMap.set(q, new Map());
     }
+    
+    // Load absent/injured players first
+    absentInjuredPlayers.forEach((absentPlayer: any) => {
+      const quarter = absentPlayer.quarter || 1;
+      const quarterAbsentInjured = absentInjuredMap.get(quarter) || new Map();
+      quarterAbsentInjured.set(absentPlayer.playerId, absentPlayer.reason);
+      absentInjuredMap.set(quarter, quarterAbsentInjured);
+      
+      // Remove from sitting out as they are absent/injured (different category)
+      const quarterSitOuts = sitOutMap.get(quarter) || new Set();
+      quarterSitOuts.delete(absentPlayer.playerId);
+      sitOutMap.set(quarter, quarterSitOuts);
+    });
     
     // Load existing assignments and override defaults
     assignments.forEach((assignment: any) => {
@@ -949,7 +1049,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     
     setQuarterAssignments(quarterMap);
     setSittingOut(sitOutMap);
-  }, [assignments, players, formationPositions]);
+    setAbsentInjured(absentInjuredMap);
+  }, [assignments, players, formationPositions, absentInjuredPlayers]);
   
   const handleDragStart = (player: any) => {
     setDraggedPlayer(player);
@@ -1052,6 +1153,75 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     );
   };
   
+  // Helper functions for absent/injured management
+  const handleMarkAbsentInjured = (player: any, reason: 'absent' | 'injured') => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
+    const newAbsentInjured = new Map(absentInjured);
+    const quarterAbsentInjured = newAbsentInjured.get(currentQuarter) || new Map();
+    quarterAbsentInjured.set(player.id, reason);
+    newAbsentInjured.set(currentQuarter, quarterAbsentInjured);
+    setAbsentInjured(newAbsentInjured);
+    
+    // Remove from field positions if assigned
+    const newQuarterAssignments = new Map(quarterAssignments);
+    const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
+    for (const [pos, assigned] of currentLineup.entries()) {
+      if (assigned.playerId === player.id) {
+        currentLineup.delete(pos);
+      }
+    }
+    newQuarterAssignments.set(currentQuarter, currentLineup);
+    setQuarterAssignments(newQuarterAssignments);
+    
+    // Remove from sitting out
+    const newSittingOut = new Map(sittingOut);
+    const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
+    quarterSitOuts.delete(player.id);
+    newSittingOut.set(currentQuarter, quarterSitOuts);
+    setSittingOut(newSittingOut);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "markAbsentInjured",
+        playerId: player.id.toString(),
+        quarter: currentQuarter.toString(),
+        reason: reason,
+      },
+      { method: "post" }
+    );
+  };
+  
+  const handleClearAbsentInjured = (playerId: number) => {
+    if (typeof currentQuarter !== 'number') return;
+    
+    // Optimistic update - update local state immediately
+    const newAbsentInjured = new Map(absentInjured);
+    const quarterAbsentInjured = newAbsentInjured.get(currentQuarter) || new Map();
+    quarterAbsentInjured.delete(playerId);
+    newAbsentInjured.set(currentQuarter, quarterAbsentInjured);
+    setAbsentInjured(newAbsentInjured);
+    
+    // Add back to sitting out
+    const newSittingOut = new Map(sittingOut);
+    const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
+    quarterSitOuts.add(playerId);
+    newSittingOut.set(currentQuarter, quarterSitOuts);
+    setSittingOut(newSittingOut);
+    
+    // Make server request
+    fetcher.submit(
+      {
+        _action: "clearAbsentInjured",
+        playerId: playerId.toString(),
+        quarter: currentQuarter.toString(),
+      },
+      { method: "post" }
+    );
+  };
+  
   const handleUnsitPlayer = (playerId: number) => {
     if (typeof currentQuarter !== 'number') return;
     
@@ -1070,6 +1240,10 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   // Get current quarter data
   const currentLineup = typeof currentQuarter === 'number' ? quarterAssignments.get(currentQuarter) || new Map() : new Map();
   const currentSittingOut = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set() : new Set();
+  const currentAbsentInjured = typeof currentQuarter === 'number' ? absentInjured.get(currentQuarter) || new Map() : new Map();
+  
+  // Get absent/injured players for current quarter
+  const absentInjuredPlayersForQuarter = players.filter((player: any) => currentAbsentInjured.has(player.id));
   
   // Get sitting out players for current quarter (these are now the "available" players)
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
@@ -1084,24 +1258,25 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
       <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold">Plan Lineup</h1>
-            <div className="relative">
-              <button
-                ref={instructionsButtonRef}
-                onClick={() => setShowInstructions(!showInstructions)}
-                onMouseEnter={() => setShowInstructions(true)}
-                onMouseLeave={(e) => {
-                  // Only close if not hovering over the tooltip
-                  if (!instructionsRef.current?.contains(e.relatedTarget as Node)) {
-                    setShowInstructions(false);
-                  }
-                }}
-                className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)] text-[var(--muted)] text-sm font-bold transition"
-                aria-label="How to plan your lineup"
-              >
-                ?
-              </button>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold">Plan Lineup</h1>
+              <div className="relative">
+                <button
+                  ref={instructionsButtonRef}
+                  onClick={() => setShowInstructions(!showInstructions)}
+                  onMouseEnter={() => setShowInstructions(true)}
+                  onMouseLeave={(e) => {
+                    // Only close if not hovering over the tooltip
+                    if (!instructionsRef.current?.contains(e.relatedTarget as Node)) {
+                      setShowInstructions(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)] text-[var(--muted)] text-sm font-bold transition"
+                  aria-label="How to plan your lineup"
+                >
+                  ?
+                </button>
               
               {/* Instructions Tooltip */}
               {showInstructions && (
@@ -1132,6 +1307,19 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 </div>
               )}
             </div>
+            </div>
+            
+            {/* Playing Time Summary Button */}
+            <button
+              onClick={() => setShowOverview(true)}
+              className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span className="hidden sm:inline">Playing Time Summary</span>
+              <span className="sm:hidden">Summary</span>
+            </button>
           </div>
           <p className="mt-2 text-[var(--muted)]">
             vs {game.opponent} • {new Date(game.gameDate).toLocaleDateString()} 
@@ -1163,58 +1351,11 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   </button>
                 );
               })}
-              
-              {/* Overview Tab */}
-              <button
-                onClick={() => setCurrentQuarter('overview')}
-                className={`py-2 px-4 border-b-2 font-medium text-sm transition ${
-                  currentQuarter === 'overview'
-                    ? 'border-[var(--primary)] text-[var(--primary)]'
-                    : 'border-transparent text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--border)]'
-                }`}
-              >
-                Overview
-              </button>
             </nav>
           </div>
         </div>
         
-        {currentQuarter === 'overview' ? (
-          <div className="space-y-6">
-            {/* Playing Time Summary */}
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <h3 className="text-lg font-semibold text-green-800 mb-4">Playing Time Summary</h3>
-              <div className="space-y-2">
-                {players.map((player: any) => {
-                  let quarterCount = 0;
-                  let sitOutCount = 0;
-                  for (let q = 1; q <= totalQuarters; q++) {
-                    const qLineup = quarterAssignments.get(q) || new Map();
-                    const qSitOuts = sittingOut.get(q) || new Set();
-                    
-                    const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
-                    const isSittingOut = qSitOuts.has(player.id);
-                    
-                    if (isPlaying) quarterCount++;
-                    if (isSittingOut) sitOutCount++;
-                  }
-                  
-                  const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
-                  
-                  return (
-                    <div key={player.id} className={`text-sm flex justify-between p-2 rounded ${!isCompliant ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                      <span className="font-medium">{player.name}</span>
-                      <span>
-                        Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4
-                        {!isCompliant && ' ⚠️'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* Main lineup content */}
           <div className="flex flex-col lg:grid lg:gap-8 lg:grid-cols-3 space-y-6 lg:space-y-0">
             {/* Substitutes / Available Players */}
             <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
@@ -1225,14 +1366,32 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <div className="space-y-2">
                   {sittingOutPlayers.length > 0 ? (
                     sittingOutPlayers.map((player: any) => (
-                      <PlayerCard 
-                        key={player.id}
-                        player={player} 
-                        onDragStart={handleDragStart}
-                        onAssign={handlePositionAssignment}
-                        availablePositions={getAvailablePositions()}
-                        onSitOut={handleSitOut}
-                      />
+                      <div key={player.id} className="relative">
+                        <PlayerCard 
+                          player={player} 
+                          onDragStart={handleDragStart}
+                          onAssign={handlePositionAssignment}
+                          availablePositions={getAvailablePositions()}
+                          onSitOut={handleSitOut}
+                        />
+                        {/* Quick absent/injured buttons */}
+                        <div className="absolute top-1 right-1 flex gap-1">
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
+                            className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
+                            title="Mark as Absent"
+                          >
+                            A
+                          </button>
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
+                            className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
+                            title="Mark as Injured"
+                          >
+                            I
+                          </button>
+                        </div>
+                      </div>
                     ))
                   ) : (
                     <p className="text-sm text-amber-700 text-center py-4">
@@ -1242,6 +1401,45 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 </div>
               </div>
             </div>
+            
+            {/* Absent/Injured Players */}
+            {absentInjuredPlayersForQuarter.length > 0 && (
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Absent/Injured - Q{currentQuarter}</h2>
+                <div className="space-y-2 border border-dashed border-red-300 rounded-lg p-2 bg-red-50">
+                  <div className="space-y-2">
+                    {absentInjuredPlayersForQuarter.map((player: any) => {
+                      const reason = currentAbsentInjured.get(player.id);
+                      return (
+                        <div key={player.id} className="flex items-center gap-2 p-2 border border-red-200 rounded bg-white">
+                          {getImageUrl(player.profilePicture) ? (
+                            <img
+                              src={getImageUrl(player.profilePicture)!}
+                              alt={player.name}
+                              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-xs font-semibold text-red-600">
+                              {player.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{player.name}</div>
+                            <div className="text-xs text-red-600 capitalize">{reason}</div>
+                          </div>
+                          <button
+                            onClick={() => handleClearAbsentInjured(player.id)}
+                            className="text-xs text-red-600 hover:text-red-800 px-2 py-1 rounded border border-red-200 hover:bg-red-100 transition"
+                          >
+                            Return to Subs
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Formation Field */}
@@ -1308,40 +1506,106 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
           </div>
-        )}
       </div>
       
-      {/* Mobile Bottom Navigation - Fixed to bottom */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[var(--border)] shadow-2xl z-30">
-        <div className="grid grid-cols-5 text-center">
+      {/* Mobile Bottom Navigation - Fixed to bottom with enhanced iPhone compatibility */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] shadow-[0_-8px_32px_rgba(0,0,0,0.12)] z-30">
+        <div className="grid grid-cols-4 text-center">
           {[1, 2, 3, 4].map((quarter) => (
             <button
               key={quarter}
               onClick={() => setCurrentQuarter(quarter)}
-              className={`py-5 px-2 text-sm font-bold transition ${
+              className={`py-6 px-2 text-base font-bold transition min-h-[68px] flex items-center justify-center ${
                 currentQuarter === quarter
-                  ? 'text-[var(--primary)] bg-[var(--bg)]'
-                  : 'text-gray-700 hover:text-black hover:bg-[var(--bg)]'
+                  ? 'text-[var(--primary)] bg-[var(--bg)] shadow-inner'
+                  : 'text-gray-700 hover:text-black hover:bg-[var(--bg)] active:bg-gray-100'
               }`}
             >
               Q{quarter}
             </button>
           ))}
-          <button
-            onClick={() => setCurrentQuarter('overview' as any)}
-            className={`py-5 px-2 text-sm font-bold transition ${
-              currentQuarter === 'overview'
-                ? 'text-[var(--primary)] bg-[var(--bg)]'
-                : 'text-gray-700 hover:text-black hover:bg-[var(--bg)]'
-            }`}
-          >
-            Summary
-          </button>
         </div>
+        {/* Extra padding for iPhone home indicator and safe area */}
+        <div className="h-2 bg-white"></div>
       </div>
       
-      {/* Mobile padding bottom to account for fixed navigation */}
-      <div className="sm:hidden h-20"></div>
+      {/* Mobile padding bottom to account for fixed navigation with iPhone safe area */}
+      <div className="sm:hidden h-24"></div>
+      
+      {/* Overview Modal Overlay */}
+      {showOverview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold">AYSO Fair Play Compliance</h2>
+                <button
+                  onClick={() => setShowOverview(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Summary Content */}
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Players marked as Absent/Injured are excluded from AYSO minimum playing time requirements.
+                </p>
+                
+                <div className="space-y-2">
+                  {players.map((player: any) => {
+                    let quarterCount = 0;
+                    let sitOutCount = 0;
+                    let absentInjuredCount = 0;
+                    
+                    for (let q = 1; q <= totalQuarters; q++) {
+                      const qLineup = quarterAssignments.get(q) || new Map();
+                      const qSitOuts = sittingOut.get(q) || new Set();
+                      const qAbsentInjured = absentInjured.get(q) || new Map();
+                      
+                      const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
+                      const isSittingOut = qSitOuts.has(player.id);
+                      const isAbsentInjured = qAbsentInjured.has(player.id);
+                      
+                      if (isPlaying) quarterCount++;
+                      if (isSittingOut) sitOutCount++;
+                      if (isAbsentInjured) absentInjuredCount++;
+                    }
+                    
+                    // AYSO compliance: minimum 2 quarters playing, max 1 quarter sitting (absent/injured doesn't count against AYSO rules)
+                    const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
+                    
+                    return (
+                      <div key={player.id} className={`text-sm flex justify-between p-3 rounded-lg ${!isCompliant ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                        <span className="font-medium">{player.name}</span>
+                        <span className="text-right">
+                          <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
+                          {absentInjuredCount > 0 && <div className="text-xs">Absent/Injured: {absentInjuredCount}/4</div>}
+                          {!isCompliant && <span className="text-red-600 font-bold"> ⚠️ Non-compliant</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="text-sm font-semibold text-blue-800 mb-2">AYSO Fair Play Rules</h3>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• Each player must play at least 2 quarters</li>
+                    <li>• No player should sit out more than 1 quarter</li>
+                    <li>• Absent or injured players are excluded from these requirements</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -84,7 +84,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
       {/* Top navigation */}
-      <header className="border-b border-[var(--border)] bg-[var(--surface)] sticky top-0 z-50">
+      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
         <nav className="container mx-auto px-4 sm:px-6 max-w-7xl flex items-center justify-between h-14">
           <Link to="/dashboard" className="flex items-center gap-2 font-semibold">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-[var(--accent)] text-white text-xs">AY</span>
