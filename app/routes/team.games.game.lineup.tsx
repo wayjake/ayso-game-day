@@ -439,18 +439,20 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 
-function PlayerCard({ 
-  player, 
-  onDragStart, 
+function PlayerCard({
+  player,
+  onDragStart,
   onAssign,
   availablePositions,
-  onSitOut
-}: { 
-  player: any; 
+  onSitOut,
+  quartersPlaying = 0
+}: {
+  player: any;
   onDragStart: (player: any) => void;
   onAssign?: (player: any, position: any) => void;
   availablePositions?: any[];
   onSitOut?: (player: any) => void;
+  quartersPlaying?: number;
 }) {
   const preferredPositions = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
   const [showDropdown, setShowDropdown] = useState(false);
@@ -1125,6 +1127,22 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   // Get sitting out players for current quarter (these are now the "available" players)
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
+
+  // Calculate how many quarters each player is playing
+  const getPlayerQuartersPlaying = (playerId: number): number => {
+    let count = 0;
+    for (let q = 1; q <= totalQuarters; q++) {
+      const qLineup = quarterAssignments.get(q) || new Map();
+      // Check if player is assigned to any position in this quarter
+      for (const [_, assigned] of qLineup.entries()) {
+        if (assigned.playerId === playerId) {
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  };
   
   // Get available positions for current quarter (not already assigned)
   const getAvailablePositions = () => {
@@ -1291,34 +1309,50 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               <div className="space-y-2 min-h-[200px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50">
                 <div className="space-y-2">
                   {sittingOutPlayers.length > 0 ? (
-                    sittingOutPlayers.map((player: any) => (
-                      <div key={player.id} className="relative">
-                        <PlayerCard 
-                          player={player} 
-                          onDragStart={handleDragStart}
-                          onAssign={handlePositionAssignment}
-                          availablePositions={getAvailablePositions()}
-                          onSitOut={handleSitOut}
-                        />
-                        {/* Quick absent/injured buttons */}
-                        <div className="absolute top-1 right-1 flex gap-1">
-                          <button
-                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
-                            className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
-                            title="Mark as Absent"
-                          >
-                            A
-                          </button>
-                          <button
-                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
-                            className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
-                            title="Mark as Injured"
-                          >
-                            I
-                          </button>
+                    sittingOutPlayers.map((player: any) => {
+                      const quartersPlaying = getPlayerQuartersPlaying(player.id);
+                      const quartersBgColor =
+                        quartersPlaying === 0 ? 'bg-red-500 text-white' :
+                        quartersPlaying === 1 ? 'bg-orange-500 text-white' :
+                        quartersPlaying === 2 ? 'bg-yellow-500 text-white' :
+                        'bg-green-500 text-white';
+
+                      return (
+                        <div key={player.id} className="relative">
+                          <PlayerCard
+                            player={player}
+                            onDragStart={handleDragStart}
+                            onAssign={handlePositionAssignment}
+                            availablePositions={getAvailablePositions()}
+                            onSitOut={handleSitOut}
+                            quartersPlaying={quartersPlaying}
+                          />
+                          {/* Quick absent/injured buttons and quarters indicator */}
+                          <div className="absolute top-1 right-1 flex gap-1">
+                            <div
+                              className={`w-7 h-5 text-[10px] font-bold ${quartersBgColor} rounded flex items-center justify-center`}
+                              title={`Playing ${quartersPlaying} out of 4 quarters`}
+                            >
+                              {quartersPlaying}/4
+                            </div>
+                            <button
+                              onClick={() => handleMarkAbsentInjured(player, 'absent')}
+                              className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
+                              title="Mark as Absent"
+                            >
+                              A
+                            </button>
+                            <button
+                              onClick={() => handleMarkAbsentInjured(player, 'injured')}
+                              className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
+                              title="Mark as Injured"
+                            >
+                              I
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="text-sm text-amber-700 text-center py-4">
                       All players are on the field
