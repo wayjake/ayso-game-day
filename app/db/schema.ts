@@ -102,6 +102,17 @@ export const sitOuts = sqliteTable('sit_outs', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+// Share links for public game viewing
+export const shareLinks = sqliteTable('share_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  gameId: integer('game_id').notNull().references(() => games.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  shareId: text('share_id').notNull().unique(), // unique ID for the share link
+  expiresAt: text('expires_at').notNull(), // timestamp when link expires
+  createdBy: integer('created_by').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -119,3 +130,5 @@ export type Position = typeof positions.$inferSelect;
 export type NewPosition = typeof positions.$inferInsert;
 export type SitOut = typeof sitOuts.$inferSelect;
 export type NewSitOut = typeof sitOuts.$inferInsert;
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type NewShareLink = typeof shareLinks.$inferInsert;

@@ -1,8 +1,8 @@
 import type { Route } from "./+types/team.games.game.lineup";
 import { data, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { db, teams, games, players, assignments, positions, sitOuts } from "~/db";
-import { eq, and, or, sql } from "drizzle-orm";
+import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
+import { eq, and, or, sql, lt } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { useState, useEffect, useRef, useCallback } from "react";
 
@@ -92,6 +92,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const savedFormations = game.notes ? JSON.parse(game.notes) : {};
   const quarterFormations = savedFormations.quarterFormations || {};
 
+  // Get active share link if one exists
+  const [activeShareLink] = await db
+    .select()
+    .from(shareLinks)
+    .where(and(
+      eq(shareLinks.gameId, gameId),
+      sql`datetime(${shareLinks.expiresAt}) > datetime('now')`
+    ))
+    .limit(1);
+
   return data({
     team,
     game,
@@ -100,6 +110,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     assignments: existingAssignments,
     quarterFormations,
     absentInjuredPlayers,
+    activeShareLink,
   });
 }
 
@@ -345,6 +356,45 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
   
+  if (action === "createShare") {
+    try {
+      // Generate a unique share ID
+      const shareId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+      // Set expiry to 24 hours from now
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      // Delete any existing share links for this game
+      await db.delete(shareLinks).where(eq(shareLinks.gameId, gameId));
+
+      // Create new share link
+      await db.insert(shareLinks).values({
+        gameId,
+        teamId,
+        shareId,
+        expiresAt,
+        createdBy: user.id,
+      });
+
+      // Generate the full share URL
+      const origin = new URL(request.url).origin;
+      const shareUrl = `${origin}/public/game/${shareId}`;
+
+      return data({
+        success: true,
+        shareUrl,
+        shareId,
+        action: "createShare"
+      });
+    } catch (error) {
+      console.error("Error creating share link:", error);
+      return data(
+        { success: false, error: "Failed to create share link" },
+        { status: 500 }
+      );
+    }
+  }
+
   if (action === "saveLineup") {
     try {
       // Clear existing assignments for this game
@@ -897,7 +947,7 @@ function PositionSlot({
 }
 
 export default function GameLineup({ loaderData }: Route.ComponentProps) {
-  const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations, absentInjuredPlayers } = loaderData;
+  const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations, absentInjuredPlayers, activeShareLink } = loaderData;
   const fetcher = useFetcher();
   const [draggedPlayer, setDraggedPlayer] = useState<any>(null);
   const [currentQuarter, setCurrentQuarter] = useState<number>(1);
@@ -906,6 +956,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [absentInjured, setAbsentInjured] = useState<Map<number, Map<number, string>>>(new Map()); // quarter -> playerId -> reason
   const [showInstructions, setShowInstructions] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -1252,6 +1304,39 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const getAvailablePositions = () => {
     return formationPositions.filter((pos: any) => !currentLineup.has(pos.number));
   };
+
+  // Handle share functionality
+  const handleShare = () => {
+    if (activeShareLink) {
+      // Use existing active link
+      const origin = window.location.origin;
+      setShareUrl(`${origin}/public/game/${activeShareLink.shareId}`);
+      setShowShareModal(true);
+    } else {
+      // Create new share link
+      fetcher.submit(
+        {
+          _action: "createShare",
+        },
+        { method: "post" }
+      );
+    }
+  };
+
+  // Watch for fetcher response from share creation
+  useEffect(() => {
+    if (fetcher.data?.action === "createShare" && fetcher.data?.success) {
+      setShareUrl(fetcher.data.shareUrl);
+      setShowShareModal(true);
+    }
+  }, [fetcher.data]);
+
+  const handleCopyShareLink = () => {
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl);
+      // You could add a toast notification here
+    }
+  };
   
   return (
     <div className="py-4">
@@ -1308,18 +1393,33 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               )}
             </div>
             </div>
-            
-            {/* Playing Time Summary Button */}
-            <button
-              onClick={() => setShowOverview(true)}
-              className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <span className="hidden sm:inline">Playing Time Summary</span>
-              <span className="sm:hidden">Summary</span>
-            </button>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              {/* Share Button */}
+              <button
+                onClick={handleShare}
+                className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m9.032 4.026a9.001 9.001 0 01-7.432 0m9.032-4.026A9.001 9.001 0 0112 3c-4.474 0-8.268 3.12-9.032 7.326m0 0A9.001 9.001 0 0012 21c4.474 0 8.268-3.12 9.032-7.326M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="hidden sm:inline">Share Lineup</span>
+                <span className="sm:hidden">Share</span>
+              </button>
+
+              {/* Playing Time Summary Button */}
+              <button
+                onClick={() => setShowOverview(true)}
+                className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="hidden sm:inline">Playing Time Summary</span>
+                <span className="sm:hidden">Summary</span>
+              </button>
+            </div>
           </div>
           <p className="mt-2 text-[var(--muted)]">
             vs {game.opponent} • {new Date(game.gameDate).toLocaleDateString()} 
@@ -1602,6 +1702,57 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   </ul>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Share Lineup</h2>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Share this link with your team to view the lineup. The link expires in 24 hours.
+              </p>
+
+              {shareUrl && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={shareUrl}
+                      readOnly
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
+                      onClick={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      onClick={handleCopyShareLink}
+                      className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-600)] transition text-sm font-medium"
+                    >
+                      Copy
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-gray-500">
+                    <p>🔗 This link will expire in 24 hours</p>
+                    <p>👀 Anyone with this link can view (but not edit) the lineup</p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -4,6 +4,8 @@ export default [
   index("routes/home.tsx"),
   // API routes
   route("api/uploadthing", "routes/api.uploadthing.ts"),
+  // Public routes (no auth required)
+  route("public/game/:id", "routes/public.game.tsx"),
   route("user", "routes/user.tsx", [
     route("signup", "routes/user.signup.tsx"),
     route("login", "routes/user.login.tsx"),
