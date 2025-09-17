@@ -582,19 +582,21 @@ function PlayerCard({
   );
 }
 
-function PositionSlot({ 
-  position, 
-  assignedPlayer, 
-  onDrop, 
+function PositionSlot({
+  position,
+  assignedPlayer,
+  previousQuarterPlayer,
+  onDrop,
   onClear,
   onSitOut,
   availablePlayers,
   onAssignPlayer,
   openDropdownPosition,
   setOpenDropdownPosition
-}: { 
-  position: any; 
-  assignedPlayer: any; 
+}: {
+  position: any;
+  assignedPlayer: any;
+  previousQuarterPlayer?: any;
   onDrop: (position: any, player: any) => void;
   onClear: (position: any) => void;
   onSitOut?: (player: any) => void;
@@ -696,6 +698,13 @@ function PositionSlot({
         {assignedPlayer && (
           <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-1 sm:px-2 py-1 pointer-events-none z-20 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap">
             {assignedPlayer.name.length > 12 ? `${assignedPlayer.name.substring(0, 10)}...` : assignedPlayer.name}
+          </div>
+        )}
+
+        {/* Previous quarter player hint when position is empty */}
+        {!assignedPlayer && previousQuarterPlayer && (
+          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-gray-200/90 text-gray-600 text-[10px] sm:text-xs rounded px-1 sm:px-2 py-0.5 pointer-events-none z-10 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap border border-gray-300/50">
+            {previousQuarterPlayer.name.length > 12 ? `${previousQuarterPlayer.name.substring(0, 10)}...` : previousQuarterPlayer.name}
           </div>
         )}
         
@@ -1106,6 +1115,10 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const currentLineup = typeof currentQuarter === 'number' ? quarterAssignments.get(currentQuarter) || new Map() : new Map();
   const currentSittingOut = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set() : new Set();
   const currentAbsentInjured = typeof currentQuarter === 'number' ? absentInjured.get(currentQuarter) || new Map() : new Map();
+
+  // Get previous quarter data for hints
+  const previousQuarter = currentQuarter > 1 ? currentQuarter - 1 : null;
+  const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
   
   // Get absent/injured players for current quarter
   const absentInjuredPlayersForQuarter = players.filter((player: any) => currentAbsentInjured.has(player.id));
@@ -1407,6 +1420,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
                   position={position}
                   assignedPlayer={currentLineup.get(position.number)}
+                  previousQuarterPlayer={previousLineup.get(position.number)}
                   onDrop={handlePositionAssignment}
                   onClear={handleClearPosition}
                   onSitOut={handleSitOut}
