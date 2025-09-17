@@ -666,7 +666,7 @@ function PositionSlot({
   return (
     <div
       className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showDropdown ? 'z-[10000]' : 'z-10'}`}
-      style={{ left: `${100 - position.x}%`, top: `${position.y}%` }}
+      style={{ left: `${position.x}%`, top: `${position.y}%` }}
       data-position={position.number}
     >
       <div className="relative">
