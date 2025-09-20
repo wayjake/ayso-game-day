@@ -4,6 +4,15 @@ import { db, teams, games, players, assignments, positions, sitOuts, shareLinks 
 import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { getFormationsByFormat } from "~/utils/formations";
+import {
+  calculatePositionChanges,
+  hasPositionChange,
+  hasPlayerChange,
+  getPlayerChange,
+  getChangeIndicatorColor,
+  getChangeDescription,
+  type PositionChange
+} from "~/utils/position-changes";
 import { useState, useEffect } from "react";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -127,20 +136,39 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 
-// Read-only position slot component
-function PositionSlot({ position, assignedPlayer }: { position: any; assignedPlayer: any }) {
+// Read-only position slot component with change indicators
+function PositionSlot({
+  position,
+  assignedPlayer,
+  previousQuarterPlayer,
+  hasChange = false,
+  changeDescription,
+  showChangeIndicators = true
+}: {
+  position: any;
+  assignedPlayer: any;
+  previousQuarterPlayer?: any;
+  hasChange?: boolean;
+  changeDescription?: string;
+  showChangeIndicators?: boolean;
+}) {
   return (
     <div
       className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10"
       style={{ left: `${100 - position.x}%`, top: `${position.y}%` }}
     >
       <div className="relative">
+        {/* 🟠 Change indicator ring */}
+        {showChangeIndicators && hasChange && (
+          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse"></div>
+        )}
         <div
           className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
             assignedPlayer
               ? 'bg-[var(--primary)] border-[var(--primary)] text-white'
               : 'bg-[var(--surface)] border-[var(--border)] border-dashed'
-          }`}
+          } ${showChangeIndicators && hasChange ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}
+          title={showChangeIndicators && hasChange && changeDescription ? changeDescription : undefined}
         >
           {assignedPlayer ? (
             <div className="text-center">
@@ -160,6 +188,13 @@ function PositionSlot({ position, assignedPlayer }: { position: any; assignedPla
             {assignedPlayer.name.length > 12 ? `${assignedPlayer.name.substring(0, 10)}...` : assignedPlayer.name}
           </div>
         )}
+
+        {/* Previous quarter player hint when position is empty */}
+        {!assignedPlayer && previousQuarterPlayer && (
+          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-gray-200/90 text-gray-600 text-[10px] sm:text-xs rounded px-1 sm:px-2 py-0.5 pointer-events-none z-10 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap border border-gray-300/50">
+            {previousQuarterPlayer.name.length > 12 ? `${previousQuarterPlayer.name.substring(0, 10)}...` : previousQuarterPlayer.name}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -171,6 +206,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   const [quarterAssignments, setQuarterAssignments] = useState<Map<number, Map<number, any>>>(new Map());
   const [sittingOut, setSittingOut] = useState<Map<number, Set<number>>>(new Map());
   const [absentInjured, setAbsentInjured] = useState<Map<number, Map<number, string>>>(new Map());
+  const [showChangeIndicators, setShowChangeIndicators] = useState(true);
 
   // Formation state per quarter
   const formationOptions = getFormationsByFormat(team.format);
@@ -256,6 +292,19 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   const currentSittingOut = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set() : new Set();
   const currentAbsentInjured = typeof currentQuarter === 'number' ? absentInjured.get(currentQuarter) || new Map() : new Map();
 
+  // Get previous quarter data for hints and change detection
+  const previousQuarter = currentQuarter > 1 ? currentQuarter - 1 : null;
+  const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
+  const previousSittingOut = previousQuarter ? sittingOut.get(previousQuarter) || new Set() : new Set();
+
+  // 🔄 Calculate position changes between quarters
+  const positionChanges = previousQuarter ? calculatePositionChanges(
+    previousLineup,
+    currentLineup,
+    previousSittingOut,
+    currentSittingOut
+  ) : [];
+
   // Get absent/injured players for current quarter
   const absentInjuredPlayersForQuarter = players.filter((player: any) => currentAbsentInjured.has(player.id));
 
@@ -274,6 +323,24 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
                 VIEW ONLY
               </span>
             </div>
+
+            {/* Position Changes Toggle - Public View */}
+            {currentQuarter > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowChangeIndicators(!showChangeIndicators)}
+                  className={`px-3 py-2 text-sm font-medium border rounded-lg transition flex items-center gap-2 ${
+                    showChangeIndicators
+                      ? 'border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)]'
+                  }`}
+                  title="Toggle position change indicators"
+                >
+                  <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"></span>
+                  <span className="hidden lg:inline">Changes</span>
+                </button>
+              </div>
+            )}
           </div>
           <p className="mt-2 text-[var(--muted)]">
             vs {game.opponent} • {new Date(game.gameDate).toLocaleDateString()}
@@ -317,29 +384,48 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
               <div className="space-y-2 min-h-[200px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50">
                 <div className="space-y-2">
                   {sittingOutPlayers.length > 0 ? (
-                    sittingOutPlayers.map((player: any) => (
-                      <div key={player.id} className="flex items-center gap-2 p-2 border border-[var(--border)] rounded bg-[var(--surface)]">
-                        {getImageUrl(player.profilePicture) ? (
-                          <img
-                            src={getImageUrl(player.profilePicture)!}
-                            alt={player.name}
-                            className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-                            {player.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm truncate">{player.name}</div>
-                          {player.preferredPositions && JSON.parse(player.preferredPositions).length > 0 && (
-                            <div className="text-xs text-[var(--muted)] truncate">
-                              {JSON.parse(player.preferredPositions).slice(0, 3).join(', ')}
+                    sittingOutPlayers.map((player: any) => {
+                      const playerChange = getPlayerChange(player.id, positionChanges);
+
+                      return (
+                        <div key={player.id} className="flex items-center gap-2 p-2 border border-[var(--border)] rounded bg-[var(--surface)]">
+                          {getImageUrl(player.profilePicture) ? (
+                            <img
+                              src={getImageUrl(player.profilePicture)!}
+                              alt={player.name}
+                              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
+                              {player.name.charAt(0).toUpperCase()}
                             </div>
                           )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate flex items-center gap-1">
+                              {player.name}
+                              {/* 🔄 Position Change Indicator */}
+                              {showChangeIndicators && playerChange && (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"
+                                  title={getChangeDescription(playerChange)}
+                                />
+                              )}
+                            </div>
+                            {player.preferredPositions && JSON.parse(player.preferredPositions).length > 0 && (
+                              <div className="text-xs text-[var(--muted)] truncate">
+                                {JSON.parse(player.preferredPositions).slice(0, 3).join(', ')}
+                              </div>
+                            )}
+                            {/* 📝 Change description */}
+                            {showChangeIndicators && playerChange && (
+                              <div className="text-xs text-orange-600 truncate">
+                                {getChangeDescription(playerChange)}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="text-sm text-amber-700 text-center py-4">
                       All players are on the field
@@ -392,6 +478,31 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
                 {currentFormationKey}
               </span>
             </div>
+
+            {/* 📍 Position Change Legend */}
+            {showChangeIndicators && positionChanges.length > 0 && currentQuarter > 1 && (
+              <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                      <span className="text-orange-700 font-medium">Position Changes from Q{previousQuarter}</span>
+                    </div>
+                    <span className="text-orange-600">
+                      {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowChangeIndicators(false)}
+                    className="text-orange-600 hover:text-orange-800 text-sm"
+                    title="Hide change indicators"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="relative bg-green-700 rounded-lg h-[28rem] sm:h-[32rem] w-full">
               {/* Field markings */}
               <div className="absolute inset-2 border-2 border-white rounded">
@@ -410,13 +521,27 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
               </div>
 
               {/* Position slots */}
-              {formationPositions.map((position: any) => (
-                <PositionSlot
-                  key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
-                  position={position}
-                  assignedPlayer={currentLineup.get(position.number)}
-                />
-              ))}
+              {formationPositions.map((position: any) => {
+                const positionChangesForThisPosition = positionChanges.filter(change =>
+                  change.toPosition === position.number || change.fromPosition === position.number
+                );
+                const hasChange = positionChangesForThisPosition.length > 0;
+                const changeDescription = positionChangesForThisPosition
+                  .map(change => getChangeDescription(change))
+                  .join('; ');
+
+                return (
+                  <PositionSlot
+                    key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
+                    position={position}
+                    assignedPlayer={currentLineup.get(position.number)}
+                    previousQuarterPlayer={previousLineup.get(position.number)}
+                    hasChange={hasChange}
+                    changeDescription={changeDescription}
+                    showChangeIndicators={showChangeIndicators}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
