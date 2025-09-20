@@ -5,6 +5,15 @@ import { db, teams, games, players, assignments, positions, sitOuts, shareLinks 
 import { eq, and, or, sql, lt } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { getFormationsByFormat } from "~/utils/formations";
+import {
+  calculatePositionChanges,
+  hasPositionChange,
+  hasPlayerChange,
+  getPlayerChange,
+  getChangeIndicatorColor,
+  getChangeDescription,
+  type PositionChange
+} from "~/utils/position-changes";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -445,7 +454,9 @@ function PlayerCard({
   onAssign,
   availablePositions,
   onSitOut,
-  quartersPlaying = 0
+  quartersPlaying = 0,
+  positionChange,
+  showChangeIndicators = true
 }: {
   player: any;
   onDragStart: (player: any) => void;
@@ -453,6 +464,8 @@ function PlayerCard({
   availablePositions?: any[];
   onSitOut?: (player: any) => void;
   quartersPlaying?: number;
+  positionChange?: PositionChange;
+  showChangeIndicators?: boolean;
 }) {
   const preferredPositions = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
   const [showDropdown, setShowDropdown] = useState(false);
@@ -526,10 +539,25 @@ function PlayerCard({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{player.name}</div>
+          <div className="font-medium text-sm truncate flex items-center gap-1">
+            {player.name}
+            {/* 🔄 Position Change Indicator */}
+            {showChangeIndicators && positionChange && (
+              <span
+                className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"
+                title={getChangeDescription(positionChange)}
+              />
+            )}
+          </div>
           {preferredPositions.length > 0 && (
             <div className="text-xs text-[var(--muted)] truncate">
               {preferredPositions.slice(0, 3).join(', ')}
+            </div>
+          )}
+          {/* 📝 Change description tooltip */}
+          {showChangeIndicators && positionChange && (
+            <div className="text-xs text-orange-600 truncate">
+              {getChangeDescription(positionChange)}
             </div>
           )}
         </div>
@@ -594,7 +622,10 @@ function PositionSlot({
   availablePlayers,
   onAssignPlayer,
   openDropdownPosition,
-  setOpenDropdownPosition
+  setOpenDropdownPosition,
+  hasChange = false,
+  changeDescription,
+  showChangeIndicators = true
 }: {
   position: any;
   assignedPlayer: any;
@@ -606,6 +637,9 @@ function PositionSlot({
   onAssignPlayer?: (position: any, player: any) => void;
   openDropdownPosition: number | null;
   setOpenDropdownPosition: (position: number | null) => void;
+  hasChange?: boolean;
+  changeDescription?: string;
+  showChangeIndicators?: boolean;
 }) {
   const showDropdown = openDropdownPosition === position.number;
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -674,6 +708,10 @@ function PositionSlot({
       data-position={position.number}
     >
       <div className="relative">
+        {/* 🟠 Change indicator ring */}
+        {showChangeIndicators && hasChange && (
+          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse"></div>
+        )}
         <div
           onDragOver={handleDragOver}
           onDrop={handleDrop}
@@ -682,7 +720,8 @@ function PositionSlot({
             assignedPlayer
               ? 'bg-[var(--primary)] border-[var(--primary)] text-white hover:bg-[var(--primary-600)]'
               : 'bg-[var(--surface)] border-[var(--border)] border-dashed hover:border-[var(--primary)]'
-          }`}
+          } ${showChangeIndicators && hasChange ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}
+          title={showChangeIndicators && hasChange && changeDescription ? changeDescription : undefined}
         >
           {assignedPlayer ? (
             <div className="text-center">
@@ -783,6 +822,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
+  const [showChangeIndicators, setShowChangeIndicators] = useState(true);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -1121,10 +1161,19 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   // Get previous quarter data for hints
   const previousQuarter = currentQuarter > 1 ? currentQuarter - 1 : null;
   const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
-  
+  const previousSittingOut = previousQuarter ? sittingOut.get(previousQuarter) || new Set() : new Set();
+
+  // 🔄 Calculate position changes between quarters
+  const positionChanges = previousQuarter ? calculatePositionChanges(
+    previousLineup,
+    currentLineup,
+    previousSittingOut,
+    currentSittingOut
+  ) : [];
+
   // Get absent/injured players for current quarter
   const absentInjuredPlayersForQuarter = players.filter((player: any) => currentAbsentInjured.has(player.id));
-  
+
   // Get sitting out players for current quarter (these are now the "available" players)
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
 
@@ -1240,6 +1289,22 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
+              {/* Position Changes Toggle */}
+              {currentQuarter > 1 && (
+                <button
+                  onClick={() => setShowChangeIndicators(!showChangeIndicators)}
+                  className={`px-3 py-2 text-sm font-medium border rounded-lg transition flex items-center gap-2 ${
+                    showChangeIndicators
+                      ? 'border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                      : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)]'
+                  }`}
+                  title="Toggle position change indicators"
+                >
+                  <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"></span>
+                  <span className="hidden lg:inline">Changes</span>
+                </button>
+              )}
+
               {/* Share Button */}
               <button
                 onClick={handleShare}
@@ -1317,6 +1382,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         quartersPlaying === 2 ? 'bg-yellow-500 text-white' :
                         'bg-green-500 text-white';
 
+                      const playerChange = getPlayerChange(player.id, positionChanges);
+
                       return (
                         <div key={player.id} className="relative">
                           <PlayerCard
@@ -1326,6 +1393,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                             availablePositions={getAvailablePositions()}
                             onSitOut={handleSitOut}
                             quartersPlaying={quartersPlaying}
+                            positionChange={playerChange}
+                            showChangeIndicators={showChangeIndicators}
                           />
                           {/* Quick absent/injured buttons and quarters indicator */}
                           <div className="absolute top-1 right-1 flex gap-1">
@@ -1431,6 +1500,31 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 </button>
               </div>
             </div>
+
+            {/* 📍 Position Change Legend */}
+            {showChangeIndicators && positionChanges.length > 0 && currentQuarter > 1 && (
+              <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                      <span className="text-orange-700 font-medium">Position Changes from Q{previousQuarter}</span>
+                    </div>
+                    <span className="text-orange-600">
+                      {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowChangeIndicators(false)}
+                    className="text-orange-600 hover:text-orange-800 text-sm"
+                    title="Hide change indicators"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="relative bg-green-700 rounded-lg h-[28rem] sm:h-[32rem] w-full">
               {/* Field markings */}
               <div className="absolute inset-2 border-2 border-white rounded">
@@ -1449,21 +1543,34 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               </div>
               
               {/* Position slots */}
-              {formationPositions.map((position: any) => (
-                <PositionSlot
-                  key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
-                  position={position}
-                  assignedPlayer={currentLineup.get(position.number)}
-                  previousQuarterPlayer={previousLineup.get(position.number)}
-                  onDrop={handlePositionAssignment}
-                  onClear={handleClearPosition}
-                  onSitOut={handleSitOut}
-                  availablePlayers={sittingOutPlayers}
-                  onAssignPlayer={handlePositionAssignment}
-                  openDropdownPosition={openDropdownPosition}
-                  setOpenDropdownPosition={setOpenDropdownPosition}
-                />
-              ))}
+              {formationPositions.map((position: any) => {
+                const positionChangesForThisPosition = positionChanges.filter(change =>
+                  change.toPosition === position.number || change.fromPosition === position.number
+                );
+                const hasChange = positionChangesForThisPosition.length > 0;
+                const changeDescription = positionChangesForThisPosition
+                  .map(change => getChangeDescription(change))
+                  .join('; ');
+
+                return (
+                  <PositionSlot
+                    key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
+                    position={position}
+                    assignedPlayer={currentLineup.get(position.number)}
+                    previousQuarterPlayer={previousLineup.get(position.number)}
+                    onDrop={handlePositionAssignment}
+                    onClear={handleClearPosition}
+                    onSitOut={handleSitOut}
+                    availablePlayers={sittingOutPlayers}
+                    onAssignPlayer={handlePositionAssignment}
+                    openDropdownPosition={openDropdownPosition}
+                    setOpenDropdownPosition={setOpenDropdownPosition}
+                    hasChange={hasChange}
+                    changeDescription={changeDescription}
+                    showChangeIndicators={showChangeIndicators}
+                  />
+                );
+              })}
             </div>
           </div>
           </div>
