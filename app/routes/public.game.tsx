@@ -160,7 +160,7 @@ function PositionSlot({
       <div className="relative">
         {/* 🟠 Change indicator ring */}
         {showChangeIndicators && hasChange && (
-          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse"></div>
+          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse pointer-events-none"></div>
         )}
         <div
           className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
