@@ -15,6 +15,7 @@ import {
   type PositionChange
 } from "~/utils/position-changes";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { AIAssistantCoach } from "~/components/AIAssistantCoach";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -226,21 +227,76 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
   
+  if (action === "bulkAssign") {
+    try {
+      const assignmentsData = JSON.parse(formData.get("assignments") as string);
+
+      // Clear all existing non-sitting-out assignments for this game
+      await db.delete(assignments).where(
+        and(
+          eq(assignments.gameId, gameId),
+          eq(assignments.isSittingOut, false)
+        )
+      );
+
+      // Insert all new assignments
+      if (assignmentsData.length > 0) {
+        await db.insert(assignments).values(assignmentsData);
+      }
+
+      return data({ success: true, action: "bulkAssign" });
+    } catch (error) {
+      console.error("Error bulk assigning players:", error);
+      return data(
+        { success: false, error: "Failed to assign players" },
+        { status: 500 }
+      );
+    }
+  }
+
   if (action === "clearPosition") {
     try {
       const positionNumber = parseInt(formData.get("positionNumber") as string);
       const quarter = parseInt(formData.get("quarter") as string);
-      
-      // Remove assignment for this position
-      await db.delete(assignments).where(
-        and(
-          eq(assignments.gameId, gameId),
-          eq(assignments.positionNumber, positionNumber),
-          eq(assignments.quarter, quarter),
-          eq(assignments.isSittingOut, false)
-        )
-      );
-      
+      const playerIdStr = formData.get("playerId") as string | null;
+
+      if (positionNumber === 0) {
+        // Special case: clearing a sitting out assignment (position 0)
+        if (playerIdStr) {
+          // If playerId is provided, only remove that specific player's sitting out assignment
+          const playerId = parseInt(playerIdStr);
+          await db.delete(assignments).where(
+            and(
+              eq(assignments.gameId, gameId),
+              eq(assignments.playerId, playerId),
+              eq(assignments.positionNumber, 0),
+              eq(assignments.quarter, quarter),
+              eq(assignments.isSittingOut, true)
+            )
+          );
+        } else {
+          // Legacy: if no playerId, remove ALL sitting out assignments for this quarter
+          await db.delete(assignments).where(
+            and(
+              eq(assignments.gameId, gameId),
+              eq(assignments.positionNumber, 0),
+              eq(assignments.quarter, quarter),
+              eq(assignments.isSittingOut, true)
+            )
+          );
+        }
+      } else {
+        // Remove assignment for this field position
+        await db.delete(assignments).where(
+          and(
+            eq(assignments.gameId, gameId),
+            eq(assignments.positionNumber, positionNumber),
+            eq(assignments.quarter, quarter),
+            eq(assignments.isSittingOut, false)
+          )
+        );
+      }
+
       return data({ success: true, action: "clearPosition" });
     } catch (error) {
       console.error("Error clearing position:", error);
@@ -436,7 +492,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
   }
-  
+
+  if (action === "clearLineup") {
+    try {
+      // Delete all assignments for this game (both field and sitting out)
+      await db.delete(assignments).where(eq(assignments.gameId, gameId));
+
+      return data({ success: true, action: "clearLineup" });
+    } catch (error) {
+      console.error("Error clearing lineup:", error);
+      return data(
+        { success: false, error: "Failed to clear lineup" },
+        { status: 500 }
+      );
+    }
+  }
+
   return data({ success: false, error: "Invalid action" }, { status: 400 });
 }
 
@@ -593,18 +664,6 @@ function PlayerCard({
                 );
               })}
             </div>
-            {onSitOut && (
-              <>
-                <div className="border-t border-[var(--border)] mt-2 pt-2">
-                  <button
-                    onClick={handleSitOutClick}
-                    className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-red-50 text-red-600 transition"
-                  >
-                    🪑 Sit Out This Quarter
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}
@@ -625,7 +684,8 @@ function PositionSlot({
   setOpenDropdownPosition,
   hasChange = false,
   changeDescription,
-  showChangeIndicators = true
+  showChangeIndicators = true,
+  quartersSittingOut = 0
 }: {
   position: any;
   assignedPlayer: any;
@@ -640,6 +700,7 @@ function PositionSlot({
   hasChange?: boolean;
   changeDescription?: string;
   showChangeIndicators?: boolean;
+  quartersSittingOut?: number;
 }) {
   const showDropdown = openDropdownPosition === position.number;
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -735,6 +796,21 @@ function PositionSlot({
           )}
         </div>
         
+        {/* Sitting out badge indicator */}
+        {assignedPlayer && quartersSittingOut !== undefined && (
+          <div
+            className={`absolute -top-1 -right-1 w-5 h-4 text-[9px] font-bold rounded flex items-center justify-center pointer-events-none z-30 ${
+              quartersSittingOut === 0 ? 'bg-green-500 text-white' :
+              quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
+              quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
+              'bg-red-500 text-white'
+            }`}
+            title={`Sitting out ${quartersSittingOut} of 4 quarters`}
+          >
+            {quartersSittingOut}/4
+          </div>
+        )}
+
         {/* Player name below position circle */}
         {assignedPlayer && (
           <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-1 sm:px-2 py-1 pointer-events-none z-20 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap">
@@ -761,14 +837,22 @@ function PositionSlot({
                   <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
                     {assignedPlayer.name}
                   </div>
-                  {onSitOut && (
+                  <div className="border-t border-[var(--border)] mt-2 pt-2 space-y-1">
                     <button
-                      onClick={handleSitOutClick}
-                      className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-red-50 text-red-600 transition"
+                      onClick={handleClearClick}
+                      className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-blue-50 text-blue-600 transition"
                     >
-                      🪑 Move to Sit Out
+                      ↑ Move to Available Players
                     </button>
-                  )}
+                    {onSitOut && (
+                      <button
+                        onClick={handleSitOutClick}
+                        className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-amber-50 text-amber-700 transition"
+                      >
+                        🪑 Move to Substitutes
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : (
                 <>
@@ -823,6 +907,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
   const [showChangeIndicators, setShowChangeIndicators] = useState(true);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -915,45 +1000,34 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     const quarterMap = new Map<number, Map<number, any>>();
     const sitOutMap = new Map<number, Set<number>>();
     const absentInjuredMap = new Map<number, Map<number, string>>();
-    
-    // Initialize all quarters with all players sitting out by default
+
+    // Initialize all quarters with empty sets (players start as "available")
     for (let q = 1; q <= totalQuarters; q++) {
       quarterMap.set(q, new Map());
-      const allPlayerIds = new Set(players.map((p: any) => p.id));
-      sitOutMap.set(q, allPlayerIds);
+      sitOutMap.set(q, new Set());
       absentInjuredMap.set(q, new Map());
     }
-    
+
     // Load absent/injured players first
     absentInjuredPlayers.forEach((absentPlayer: any) => {
       const quarter = absentPlayer.quarter || 1;
       const quarterAbsentInjured = absentInjuredMap.get(quarter) || new Map();
       quarterAbsentInjured.set(absentPlayer.playerId, absentPlayer.reason);
       absentInjuredMap.set(quarter, quarterAbsentInjured);
-      
-      // Remove from sitting out as they are absent/injured (different category)
-      const quarterSitOuts = sitOutMap.get(quarter) || new Set();
-      quarterSitOuts.delete(absentPlayer.playerId);
-      sitOutMap.set(quarter, quarterSitOuts);
     });
-    
-    // Load existing assignments and override defaults
+
+    // Load existing assignments
     assignments.forEach((assignment: any) => {
       const quarter = assignment.quarter || 1;
       const player = players.find((p: any) => p.id === assignment.playerId);
-      
+
       if (assignment.isSittingOut) {
-        // Player is explicitly sitting out (already in sitOut by default)
+        // Player is explicitly sitting out
         const quarterSitOuts = sitOutMap.get(quarter) || new Set();
         quarterSitOuts.add(assignment.playerId);
         sitOutMap.set(quarter, quarterSitOuts);
       } else {
-        // Player is assigned to field position - remove from sitting out
-        const quarterSitOuts = sitOutMap.get(quarter) || new Set();
-        quarterSitOuts.delete(assignment.playerId);
-        sitOutMap.set(quarter, quarterSitOuts);
-        
-        // Add to field position
+        // Player is assigned to field position
         const quarterLineup = quarterMap.get(quarter) || new Map();
         quarterLineup.set(assignment.positionNumber, {
           playerId: assignment.playerId,
@@ -962,7 +1036,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
         quarterMap.set(quarter, quarterLineup);
       }
     });
-    
+
     setQuarterAssignments(quarterMap);
     setSittingOut(sitOutMap);
     setAbsentInjured(absentInjuredMap);
@@ -1140,17 +1214,24 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   const handleUnsitPlayer = (playerId: number) => {
     if (typeof currentQuarter !== 'number') return;
-    
+
     // Optimistic update - update local state immediately
     const newSittingOut = new Map(sittingOut);
     const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
     quarterSitOuts.delete(playerId);
     newSittingOut.set(currentQuarter, quarterSitOuts);
     setSittingOut(newSittingOut);
-    
-    // Note: This removes the player from sitting out but doesn't assign them anywhere
-    // The player becomes "available" but not assigned to any position
-    // This functionality might need to be handled differently in the UI
+
+    // Make server request to clear the sitting out assignment
+    fetcher.submit(
+      {
+        _action: "clearPosition",
+        positionNumber: "0",
+        quarter: currentQuarter.toString(),
+        playerId: playerId.toString(), // Add playerId so we only delete this specific player
+      },
+      { method: "post" }
+    );
   };
   
   // Get current quarter data
@@ -1174,7 +1255,19 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   // Get absent/injured players for current quarter
   const absentInjuredPlayersForQuarter = players.filter((player: any) => currentAbsentInjured.has(player.id));
 
-  // Get sitting out players for current quarter (these are now the "available" players)
+  // Get available players (not on field, not sitting out, not absent/injured)
+  const availablePlayers = players.filter((player: any) => {
+    // Check if player is on the field in current quarter
+    const isOnField = Array.from(currentLineup.values()).some(assigned => assigned.playerId === player.id);
+    // Check if player is sitting out
+    const isSittingOut = currentSittingOut.has(player.id);
+    // Check if player is absent/injured
+    const isAbsentInjured = currentAbsentInjured.has(player.id);
+
+    return !isOnField && !isSittingOut && !isAbsentInjured;
+  });
+
+  // Get sitting out players for current quarter (explicitly marked as subs)
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
 
   // Calculate how many quarters each player is playing
@@ -1192,7 +1285,18 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     }
     return count;
   };
-  
+
+  const getPlayerQuartersSittingOut = (playerId: number): number => {
+    let count = 0;
+    for (let q = 1; q <= totalQuarters; q++) {
+      const qSitOuts = sittingOut.get(q) || new Set();
+      if (qSitOuts.has(playerId)) {
+        count++;
+      }
+    }
+    return count;
+  };
+
   // Get available positions for current quarter (not already assigned)
   const getAvailablePositions = () => {
     return formationPositions.filter((pos: any) => !currentLineup.has(pos.number));
@@ -1229,6 +1333,72 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
       navigator.clipboard.writeText(shareUrl);
       // You could add a toast notification here
     }
+  };
+
+  const handleClearLineup = () => {
+    if (confirm('Are you sure you want to clear the entire lineup? This will remove all player assignments from all quarters.')) {
+      fetcher.submit(
+        { _action: "clearLineup" },
+        { method: "post" }
+      );
+    }
+  };
+
+  // Handle AI lineup acceptance
+  const handleAcceptAILineup = (quarters: Array<{ number: number; completed: boolean; players: Record<number, number> }>) => {
+    // Build all assignments for bulk insert
+    const allAssignments: any[] = [];
+
+    quarters.forEach((quarter) => {
+      Object.entries(quarter.players).forEach(([positionStr, playerId]) => {
+        const positionNumber = parseInt(positionStr);
+        const position = positions.find((p: any) => p.number === positionNumber);
+
+        allAssignments.push({
+          gameId: game.id,
+          playerId: playerId,
+          positionNumber: positionNumber,
+          positionName: position?.abbreviation || '',
+          quarter: quarter.number,
+          isSittingOut: false,
+        });
+      });
+    });
+
+    // Submit all assignments in a single request
+    fetcher.submit(
+      {
+        _action: "bulkAssign",
+        assignments: JSON.stringify(allAssignments),
+      },
+      { method: "post" }
+    );
+
+    // Update local state optimistically
+    const newQuarterAssignments = new Map(quarterAssignments);
+    const newSittingOut = new Map(sittingOut);
+
+    quarters.forEach((quarter) => {
+      const quarterLineup = new Map<number, any>();
+
+      Object.entries(quarter.players).forEach(([positionStr, playerId]) => {
+        const positionNumber = parseInt(positionStr);
+        const player = players.find((p: any) => p.id === playerId);
+
+        if (player) {
+          quarterLineup.set(positionNumber, {
+            playerId: player.id,
+            name: player.name,
+          });
+        }
+      });
+
+      newQuarterAssignments.set(quarter.number, quarterLineup);
+      newSittingOut.set(quarter.number, new Set());
+    });
+
+    setQuarterAssignments(newQuarterAssignments);
+    setSittingOut(newSittingOut);
   };
   
   return (
@@ -1313,11 +1483,10 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m9.032 4.026a9.001 9.001 0 01-7.432 0m9.032-4.026A9.001 9.001 0 0112 3c-4.474 0-8.268 3.12-9.032 7.326m0 0A9.001 9.001 0 0012 21c4.474 0 8.268-3.12 9.032-7.326M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <span className="hidden sm:inline">Share Lineup</span>
-                <span className="sm:hidden">Share</span>
+                <span>Share</span>
               </button>
 
-              {/* Playing Time Summary Button */}
+              {/* Summary Button */}
               <button
                 onClick={() => setShowOverview(true)}
                 className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
@@ -1325,8 +1494,30 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                <span className="hidden sm:inline">Playing Time Summary</span>
-                <span className="sm:hidden">Summary</span>
+                <span>Summary</span>
+              </button>
+
+              {/* Clear Lineup Button */}
+              <button
+                onClick={handleClearLineup}
+                className="px-4 py-2 text-sm font-medium border border-red-500 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Clear</span>
+              </button>
+
+              {/* AI Assistant Coach Button */}
+              <button
+                onClick={() => setShowAIAssistant(true)}
+                className="px-4 py-2 text-sm font-medium border border-purple-500 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <span className="hidden lg:inline">AI Assistant</span>
+                <span className="lg:hidden">AI</span>
               </button>
             </div>
           </div>
@@ -1366,21 +1557,21 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
         
         {/* Main lineup content */}
           <div className="flex flex-col lg:grid lg:gap-8 lg:grid-cols-3 space-y-6 lg:space-y-0">
-            {/* Substitutes / Available Players */}
+            {/* Available Players and Substitutes */}
             <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
-            {/* Subs - Sitting Out Players */}
+            {/* Available Players - Not yet assigned */}
             <div>
-              <h2 className="text-lg font-semibold mb-4">Substitutes - Q{currentQuarter}</h2>
-              <div className="space-y-2 min-h-[200px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50">
+              <h2 className="text-lg font-semibold mb-4">Available Players - Q{currentQuarter}</h2>
+              <div className="space-y-2 min-h-[150px] border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50">
                 <div className="space-y-2">
-                  {sittingOutPlayers.length > 0 ? (
-                    sittingOutPlayers.map((player: any) => {
-                      const quartersPlaying = getPlayerQuartersPlaying(player.id);
-                      const quartersBgColor =
-                        quartersPlaying === 0 ? 'bg-red-500 text-white' :
-                        quartersPlaying === 1 ? 'bg-orange-500 text-white' :
-                        quartersPlaying === 2 ? 'bg-yellow-500 text-white' :
-                        'bg-green-500 text-white';
+                  {availablePlayers.length > 0 ? (
+                    availablePlayers.map((player: any) => {
+                      const quartersSittingOut = getPlayerQuartersSittingOut(player.id);
+                      const subsBgColor =
+                        quartersSittingOut === 0 ? 'bg-green-500 text-white' :
+                        quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
+                        quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
+                        'bg-red-500 text-white';
 
                       const playerChange = getPlayerChange(player.id, positionChanges);
 
@@ -1392,17 +1583,102 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                             onAssign={handlePositionAssignment}
                             availablePositions={getAvailablePositions()}
                             onSitOut={handleSitOut}
-                            quartersPlaying={quartersPlaying}
+                            quartersPlaying={quartersSittingOut}
                             positionChange={playerChange}
                             showChangeIndicators={showChangeIndicators}
                           />
-                          {/* Quick absent/injured buttons and quarters indicator */}
+                          {/* Quick absent/injured buttons and subs indicator */}
                           <div className="absolute top-1 right-1 flex gap-1">
                             <div
-                              className={`w-7 h-5 text-[10px] font-bold ${quartersBgColor} rounded flex items-center justify-center`}
-                              title={`Playing ${quartersPlaying} out of 4 quarters`}
+                              className={`w-7 h-5 text-[10px] font-bold ${subsBgColor} rounded flex items-center justify-center`}
+                              title={`Sitting out ${quartersSittingOut} of 4 quarters`}
                             >
-                              {quartersPlaying}/4
+                              {quartersSittingOut}/4
+                            </div>
+                            <button
+                              onClick={() => handleMarkAbsentInjured(player, 'absent')}
+                              className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
+                              title="Mark as Absent"
+                            >
+                              A
+                            </button>
+                            <button
+                              onClick={() => handleMarkAbsentInjured(player, 'injured')}
+                              className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
+                              title="Mark as Injured"
+                            >
+                              I
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-blue-700 text-center py-4">
+                      All players assigned
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Subs - Sitting Out Players */}
+            <div>
+              <h2 className="text-lg font-semibold mb-4">Substitutes - Q{currentQuarter}</h2>
+              <div
+                className="space-y-2 min-h-[150px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const playerData = e.dataTransfer.getData('player');
+                  if (playerData) {
+                    const player = JSON.parse(playerData);
+                    handleSitOut(player);
+                  }
+                }}
+              >
+                <div className="space-y-2">
+                  {sittingOutPlayers.length > 0 ? (
+                    sittingOutPlayers.map((player: any) => {
+                      const quartersSittingOut = getPlayerQuartersSittingOut(player.id);
+                      const subsBgColor =
+                        quartersSittingOut === 0 ? 'bg-green-500 text-white' :
+                        quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
+                        quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
+                        'bg-red-500 text-white';
+
+                      const playerChange = getPlayerChange(player.id, positionChanges);
+
+                      return (
+                        <div key={player.id} className="relative">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <PlayerCard
+                                player={player}
+                                onDragStart={handleDragStart}
+                                onAssign={handlePositionAssignment}
+                                availablePositions={getAvailablePositions()}
+                                onSitOut={handleSitOut}
+                                quartersPlaying={quartersSittingOut}
+                                positionChange={playerChange}
+                                showChangeIndicators={showChangeIndicators}
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleUnsitPlayer(player.id)}
+                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition flex items-center justify-center shrink-0"
+                              title="Move back to Available"
+                            >
+                              ↑
+                            </button>
+                          </div>
+                          {/* Quick absent/injured buttons and subs indicator */}
+                          <div className="absolute top-1 right-12 flex gap-1">
+                            <div
+                              className={`w-7 h-5 text-[10px] font-bold ${subsBgColor} rounded flex items-center justify-center`}
+                              title={`Sitting out ${quartersSittingOut} of 4 quarters`}
+                            >
+                              {quartersSittingOut}/4
                             </div>
                             <button
                               onClick={() => handleMarkAbsentInjured(player, 'absent')}
@@ -1424,7 +1700,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     })
                   ) : (
                     <p className="text-sm text-amber-700 text-center py-4">
-                      All players are on the field
+                      No substitutes for this quarter
                     </p>
                   )}
                 </div>
@@ -1552,11 +1828,14 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   .map(change => getChangeDescription(change))
                   .join('; ');
 
+                const assignedPlayer = currentLineup.get(position.number);
+                const quartersSittingOut = assignedPlayer ? getPlayerQuartersSittingOut(assignedPlayer.playerId) : 0;
+
                 return (
                   <PositionSlot
                     key={`${currentQuarter}-${currentFormationIndex}-${position.number}-${position.x}-${position.y}`}
                     position={position}
-                    assignedPlayer={currentLineup.get(position.number)}
+                    assignedPlayer={assignedPlayer}
                     previousQuarterPlayer={previousLineup.get(position.number)}
                     onDrop={handlePositionAssignment}
                     onClear={handleClearPosition}
@@ -1568,6 +1847,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     hasChange={hasChange}
                     changeDescription={changeDescription}
                     showChangeIndicators={showChangeIndicators}
+                    quartersSittingOut={quartersSittingOut}
                   />
                 );
               })}
@@ -1622,44 +1902,96 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               {/* Summary Content */}
               <div className="space-y-4">
                 <p className="text-sm text-gray-600 mb-4">
-                  Players marked as Absent/Injured are excluded from AYSO minimum playing time requirements.
+                  Players marked as Absent/Injured in any quarter are exempt from AYSO minimum playing time requirements.
                 </p>
-                
+
                 <div className="space-y-2">
-                  {players.map((player: any) => {
-                    let quarterCount = 0;
-                    let sitOutCount = 0;
-                    let absentInjuredCount = 0;
-                    
-                    for (let q = 1; q <= totalQuarters; q++) {
-                      const qLineup = quarterAssignments.get(q) || new Map();
-                      const qSitOuts = sittingOut.get(q) || new Set();
-                      const qAbsentInjured = absentInjured.get(q) || new Map();
-                      
-                      const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
-                      const isSittingOut = qSitOuts.has(player.id);
-                      const isAbsentInjured = qAbsentInjured.has(player.id);
-                      
-                      if (isPlaying) quarterCount++;
-                      if (isSittingOut) sitOutCount++;
-                      if (isAbsentInjured) absentInjuredCount++;
-                    }
-                    
-                    // AYSO compliance: minimum 2 quarters playing, max 1 quarter sitting (absent/injured doesn't count against AYSO rules)
-                    const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
-                    
-                    return (
-                      <div key={player.id} className={`text-sm flex justify-between p-3 rounded-lg ${!isCompliant ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                        <span className="font-medium">{player.name}</span>
-                        <span className="text-right">
-                          <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
-                          {absentInjuredCount > 0 && <div className="text-xs">Absent/Injured: {absentInjuredCount}/4</div>}
-                          {!isCompliant && <span className="text-red-600 font-bold"> ⚠️ Non-compliant</span>}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {players
+                    .map((player: any) => {
+                      let quarterCount = 0;
+                      let sitOutCount = 0;
+                      let absentInjuredCount = 0;
+
+                      for (let q = 1; q <= totalQuarters; q++) {
+                        const qLineup = quarterAssignments.get(q) || new Map();
+                        const qSitOuts = sittingOut.get(q) || new Set();
+                        const qAbsentInjured = absentInjured.get(q) || new Map();
+
+                        const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
+                        const isSittingOut = qSitOuts.has(player.id);
+                        const isAbsentInjured = qAbsentInjured.has(player.id);
+
+                        if (isPlaying) quarterCount++;
+                        if (isSittingOut) sitOutCount++;
+                        if (isAbsentInjured) absentInjuredCount++;
+                      }
+
+                      return { player, quarterCount, sitOutCount, absentInjuredCount };
+                    })
+                    .filter(({ absentInjuredCount }) => absentInjuredCount === 0)
+                    .map(({ player, quarterCount, sitOutCount, absentInjuredCount }) => {
+                      // AYSO compliance: minimum 2 quarters playing, max 1 quarter sitting (absent/injured doesn't count against AYSO rules)
+                      const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
+
+                      return (
+                        <div key={player.id} className={`text-sm flex justify-between p-3 rounded-lg ${!isCompliant ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                          <span className="font-medium">{player.name}</span>
+                          <span className="text-right">
+                            <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
+                            {!isCompliant && <span className="text-red-600 font-bold"> ⚠️ Non-compliant</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
                 </div>
+
+                {/* Exempt Players Section */}
+                {players.some((player: any) => {
+                  let absentInjuredCount = 0;
+                  for (let q = 1; q <= totalQuarters; q++) {
+                    const qAbsentInjured = absentInjured.get(q) || new Map();
+                    if (qAbsentInjured.has(player.id)) absentInjuredCount++;
+                  }
+                  return absentInjuredCount > 0;
+                }) && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Exempt Players</h3>
+                    <div className="space-y-2">
+                      {players
+                        .map((player: any) => {
+                          let quarterCount = 0;
+                          let sitOutCount = 0;
+                          let absentInjuredCount = 0;
+
+                          for (let q = 1; q <= totalQuarters; q++) {
+                            const qLineup = quarterAssignments.get(q) || new Map();
+                            const qSitOuts = sittingOut.get(q) || new Set();
+                            const qAbsentInjured = absentInjured.get(q) || new Map();
+
+                            const isPlaying = Array.from(qLineup.values()).some(a => a.playerId === player.id);
+                            const isSittingOut = qSitOuts.has(player.id);
+                            const isAbsentInjured = qAbsentInjured.has(player.id);
+
+                            if (isPlaying) quarterCount++;
+                            if (isSittingOut) sitOutCount++;
+                            if (isAbsentInjured) absentInjuredCount++;
+                          }
+
+                          return { player, quarterCount, sitOutCount, absentInjuredCount };
+                        })
+                        .filter(({ absentInjuredCount }) => absentInjuredCount > 0)
+                        .map(({ player, quarterCount, sitOutCount, absentInjuredCount }) => (
+                          <div key={player.id} className="text-sm flex justify-between p-3 rounded-lg bg-gray-100 text-gray-600 border border-gray-300">
+                            <span className="font-medium">{player.name}</span>
+                            <span className="text-right">
+                              <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
+                              <div className="text-xs">Absent/Injured: {absentInjuredCount}/4</div>
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h3 className="text-sm font-semibold text-blue-800 mb-2">AYSO Fair Play Rules</h3>
@@ -1725,6 +2057,15 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       )}
+
+      {/* AI Assistant Coach Modal */}
+      <AIAssistantCoach
+        isOpen={showAIAssistant}
+        onClose={() => setShowAIAssistant(false)}
+        gameId={game.id}
+        teamId={team.id}
+        onAcceptLineup={handleAcceptAILineup}
+      />
     </div>
   );
 }
