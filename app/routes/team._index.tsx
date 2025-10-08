@@ -69,7 +69,7 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
         {/* Team header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">

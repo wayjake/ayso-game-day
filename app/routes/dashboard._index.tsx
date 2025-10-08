@@ -166,7 +166,7 @@ function OverviewDashboard({ loaderData }: { loaderData: any }) {
 
   return (
     <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
         {/* Welcome header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">
@@ -309,7 +309,7 @@ function TeamDashboard({ loaderData }: { loaderData: any }) {
 
   return (
     <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
         {/* Team header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">

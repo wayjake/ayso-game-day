@@ -685,7 +685,8 @@ function PositionSlot({
   hasChange = false,
   changeDescription,
   showChangeIndicators = true,
-  quartersSittingOut = 0
+  quartersSittingOut = 0,
+  onPositionDragStart
 }: {
   position: any;
   assignedPlayer: any;
@@ -701,20 +702,30 @@ function PositionSlot({
   changeDescription?: string;
   showChangeIndicators?: boolean;
   quartersSittingOut?: number;
+  onPositionDragStart?: (player: any, fromPosition: number) => void;
 }) {
   const showDropdown = openDropdownPosition === position.number;
   const dropdownRef = useRef<HTMLDivElement>(null);
-  
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
-  
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const playerData = e.dataTransfer.getData('player');
     if (playerData) {
       const player = JSON.parse(playerData);
       onDrop(position, player);
+    }
+  };
+
+  const handlePositionDragStart = (e: React.DragEvent) => {
+    if (assignedPlayer && onPositionDragStart) {
+      const player = { id: assignedPlayer.playerId, name: assignedPlayer.name };
+      e.dataTransfer.setData('player', JSON.stringify(player));
+      e.dataTransfer.setData('fromPosition', position.number.toString());
+      onPositionDragStart(player, position.number);
     }
   };
   
@@ -774,13 +785,15 @@ function PositionSlot({
           <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse pointer-events-none"></div>
         )}
         <div
+          draggable={!!assignedPlayer}
+          onDragStart={handlePositionDragStart}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           onClick={handleClick}
-          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
             assignedPlayer
-              ? 'bg-[var(--primary)] border-[var(--primary)] text-white hover:bg-[var(--primary-600)]'
-              : 'bg-[var(--surface)] border-[var(--border)] border-dashed hover:border-[var(--primary)]'
+              ? 'bg-[var(--primary)] border-[var(--primary)] text-white hover:bg-[var(--primary-600)] cursor-grab active:cursor-grabbing'
+              : 'bg-[var(--surface)] border-[var(--border)] border-dashed hover:border-[var(--primary)] cursor-pointer'
           } ${showChangeIndicators && hasChange ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}
           title={showChangeIndicators && hasChange && changeDescription ? changeDescription : undefined}
         >
@@ -1048,45 +1061,95 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   const handlePositionAssignment = (position: any, player: any) => {
     if (typeof currentQuarter !== 'number') return;
-    
+
     // Optimistic update - update local state immediately
     const newQuarterAssignments = new Map(quarterAssignments);
     const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
-    
-    // Remove player from any existing position in this quarter
+
+    // Check if there's already a player at the target position
+    const existingPlayerAtPosition = currentLineup.get(position.number);
+
+    // Find if player is coming from another position
+    let playerCurrentPosition = null;
     for (const [pos, assigned] of currentLineup.entries()) {
       if (assigned.playerId === player.id) {
-        currentLineup.delete(pos);
+        playerCurrentPosition = pos;
+        break;
       }
     }
-    
-    // Remove player from sitting out if they were there
-    const newSittingOut = new Map(sittingOut);
-    const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
-    quarterSitOuts.delete(player.id);
-    newSittingOut.set(currentQuarter, quarterSitOuts);
-    setSittingOut(newSittingOut);
-    
-    // Assign to new position
-    currentLineup.set(position.number, {
-      playerId: player.id,
-      name: player.name
-    });
-    
-    newQuarterAssignments.set(currentQuarter, currentLineup);
-    setQuarterAssignments(newQuarterAssignments);
-    
-    // Make server request
-    fetcher.submit(
-      {
-        _action: "assignPlayer",
-        playerId: player.id.toString(),
-        positionNumber: position.number.toString(),
-        positionName: position.abbreviation,
-        quarter: currentQuarter.toString(),
-      },
-      { method: "post" }
-    );
+
+    // If there's a player at the target position and we're dragging from another position, swap them
+    if (existingPlayerAtPosition && playerCurrentPosition !== null) {
+      // Swap positions
+      currentLineup.set(playerCurrentPosition, existingPlayerAtPosition);
+      currentLineup.set(position.number, {
+        playerId: player.id,
+        name: player.name
+      });
+
+      // Update state
+      newQuarterAssignments.set(currentQuarter, currentLineup);
+      setQuarterAssignments(newQuarterAssignments);
+
+      // Make server requests for both players
+      fetcher.submit(
+        {
+          _action: "assignPlayer",
+          playerId: player.id.toString(),
+          positionNumber: position.number.toString(),
+          positionName: position.abbreviation,
+          quarter: currentQuarter.toString(),
+        },
+        { method: "post" }
+      );
+
+      fetcher.submit(
+        {
+          _action: "assignPlayer",
+          playerId: existingPlayerAtPosition.playerId.toString(),
+          positionNumber: playerCurrentPosition.toString(),
+          positionName: positions.find((p: any) => p.number === playerCurrentPosition)?.abbreviation || '',
+          quarter: currentQuarter.toString(),
+        },
+        { method: "post" }
+      );
+    } else {
+      // Normal assignment (no swap)
+      // Remove player from any existing position in this quarter
+      for (const [pos, assigned] of currentLineup.entries()) {
+        if (assigned.playerId === player.id) {
+          currentLineup.delete(pos);
+        }
+      }
+
+      // Remove player from sitting out if they were there
+      const newSittingOut = new Map(sittingOut);
+      const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
+      quarterSitOuts.delete(player.id);
+      newSittingOut.set(currentQuarter, quarterSitOuts);
+      setSittingOut(newSittingOut);
+
+      // Assign to new position
+      currentLineup.set(position.number, {
+        playerId: player.id,
+        name: player.name
+      });
+
+      newQuarterAssignments.set(currentQuarter, currentLineup);
+      setQuarterAssignments(newQuarterAssignments);
+
+      // Make server request
+      fetcher.submit(
+        {
+          _action: "assignPlayer",
+          playerId: player.id.toString(),
+          positionNumber: position.number.toString(),
+          positionName: position.abbreviation,
+          quarter: currentQuarter.toString(),
+        },
+        { method: "post" }
+      );
+    }
   };
   
   const handleClearPosition = (position: any) => {
@@ -1403,7 +1466,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   return (
     <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between w-full">
@@ -1562,7 +1625,20 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             {/* Available Players - Not yet assigned */}
             <div>
               <h2 className="text-lg font-semibold mb-4">Available Players - Q{currentQuarter}</h2>
-              <div className="space-y-2 min-h-[150px] border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50">
+              <div
+                className="space-y-2 min-h-[150px] border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const playerData = e.dataTransfer.getData('player');
+                  const fromPosition = e.dataTransfer.getData('fromPosition');
+                  if (playerData && fromPosition) {
+                    // Player is being dragged from a position to available
+                    const player = JSON.parse(playerData);
+                    handleClearPosition({ number: parseInt(fromPosition) });
+                  }
+                }}
+              >
                 <div className="space-y-2">
                   {availablePlayers.length > 0 ? (
                     availablePlayers.map((player: any) => {
@@ -1631,8 +1707,13 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 onDrop={(e) => {
                   e.preventDefault();
                   const playerData = e.dataTransfer.getData('player');
+                  const fromPosition = e.dataTransfer.getData('fromPosition');
                   if (playerData) {
                     const player = JSON.parse(playerData);
+                    if (fromPosition) {
+                      // Player is being dragged from a position - clear the position and sit them out
+                      handleClearPosition({ number: parseInt(fromPosition) });
+                    }
                     handleSitOut(player);
                   }
                 }}
@@ -1848,6 +1929,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     changeDescription={changeDescription}
                     showChangeIndicators={showChangeIndicators}
                     quartersSittingOut={quartersSittingOut}
+                    onPositionDragStart={handleDragStart}
                   />
                 );
               })}

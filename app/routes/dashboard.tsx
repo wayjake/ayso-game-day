@@ -85,7 +85,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
       {/* Top navigation */}
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <nav className="container mx-auto px-4 sm:px-6 max-w-7xl flex items-center justify-between h-14">
+        <nav className="px-4 sm:px-6 flex items-center justify-between h-14">
           <Link to="/dashboard" className="flex items-center gap-2 font-semibold">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-[var(--accent)] text-white text-xs">AY</span>
             <span>AYSO Game Day</span>
@@ -111,7 +111,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
 
       {/* Main content */}
       <main className="flex-1">
-        <div className="container mx-auto px-4 sm:px-6 pt-3 max-w-7xl">
+        <div className="container mx-auto px-4 sm:px-6 pt-3 max-w-[1600px]">
           <Breadcrumbs items={generateBreadcrumbs()} />
         </div>
         <Outlet />
