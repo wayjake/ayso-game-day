@@ -10,10 +10,25 @@ interface AIAssistantCoachProps {
   onAcceptLineup: (quarters: QuarterLineup[]) => void;
 }
 
+interface QuarterChange {
+  positionNumber: number;
+  positionName: string;
+  playerId: number;
+  playerName: string;
+  isChange: boolean;
+}
+
+interface Substitute {
+  playerId: number;
+  playerName: string;
+}
+
 interface QuarterLineup {
   number: number;
   completed: boolean;
   players: Record<number, number>; // positionNumber -> playerId
+  changes?: QuarterChange[];
+  substitutes?: Substitute[];
 }
 
 interface AIResponse {
@@ -42,26 +57,23 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
     error: recordingError,
   } = useAudioRecorder();
 
-  // Define handleGenerateLineup before useEffects that use it
+  // Define handleGenerateLineup - Single request approach
   const handleGenerateLineup = useCallback((input: string) => {
+    // Clear current suggestions while loading
+    setAiMessage(null);
+    setSuggestedQuarters(null);
+
     const formData = new FormData();
     formData.append('_action', 'generate');
     formData.append('gameId', gameId.toString());
     formData.append('teamId', teamId.toString());
     formData.append('userInput', input);
-    if (previousMessage) {
-      formData.append('previousMessage', previousMessage);
-    }
-
-    // Clear current suggestions while loading
-    setAiMessage(null);
-    setSuggestedQuarters(null);
 
     fetcher.submit(formData, {
       method: 'post',
       action: '/api/ai-lineup',
     });
-  }, [gameId, teamId, previousMessage, fetcher]);
+  }, [gameId, teamId, fetcher]);
 
   // Handle recording button - start on mouse down, stop on mouse up
   const handleRecordButtonDown = () => {
@@ -190,25 +202,74 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
           {suggestedQuarters && (
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Proposed Lineup Changes:</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {suggestedQuarters.map((quarter) => (
-                  <div
-                    key={quarter.number}
-                    className={`p-3 border rounded-lg ${
-                      quarter.completed
-                        ? 'bg-gray-100 border-gray-300'
-                        : 'bg-green-50 border-green-200'
-                    }`}
-                  >
-                    <div className="text-xs font-semibold mb-1">
-                      Quarter {quarter.number}
-                      {quarter.completed && ' (Locked)'}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {suggestedQuarters.map((quarter) => {
+                  const changesOnly = quarter.changes?.filter(c => c.isChange) || [];
+                  const noChanges = quarter.changes?.filter(c => !c.isChange) || [];
+
+                  return (
+                    <div
+                      key={quarter.number}
+                      className={`p-4 border rounded-lg ${
+                        quarter.completed
+                          ? 'bg-gray-100 border-gray-300'
+                          : 'bg-white border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-sm font-semibold">
+                          Quarter {quarter.number}
+                          {quarter.completed && ' (Locked)'}
+                        </div>
+                        {changesOnly.length > 0 && (
+                          <div className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                            {changesOnly.length} change{changesOnly.length !== 1 ? 's' : ''}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Show only changes, or a message if no changes */}
+                      {changesOnly.length > 0 ? (
+                        <div className="space-y-1 mb-3">
+                          {changesOnly.map((change) => (
+                            <div
+                              key={change.positionNumber}
+                              className="text-xs bg-red-50 border border-red-200 rounded px-2 py-1.5 flex items-center justify-between"
+                            >
+                              <span className="font-medium text-red-800">
+                                {change.positionName}
+                              </span>
+                              <span className="text-red-700">
+                                {change.playerName}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-500 italic mb-3">
+                          No changes from current lineup
+                        </div>
+                      )}
+
+                      {/* Show substitutes (players sitting out) */}
+                      {quarter.substitutes && quarter.substitutes.length > 0 && (
+                        <div className="pt-2 border-t border-gray-200">
+                          <div className="text-xs font-medium text-gray-600 mb-1">Sitting out:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {quarter.substitutes.map((sub) => (
+                              <div
+                                key={sub.playerId}
+                                className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
+                              >
+                                {sub.playerName}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-600">
-                      {Object.keys(quarter.players).length} players assigned
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

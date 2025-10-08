@@ -170,13 +170,42 @@ export async function action({ request }: Route.ActionArgs) {
           .then(results => results.filter(a => pastGameIds.includes(a.gameId)));
       }
 
+      // Analyze position history from past games
+      const positionHistory: Map<number, { goalkeeper: number; defense: number; midfield: number; forward: number }> = new Map();
+
+      teamPlayers.forEach(player => {
+        positionHistory.set(player.id, { goalkeeper: 0, defense: 0, midfield: 0, forward: 0 });
+      });
+
+      pastAssignments.forEach(assignment => {
+        const history = positionHistory.get(assignment.playerId);
+        if (!history) return;
+
+        const pos = assignment.positionNumber;
+        if (pos === 1) {
+          history.goalkeeper++;
+        } else if (pos >= 2 && pos <= 5) {
+          history.defense++;
+        } else if (pos >= 6 && pos <= 8 || pos === 10) {
+          history.midfield++;
+        } else if (pos === 9 || pos === 11) {
+          history.forward++;
+        }
+      });
+
       // Build context for AI
-      const playersContext = teamPlayers.map(p => ({
-        id: p.id,
-        name: p.name,
-        description: p.description || 'No description',
-        preferredPositions: p.preferredPositions ? JSON.parse(p.preferredPositions) : [],
-      }));
+      const playersContext = teamPlayers.map(p => {
+        const history = positionHistory.get(p.id) || { goalkeeper: 0, defense: 0, midfield: 0, forward: 0 };
+        const totalAppearances = history.goalkeeper + history.defense + history.midfield + history.forward;
+
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description || 'No description',
+          preferredPositions: p.preferredPositions ? JSON.parse(p.preferredPositions) : [],
+          positionHistory: totalAppearances > 0 ? history : null,
+        };
+      });
 
       // Group current assignments by quarter
       const currentLineup: Record<number, Record<number, number>> = {};
@@ -223,68 +252,100 @@ export async function action({ request }: Route.ActionArgs) {
       const totalPlayerSlots = positionsPerQuarter * 4;
       const avgQuartersPerPlayer = Math.floor(totalPlayerSlots / teamPlayers.length);
 
-      const systemPrompt = `You are an expert AYSO soccer coach assistant. Your job is to help coaches create optimal lineups that follow AYSO Fair Play rules and coaching best practices.
+      const systemPrompt = `You are an expert AYSO soccer coach assistant.
+       Your PRIMARY OBJECTIVE is to ensure every player plays at least 3 quarters while creating a balanced lineup.
 
 ${ageSpecificRules}
 
-MATHEMATICAL CONSTRAINT:
-- You have ${teamPlayers.length} total players available
-- Each quarter requires ${positionsPerQuarter} players on the field
-- Total player-slots across 4 quarters = ${positionsPerQuarter} × 4 = ${totalPlayerSlots} slots
-- To distribute fairly: ${totalPlayerSlots} slots ÷ ${teamPlayers.length} players = ~${avgQuartersPerPlayer} quarters per player
-- EVERY player must appear in at least 3 quarters
-- CRITICAL: Before returning your lineup, count each player ID across ALL quarters to verify compliance
+CRITICAL MATHEMATICAL CONSTRAINT (THIS IS YOUR #1 PRIORITY):
+You have ${teamPlayers.length} players and ${positionsPerQuarter} field positions.
+- Total available slots across 4 quarters: ${positionsPerQuarter} × 4 = ${totalPlayerSlots}
+- Average quarters per player: ${totalPlayerSlots} ÷ ${teamPlayers.length} = ${avgQuartersPerPlayer.toFixed(1)}
+- ABSOLUTE REQUIREMENT: Every single player MUST play at least 3 quarters
+- This means each player ID must appear in at least 3 different quarter lineups
 
-General Coaching Strategy:
-- Best players should typically sit out in the third quarter
-- Aim for consistency between quarters - minimize position changes when possible
-- Once a quarter has been completed (marked as completed: true), DO NOT modify it
-- Consider each player's preferred positions and strengths from their descriptions
+VERIFICATION PROCESS (DO THIS BEFORE RETURNING YOUR RESPONSE):
+1. List out all ${teamPlayers.length} player IDs
+2. For each player, count how many quarters they appear in
+3. If ANY player appears in fewer than 3 quarters, REVISE your lineup until all players meet the 3-quarter minimum
+4. Only after verifying every player plays 3+ quarters should you return your response
+
+Secondary Coaching Considerations (only after meeting the 3-quarter rule):
+- CRITICALLY IMPORTANT: Each player has a "positionHistory" showing how many times they played in each area (goalkeeper/defense/midfield/forward)
+- ALWAYS assign players to the position category where they have the HIGHEST count in their history
+- If a player's positionHistory shows: { defense: 15, midfield: 3, forward: 0 }, they MUST be assigned to defensive positions (2-5)
+- If a player's positionHistory shows: { forward: 12, midfield: 4, defense: 1 }, they MUST be assigned to forward positions (9, 11)
+- Position category mapping: GK=1, Defense=2-5, Midfield=6-8,10, Forward=9,11
+- Only use preferredPositions if positionHistory is null (no past game data)
+- Minimize unnecessary position changes between quarters
+- Once a quarter is completed (marked completed: true), do not modify it
 
 Current Team Format: ${team.format}
 
-Return your analysis as a brief message (50-800 characters) explaining your recommended changes, followed by the complete 4-quarter lineup. Don't mention the AYSO Fair Play rules in your message.`;
+Return a brief message (50-800 characters) explaining your lineup strategy, followed by the complete 4-quarter lineup.`;
 
-      // Create position mapping for each quarter showing position number -> abbreviation
+      // Simplify formation data - deduplicate if all quarters use same formation
       const formattedQuarterInfo: Record<number, any> = {};
+      const positionsByQuarter: Record<number, number[]> = {};
+
       for (let q = 1; q <= 4; q++) {
         const qInfo = quarterFormationInfo[q];
         const sortedPositions = [...qInfo.positions].sort((a, b) => a.number - b.number);
-
-        // Create object mapping: { 1: "GK", 2: "RB", 3: "LB", ... }
-        const positionMap: Record<number, string> = {};
-        sortedPositions.forEach(p => {
-          positionMap[p.number] = p.abbreviation;
-        });
+        positionsByQuarter[q] = sortedPositions.map(p => p.number);
 
         formattedQuarterInfo[q] = {
           name: qInfo.name,
-          totalPositions: sortedPositions.length,
-          positions: positionMap,
-          positionNumbers: sortedPositions.map(p => p.number).sort((a, b) => a - b),
+          positions: sortedPositions.map(p => p.number),
         };
       }
 
+      // Check if all quarters use the same formation
+      const allSameFormation = Object.values(formattedQuarterInfo).every(
+        (info, _, arr) => info.name === arr[0].name && JSON.stringify(info.positions) === JSON.stringify(arr[0].positions)
+      );
+
+      // Build formation context (deduplicated if same across quarters)
+      const formationContext = allSameFormation
+        ? `Formation: ${formattedQuarterInfo[1].name} (all quarters)\nPositions to fill: ${JSON.stringify(formattedQuarterInfo[1].positions)}\nPosition categories: 1=Goalkeeper, 2-5=Defense, 6-8,10=Midfield, 9,11=Forward`
+        : `Formations by Quarter:\n${JSON.stringify(formattedQuarterInfo, null, 2)}\nPosition categories: 1=Goalkeeper, 2-5=Defense, 6-8,10=Midfield, 9,11=Forward`;
+
+      // Filter out empty quarters from current lineup
+      const nonEmptyLineup: Record<number, any> = {};
+      Object.entries(currentLineup).forEach(([quarter, assignments]) => {
+        if (Object.keys(assignments).length > 0) {
+          nonEmptyLineup[quarter] = assignments;
+        }
+      });
+
       const userMessage = `${previousMessage ? `Previous conversation:\n${previousMessage}\n\n` : ''}Current request: ${userInput}
 
-Formations Selected Per Quarter:
-${JSON.stringify(formattedQuarterInfo, null, 2)}
+REMINDER: ALL ${teamPlayers.length} players MUST play at least 3 quarters. Verify by counting each player ID's appearances before responding.
 
-IMPORTANT: You MUST assign a player to EVERY position number listed in each quarter's formation. The position numbers you must fill are listed in "positionNumbers". For example, if positionNumbers is [1,2,3,4,6,7,8,9,10], you must include exactly 9 assignments with those exact position numbers.
+${formationContext}
 
-Players:
+Players (ALL must play 3+ quarters):
 ${JSON.stringify(playersContext, null, 2)}
 
-Current Lineup:
-${JSON.stringify(currentLineup, null, 2)}
+POSITION ASSIGNMENT RULES:
+1. Each player has "positionHistory" showing counts in each area (goalkeeper/defense/midfield/forward)
+2. Assign players to the category where they have the HIGHEST count
+3. Position categories: 1=GK, 2-5=Defense, 6-8,10=Midfield, 9,11=Forward
+4. Example: Player with { defense: 18, midfield: 4, forward: 2, goalkeeper: 0 } → assign to defense (2-5)
+5. If positionHistory is null, use preferredPositions as fallback${Object.keys(nonEmptyLineup).length > 0 ? `
+
+Current Lineup (partial):
+${JSON.stringify(nonEmptyLineup, null, 2)}` : ''}${absentInjuredContext.length > 0 ? `
 
 Absent/Injured Players:
-${JSON.stringify(absentInjuredContext, null, 2)}
+${JSON.stringify(absentInjuredContext, null, 2)}` : ''}
 
-Past 7 Games:
-${JSON.stringify(pastGamesContext, null, 2)}
+REQUIREMENTS:
+1. Fill ALL ${formattedQuarterInfo[1].positions.length} positions in each quarter
+2. EVERY player MUST appear in at least 3 quarters
+3. Assign players to their dominant position category based on positionHistory
+4. Include a "substitutes" array for each quarter listing player IDs of players sitting out
 
-Please suggest an optimal lineup for all 4 quarters, ensuring EVERY position number is filled for each quarter.`;
+Generate the lineup now.`;
 
       // Save prompt to file for debugging
       const fs = await import('fs/promises');
@@ -292,13 +353,13 @@ Please suggest an optimal lineup for all 4 quarters, ensuring EVERY position num
       const debugDir = path.join(process.cwd(), 'debug');
       await fs.mkdir(debugDir, { recursive: true });
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const debugFile = path.join(debugDir, `ai-lineup-prompt-${timestamp}.txt`);
+      const debugFile = path.join(debugDir, `${timestamp}-ai-lineup-prompt.txt`);
       await fs.writeFile(debugFile, `SYSTEM PROMPT:\n${systemPrompt}\n\n---\n\nUSER MESSAGE:\n${userMessage}`);
       console.log(`Debug prompt saved to: ${debugFile}`);
 
       // Call OpenAI with structured output
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-2025-04-14",
+        model: "gpt-5-2025-08-07",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
@@ -347,8 +408,15 @@ Please suggest an optimal lineup for all 4 quarters, ensuring EVERY position num
                           additionalProperties: false,
                         },
                       },
+                      substitutes: {
+                        type: "array",
+                        description: "Array of player IDs who are sitting out this quarter",
+                        items: {
+                          type: "integer",
+                        },
+                      },
                     },
-                    required: ["number", "completed", "assignments"],
+                    required: ["number", "completed", "assignments", "substitutes"],
                     additionalProperties: false,
                   },
                 },
@@ -392,19 +460,64 @@ Please suggest an optimal lineup for all 4 quarters, ensuring EVERY position num
       }
 
       // Convert assignments array to players object format for frontend
-      const quartersWithPlayers = aiResponse.quarters.map((quarter: any) => ({
-        number: quarter.number,
-        completed: quarter.completed,
-        players: quarter.assignments.reduce((acc: Record<number, number>, assignment: any) => {
-          acc[assignment.positionNumber] = assignment.playerId;
-          return acc;
-        }, {}),
-      }));
+      // Also include detailed changes for better UI display
+      const quartersWithDetails = aiResponse.quarters.map((quarter: any) => {
+        const qNum = quarter.number;
+        const currentQuarterLineup = currentLineup[qNum] || {};
+        const formationInfo = quarterFormationInfo[qNum];
+
+        const players: Record<number, number> = {};
+        const changes: Array<{
+          positionNumber: number;
+          positionName: string;
+          playerId: number;
+          playerName: string;
+          isChange: boolean;
+        }> = [];
+
+        quarter.assignments.forEach((assignment: any) => {
+          players[assignment.positionNumber] = assignment.playerId;
+
+          const player = playersContext.find(p => p.id === assignment.playerId);
+          const positionObj = formationInfo.positions.find((p: any) => p.number === assignment.positionNumber);
+          const positionName = positionObj?.abbreviation || `Pos ${assignment.positionNumber}`;
+          const existingPlayerId = currentQuarterLineup[assignment.positionNumber];
+          const isChange = existingPlayerId !== assignment.playerId;
+
+          changes.push({
+            positionNumber: assignment.positionNumber,
+            positionName,
+            playerId: assignment.playerId,
+            playerName: player?.name || 'Unknown',
+            isChange,
+          });
+        });
+
+        // Sort changes by position number
+        changes.sort((a, b) => a.positionNumber - b.positionNumber);
+
+        // Map substitutes to include player names
+        const substitutes = (quarter.substitutes || []).map((playerId: number) => {
+          const player = playersContext.find(p => p.id === playerId);
+          return {
+            playerId,
+            playerName: player?.name || 'Unknown'
+          };
+        });
+
+        return {
+          number: quarter.number,
+          completed: quarter.completed,
+          players,
+          changes,
+          substitutes,
+        };
+      });
 
       return data({
         success: true,
         message: aiResponse.message,
-        quarters: quartersWithPlayers,
+        quarters: quartersWithDetails,
       });
     } catch (error) {
       console.error("Error generating lineup:", error);
