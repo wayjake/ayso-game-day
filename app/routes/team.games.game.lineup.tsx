@@ -1469,9 +1469,9 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
       <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between w-full">
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-bold">Plan Lineup</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Plan Lineup</h1>
               <div className="relative">
                 <button
                   ref={instructionsButtonRef}
@@ -1521,7 +1521,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Position Changes Toggle */}
               {currentQuarter > 1 && (
                 <button
@@ -1541,46 +1541,49 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               {/* Share Button */}
               <button
                 onClick={handleShare}
-                className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                title="Share lineup"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m9.032 4.026a9.001 9.001 0 01-7.432 0m9.032-4.026A9.001 9.001 0 0112 3c-4.474 0-8.268 3.12-9.032 7.326m0 0A9.001 9.001 0 0012 21c4.474 0 8.268-3.12 9.032-7.326M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <span>Share</span>
+                <span className="hidden sm:inline">Share</span>
               </button>
 
               {/* Summary Button */}
               <button
                 onClick={() => setShowOverview(true)}
-                className="px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                title="View summary"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                <span>Summary</span>
+                <span className="hidden sm:inline">Summary</span>
               </button>
 
               {/* Clear Lineup Button */}
               <button
                 onClick={handleClearLineup}
-                className="px-4 py-2 text-sm font-medium border border-red-500 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition flex items-center gap-2"
+                className="px-3 sm:px-4 py-2 text-sm font-medium border border-red-500 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition flex items-center gap-2"
+                title="Clear all assignments"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                <span>Clear</span>
+                <span className="hidden sm:inline">Clear</span>
               </button>
 
               {/* AI Assistant Coach Button */}
               <button
                 onClick={() => setShowAIAssistant(true)}
-                className="px-4 py-2 text-sm font-medium border border-purple-500 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition flex items-center gap-2"
+                className="px-3 sm:px-4 py-2 text-sm font-medium border border-purple-500 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition flex items-center gap-2"
+                title="AI Assistant Coach"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
-                <span className="hidden lg:inline">AI Assistant</span>
-                <span className="lg:hidden">AI</span>
+                <span className="hidden sm:inline">AI Assistant</span>
               </button>
             </div>
           </div>

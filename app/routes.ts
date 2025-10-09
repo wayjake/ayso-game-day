@@ -2,9 +2,11 @@ import { type RouteConfig, index, route, layout } from "@react-router/dev/routes
 
 export default [
   index("routes/home.tsx"),
+  // Handle .well-known requests (Chrome DevTools, etc.)
+  route(".well-known/*", "routes/well-known.ts"),
   // API routes
   route("api/uploadthing", "routes/api.uploadthing.ts"),
-  route("api/ai-lineup", "routes/api.ai-lineup.ts"),
+  route("api/ai-lineup", "api/ai-lineup/route.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("user", "routes/user.tsx", [

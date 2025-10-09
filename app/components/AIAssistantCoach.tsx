@@ -286,11 +286,11 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
             </div>
           )}
 
-          {/* Error Messages */}
-          {(recordingError || (fetcher.data?.error)) && (
+          {/* Recording Error */}
+          {recordingError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-700">
-                {recordingError || fetcher.data?.error}
+                {recordingError}
               </p>
             </div>
           )}
