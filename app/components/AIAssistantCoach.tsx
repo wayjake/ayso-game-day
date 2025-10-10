@@ -44,6 +44,7 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
   const [suggestedQuarters, setSuggestedQuarters] = useState<QuarterLineup[] | null>(null);
   const [previousMessage, setPreviousMessage] = useState<string | null>(null);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isSuggestingChanges, setIsSuggestingChanges] = useState(false);
 
   const fetcher = useFetcher<AIResponse>();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +121,23 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
     const input = textInput.trim() || 'Create a balanced lineup for all quarters';
     handleGenerateLineup(input);
     setPreviousMessage(input);
+
+    // If we were suggesting changes, clear that mode
+    if (isSuggestingChanges) {
+      setIsSuggestingChanges(false);
+      // Clear previous results to show new ones
+      setAiMessage(null);
+      setSuggestedQuarters(null);
+    }
+  };
+
+  const handleNewRequest = () => {
+    // Clear everything for a fresh start
+    setAiMessage(null);
+    setSuggestedQuarters(null);
+    setTextInput('');
+    setPreviousMessage(null);
+    setIsSuggestingChanges(false);
   };
 
   const handleSuggestChanges = () => {
@@ -128,9 +146,14 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
       setPreviousMessage(aiMessage);
     }
 
-    // Clear current state
-    setAiMessage(null);
-    setSuggestedQuarters(null);
+    // Enter suggest changes mode - show text input
+    setIsSuggestingChanges(true);
+    setTextInput('');
+  };
+
+  const handleCancelSuggestChanges = () => {
+    // Cancel suggesting changes and go back to results view
+    setIsSuggestingChanges(false);
     setTextInput('');
   };
 
@@ -154,6 +177,7 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
     setAiMessage(null);
     setSuggestedQuarters(null);
     setPreviousMessage(null);
+    setIsSuggestingChanges(false);
     onClose();
   };
 
@@ -295,48 +319,50 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
             </div>
           )}
 
-          {/* Input Area */}
-          {!isLoading && (
+          {/* Input Area - Show when no results OR when suggesting changes */}
+          {!isLoading && (!suggestedQuarters || isSuggestingChanges) && (
             <>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Ask the AI Assistant Coach:
+                  {isSuggestingChanges ? 'Suggest changes to the lineup:' : 'Ask the AI Assistant Coach:'}
                 </label>
 
-                {/* Suggestion Pills */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <button
-                    onClick={() => setTextInput('Create a balanced lineup')}
-                    className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
-                  >
-                    Create a balanced lineup
-                  </button>
-                  <button
-                    onClick={() => setTextInput('Rotate players fairly')}
-                    className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
-                  >
-                    Rotate players fairly
-                  </button>
-                  <button
-                    onClick={() => setTextInput('Maximize playing time for everyone')}
-                    className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
-                  >
-                    Maximize playing time
-                  </button>
-                </div>
+                {/* Suggestion Pills - only show for initial request */}
+                {!isSuggestingChanges && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <button
+                      onClick={() => setTextInput('Create a balanced lineup')}
+                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                    >
+                      Create a balanced lineup
+                    </button>
+                    <button
+                      onClick={() => setTextInput('Rotate players fairly')}
+                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                    >
+                      Rotate players fairly
+                    </button>
+                    <button
+                      onClick={() => setTextInput('Maximize playing time for everyone')}
+                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                    >
+                      Maximize playing time
+                    </button>
+                  </div>
+                )}
 
                 <textarea
                   ref={textareaRef}
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Or type your own request..."
+                  placeholder={isSuggestingChanges ? "E.g., 'Move Adam to defense' or 'Swap Charlie and Brody'..." : "Or type your own request..."}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   rows={3}
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {/* Text Submit Button */}
                   <button
@@ -366,41 +392,48 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
                   </button>
                 </div>
 
-                {/* Suggest Changes & Accept Buttons */}
-                {suggestedQuarters && (
-                  <div className="flex items-center gap-2">
-                    {/* Suggest Changes Voice Button */}
-                    <button
-                      onMouseDown={() => {
-                        handleSuggestChanges();
-                        handleRecordButtonDown();
-                      }}
-                      onMouseUp={handleRecordButtonUp}
-                      onMouseLeave={handleRecordButtonUp}
-                      onTouchStart={() => {
-                        handleSuggestChanges();
-                        handleRecordButtonDown();
-                      }}
-                      onTouchEnd={handleRecordButtonUp}
-                      className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                      </svg>
-                      Suggest Changes
-                    </button>
-
-                    {/* Accept Button */}
-                    <button
-                      onClick={handleAccept}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                    >
-                      Accept
-                    </button>
-                  </div>
+                {/* Cancel button when suggesting changes */}
+                {isSuggestingChanges && (
+                  <button
+                    onClick={handleCancelSuggestChanges}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
                 )}
               </div>
             </>
+          )}
+
+          {/* Action Buttons - Show when results are available and not suggesting changes */}
+          {!isLoading && suggestedQuarters && !isSuggestingChanges && (
+            <div className="flex items-center justify-between gap-3">
+              {/* New Request Button */}
+              <button
+                onClick={handleNewRequest}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
+              >
+                New Request
+              </button>
+
+              <div className="flex items-center gap-2">
+                {/* Suggest Changes Button */}
+                <button
+                  onClick={handleSuggestChanges}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
+                >
+                  Suggest Changes
+                </button>
+
+                {/* Accept Button */}
+                <button
+                  onClick={handleAccept}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                >
+                  Accept
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Help Text */}

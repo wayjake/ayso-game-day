@@ -359,35 +359,41 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (action === "markAbsentInjured") {
     try {
       const playerId = parseInt(formData.get("playerId") as string);
-      const quarter = parseInt(formData.get("quarter") as string);
+      const quartersParam = formData.get("quarters") as string;
       const reason = formData.get("reason") as string; // 'absent' or 'injured'
-      
-      // Remove any existing assignment for this player in this quarter
-      await db.delete(assignments).where(
-        and(
-          eq(assignments.gameId, gameId),
-          eq(assignments.playerId, playerId),
-          eq(assignments.quarter, quarter)
-        )
-      );
-      
-      // Remove any existing absent/injured record for this player and quarter
-      await db.delete(sitOuts).where(
-        and(
-          eq(sitOuts.gameId, gameId),
-          eq(sitOuts.playerId, playerId),
-          eq(sitOuts.quarter, quarter)
-        )
-      );
-      
-      // Insert new absent/injured record
-      await db.insert(sitOuts).values({
-        gameId,
-        playerId,
-        quarter,
-        reason,
-      });
-      
+
+      // Parse quarters - can be comma-separated for multiple quarters
+      const quarters = quartersParam.split(',').map(q => parseInt(q.trim()));
+
+      // Process each quarter
+      for (const quarter of quarters) {
+        // Remove any existing assignment for this player in this quarter
+        await db.delete(assignments).where(
+          and(
+            eq(assignments.gameId, gameId),
+            eq(assignments.playerId, playerId),
+            eq(assignments.quarter, quarter)
+          )
+        );
+
+        // Remove any existing absent/injured record for this player and quarter
+        await db.delete(sitOuts).where(
+          and(
+            eq(sitOuts.gameId, gameId),
+            eq(sitOuts.playerId, playerId),
+            eq(sitOuts.quarter, quarter)
+          )
+        );
+
+        // Insert new absent/injured record
+        await db.insert(sitOuts).values({
+          gameId,
+          playerId,
+          quarter,
+          reason,
+        });
+      }
+
       return data({ success: true, action: "markAbsentInjured" });
     } catch (error) {
       console.error("Error marking player absent/injured:", error);
@@ -921,6 +927,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [openDropdownPosition, setOpenDropdownPosition] = useState<number | null>(null);
   const [showChangeIndicators, setShowChangeIndicators] = useState(true);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showAbsentInjuredModal, setShowAbsentInjuredModal] = useState(false);
+  const [absentInjuredModalData, setAbsentInjuredModalData] = useState<{player: any, reason: 'absent' | 'injured'} | null>(null);
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -1209,38 +1217,58 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   // Helper functions for absent/injured management
   const handleMarkAbsentInjured = (player: any, reason: 'absent' | 'injured') => {
     if (typeof currentQuarter !== 'number') return;
-    
+
+    // If marking in Q1, show modal to ask about all quarters
+    if (currentQuarter === 1) {
+      setAbsentInjuredModalData({ player, reason });
+      setShowAbsentInjuredModal(true);
+      return;
+    }
+
+    // For other quarters, proceed immediately
+    applyAbsentInjured(player, reason, currentQuarter);
+  };
+
+  // Apply absent/injured status to specific quarter(s)
+  const applyAbsentInjured = (player: any, reason: 'absent' | 'injured', quarter: number, applyToAllQuarters: boolean = false) => {
+    const quartersToApply = applyToAllQuarters ? [1, 2, 3, 4] : [quarter];
+
     // Optimistic update - update local state immediately
     const newAbsentInjured = new Map(absentInjured);
-    const quarterAbsentInjured = newAbsentInjured.get(currentQuarter) || new Map();
-    quarterAbsentInjured.set(player.id, reason);
-    newAbsentInjured.set(currentQuarter, quarterAbsentInjured);
-    setAbsentInjured(newAbsentInjured);
-    
-    // Remove from field positions if assigned
     const newQuarterAssignments = new Map(quarterAssignments);
-    const currentLineup = newQuarterAssignments.get(currentQuarter) || new Map();
-    for (const [pos, assigned] of currentLineup.entries()) {
-      if (assigned.playerId === player.id) {
-        currentLineup.delete(pos);
-      }
-    }
-    newQuarterAssignments.set(currentQuarter, currentLineup);
-    setQuarterAssignments(newQuarterAssignments);
-    
-    // Remove from sitting out
     const newSittingOut = new Map(sittingOut);
-    const quarterSitOuts = newSittingOut.get(currentQuarter) || new Set();
-    quarterSitOuts.delete(player.id);
-    newSittingOut.set(currentQuarter, quarterSitOuts);
+
+    quartersToApply.forEach(q => {
+      // Update absent/injured state
+      const quarterAbsentInjured = newAbsentInjured.get(q) || new Map();
+      quarterAbsentInjured.set(player.id, reason);
+      newAbsentInjured.set(q, quarterAbsentInjured);
+
+      // Remove from field positions if assigned
+      const currentLineup = newQuarterAssignments.get(q) || new Map();
+      for (const [pos, assigned] of currentLineup.entries()) {
+        if (assigned.playerId === player.id) {
+          currentLineup.delete(pos);
+        }
+      }
+      newQuarterAssignments.set(q, currentLineup);
+
+      // Remove from sitting out
+      const quarterSitOuts = newSittingOut.get(q) || new Set();
+      quarterSitOuts.delete(player.id);
+      newSittingOut.set(q, quarterSitOuts);
+    });
+
+    setAbsentInjured(newAbsentInjured);
+    setQuarterAssignments(newQuarterAssignments);
     setSittingOut(newSittingOut);
-    
+
     // Make server request
     fetcher.submit(
       {
         _action: "markAbsentInjured",
         playerId: player.id.toString(),
-        quarter: currentQuarter.toString(),
+        quarters: quartersToApply.join(','),
         reason: reason,
       },
       { method: "post" }
@@ -1408,11 +1436,17 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   };
 
   // Handle AI lineup acceptance
-  const handleAcceptAILineup = (quarters: Array<{ number: number; completed: boolean; players: Record<number, number> }>) => {
+  const handleAcceptAILineup = (quarters: Array<{
+    number: number;
+    completed: boolean;
+    players: Record<number, number>;
+    substitutes?: Array<{ playerId: number; playerName: string }>;
+  }>) => {
     // Build all assignments for bulk insert
     const allAssignments: any[] = [];
 
     quarters.forEach((quarter) => {
+      // Add field position assignments
       Object.entries(quarter.players).forEach(([positionStr, playerId]) => {
         const positionNumber = parseInt(positionStr);
         const position = positions.find((p: any) => p.number === positionNumber);
@@ -1426,6 +1460,20 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
           isSittingOut: false,
         });
       });
+
+      // Add sitting out assignments for substitutes
+      if (quarter.substitutes && quarter.substitutes.length > 0) {
+        quarter.substitutes.forEach((sub) => {
+          allAssignments.push({
+            gameId: game.id,
+            playerId: sub.playerId,
+            positionNumber: 0, // No position for sitting out
+            positionName: '',
+            quarter: quarter.number,
+            isSittingOut: true,
+          });
+        });
+      }
     });
 
     // Submit all assignments in a single request
@@ -1443,7 +1491,9 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
     quarters.forEach((quarter) => {
       const quarterLineup = new Map<number, any>();
+      const quarterSubs = new Set<number>();
 
+      // Add field position assignments
       Object.entries(quarter.players).forEach(([positionStr, playerId]) => {
         const positionNumber = parseInt(positionStr);
         const player = players.find((p: any) => p.id === playerId);
@@ -1456,8 +1506,15 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
         }
       });
 
+      // Add substitutes to sitting out set
+      if (quarter.substitutes && quarter.substitutes.length > 0) {
+        quarter.substitutes.forEach((sub) => {
+          quarterSubs.add(sub.playerId);
+        });
+      }
+
       newQuarterAssignments.set(quarter.number, quarterLineup);
-      newSittingOut.set(quarter.number, new Set());
+      newSittingOut.set(quarter.number, quarterSubs);
     });
 
     setQuarterAssignments(newQuarterAssignments);
@@ -2138,6 +2195,72 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Absent/Injured Confirmation Modal */}
+      {showAbsentInjuredModal && absentInjuredModalData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">
+                Mark as {absentInjuredModalData.reason === 'absent' ? 'Absent' : 'Injured'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowAbsentInjuredModal(false);
+                  setAbsentInjuredModalData(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                You're marking <span className="font-semibold">{absentInjuredModalData.player.name}</span> as {absentInjuredModalData.reason} in Quarter 1.
+              </p>
+              <p className="text-sm text-gray-600">
+                Would you like to apply this status to all 4 quarters?
+              </p>
+
+              <div className="flex flex-col gap-2 mt-6">
+                <button
+                  onClick={() => {
+                    applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, true);
+                    setShowAbsentInjuredModal(false);
+                    setAbsentInjuredModalData(null);
+                  }}
+                  className="w-full px-4 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-600)] transition font-medium"
+                >
+                  Yes, apply to all 4 quarters
+                </button>
+                <button
+                  onClick={() => {
+                    applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, false);
+                    setShowAbsentInjuredModal(false);
+                    setAbsentInjuredModalData(null);
+                  }}
+                  className="w-full px-4 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition font-medium"
+                >
+                  No, just Quarter 1
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAbsentInjuredModal(false);
+                    setAbsentInjuredModalData(null);
+                  }}
+                  className="w-full px-4 py-3 text-gray-600 hover:text-gray-800 transition"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
