@@ -7,10 +7,12 @@ import {
   getQuarterFormations,
   getTeamPlayers,
   getCurrentAssignments,
+  getAbsentInjuredPlayers,
   getPastGamesAndAssignments,
   calculatePositionHistory,
   buildPlayersContext,
   buildCurrentLineup,
+  buildAbsentInjuredContext,
 } from './data-fetchers';
 import {
   buildFormationContext,
@@ -22,6 +24,29 @@ import {
   buildQuarterUserMessage
 } from './prompt-builder-sequential';
 import { generateSingleQuarterLineup } from './ai-client-sequential';
+
+// Helper function to check if goalkeeper quarters are consecutive within same half
+function checkGoalkeeperConsecutiveQuarters(quarterNumbers: number[]): boolean {
+  if (quarterNumbers.length < 2) return true;
+
+  // Sort quarters
+  const sorted = quarterNumbers.sort((a, b) => a - b);
+
+  // Check if all quarters are in first half (Q1, Q2) or second half (Q3, Q4)
+  const firstHalf = sorted.every(q => q <= 2);
+  const secondHalf = sorted.every(q => q >= 3);
+
+  if (!firstHalf && !secondHalf) return false;
+
+  // Check if quarters are consecutive
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - sorted[i - 1] !== 1) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 // Validation function for final lineup
 function validateFinalLineup(params: {
@@ -76,6 +101,26 @@ function validateFinalLineup(params: {
     }
   });
 
+  // Check goalkeeper consecutive quarters rule
+  playersContext.forEach(player => {
+    const gkQuarters = goalkeepingCounts[player.id] || 0;
+    if (gkQuarters >= 2) {
+      // Find which quarters this player was goalkeeper
+      const gkQuarterNumbers: number[] = [];
+      quarters.forEach(quarter => {
+        if (quarter.players[1] === player.id) {
+          gkQuarterNumbers.push(quarter.number);
+        }
+      });
+
+      // Check if goalkeeper quarters are consecutive within same half
+      const isConsecutive = checkGoalkeeperConsecutiveQuarters(gkQuarterNumbers);
+      if (!isConsecutive) {
+        errors.push(`${player.name} played goalkeeper in quarters ${gkQuarterNumbers.join(', ')} - goalkeeper quarters must be consecutive within the same half (Q1+Q2 or Q3+Q4)`);
+      }
+    }
+  });
+
   return {
     isValid: errors.length === 0,
     errors
@@ -102,20 +147,33 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
     const quarterFormationInfo = await getQuarterFormations(game, team.format as GameFormat);
     const teamPlayers = await getTeamPlayers(teamId);
     const currentAssignments = await getCurrentAssignments(gameId);
+    const absentInjuredPlayers = await getAbsentInjuredPlayers(gameId);
     const { pastGames, pastAssignments } = await getPastGamesAndAssignments(teamId, game.gameDate);
 
     // 2. Process and build context
     const positionHistory = calculatePositionHistory(teamPlayers, pastAssignments);
     const playersContext = buildPlayersContext(teamPlayers, positionHistory);
     const currentLineup = buildCurrentLineup(currentAssignments);
+    const absentInjuredContext = buildAbsentInjuredContext(absentInjuredPlayers);
     const positionsPerQuarter = quarterFormationInfo[1].positions.length;
     const formationContext = buildFormationContext(quarterFormationInfo);
 
     // 3. Initialize tracking
     const plannedQuarters: QuarterPlanningContext['previousQuarters'] = [];
     const quarterResults: QuarterWithDetails[] = [];
-    // Track all players who have been subbed out throughout the game (using Set to avoid duplicates)
-    let allSubbedOutPlayers = new Set<number>();
+
+    // Debug: Show existing assignments
+    console.log('Existing assignments by quarter:');
+    for (let q = 1; q <= 4; q++) {
+      const existing = currentLineup[q];
+      if (existing && Object.keys(existing).length > 0) {
+        const playingIds = Object.values(existing);
+        const substitutes = teamPlayers.filter(p => !playingIds.includes(p.id)).map(p => p.id);
+        console.log(`Q${q} - Playing: ${playingIds.join(', ')}, Substitutes: ${substitutes.join(', ')}`);
+      } else {
+        console.log(`Q${q} - No existing assignments`);
+      }
+    }
 
     // 4. Plan each quarter sequentially
     for (let quarterNum = 1; quarterNum <= 4; quarterNum++) {
@@ -128,8 +186,10 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
           playerId: playerId as number
         }));
 
+        // Calculate substitutes: players not in the existing assignments
+        const playingPlayerIds = Object.values(existingAssignments);
         const substitutes = teamPlayers
-          .filter(p => !Object.values(existingAssignments).includes(p.id))
+          .filter(p => !playingPlayerIds.includes(p.id))
           .map(p => p.id);
 
         plannedQuarters.push({
@@ -138,13 +198,23 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
           substitutes
         });
 
-        // Add this quarter's substitutes to the cumulative list
-        substitutes.forEach(id => allSubbedOutPlayers.add(id));
+        // Debug logging for existing quarters
+        console.log(`Q${quarterNum} Debug - Existing assignments: ${Object.keys(existingAssignments).length} positions`);
+        console.log(`Q${quarterNum} Debug - Playing players: ${playingPlayerIds.join(', ')}`);
+        console.log(`Q${quarterNum} Debug - Substitutes: ${substitutes.join(', ')}`);
+
         continue;
       }
 
-      // Must-play list: players who have been subbed out (naturally empty for Q1)
-      const mustPlayPlayerIds = [...allSubbedOutPlayers];
+      // Must-play list: players who sat out the PREVIOUS quarter only
+      const lastQuarter = plannedQuarters[plannedQuarters.length - 1];
+      const mustPlayPlayerIds = lastQuarter ? lastQuarter.substitutes : [];
+
+      // Debug logging for must-play calculation
+      console.log(`\nQ${quarterNum} Must-play calculation:`);
+      console.log(`  Total players: ${teamPlayers.length}`);
+      console.log(`  Must-play count: ${mustPlayPlayerIds.length}`);
+      console.log(`  Must-play IDs: ${mustPlayPlayerIds.join(', ')}`);
 
       // Build quarter-specific prompts
       const systemPrompt = buildQuarterSystemPrompt({
@@ -164,7 +234,9 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
         remainingQuartersNeeded: {}, // Not used in simplified logic
         previousQuarters: plannedQuarters,
         positionsPerQuarter,
-        mustPlayPlayerIds
+        mustPlayPlayerIds,
+        absentInjuredContext,
+        quarterFormationInfo
       });
 
       // Save prompts for debugging
@@ -191,14 +263,21 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
 
       // Add quarter to planned quarters
       if (quarterResponse.quarter) {
+        const playingPlayerIds = quarterResponse.quarter.assignments.map(a => a.playerId);
+        const computedSubstitutes = teamPlayers
+          .filter(p => !playingPlayerIds.includes(p.id))
+          .map(p => p.id);
+
         plannedQuarters.push({
           number: quarterResponse.quarter.number,
           assignments: quarterResponse.quarter.assignments,
-          substitutes: quarterResponse.quarter.substitutes
+          substitutes: computedSubstitutes
         });
 
-        // Add this quarter's substitutes to the cumulative list
-        quarterResponse.quarter.substitutes.forEach(id => allSubbedOutPlayers.add(id));
+        // Debug: Show what happened in this AI-generated quarter
+        console.log(`\nQ${quarterNum} AI-Generated Results:`);
+        console.log(`  Playing: ${quarterResponse.quarter.assignments.map(a => a.playerId).join(', ')}`);
+        console.log(`  Substitutes: ${computedSubstitutes.join(', ')}`);
 
         // Build detailed quarter result
         const formationInfo = quarterFormationInfo[quarterNum];
@@ -232,7 +311,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
 
         changes.sort((a, b) => a.positionNumber - b.positionNumber);
 
-        const substitutes = quarterResponse.quarter.substitutes.map((playerId: number) => {
+        const substitutes = computedSubstitutes.map((playerId: number) => {
           const player = playersContext.find(p => p.id === playerId);
           return {
             playerId,
@@ -249,7 +328,34 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
       }
     }
 
-    // 5. Validate final lineup
+    // 5. Debug: Show quarter-by-quarter player counts
+    console.log('\nQuarter-by-quarter player counts:');
+    const playerQuarterCounts: Record<number, number> = {};
+    teamPlayers.forEach(p => playerQuarterCounts[p.id] = 0);
+
+    // Count from existing assignments
+    for (let q = 1; q <= 4; q++) {
+      const existing = currentLineup[q];
+      if (existing && Object.keys(existing).length > 0) {
+        Object.values(existing).forEach(playerId => {
+          playerQuarterCounts[playerId as number]++;
+        });
+      }
+    }
+
+    // Count from new quarters
+    quarterResults.forEach(quarter => {
+      Object.values(quarter.players).forEach(playerId => {
+        playerQuarterCounts[playerId]++;
+      });
+    });
+
+    Object.entries(playerQuarterCounts).forEach(([playerId, count]) => {
+      const player = teamPlayers.find(p => p.id === parseInt(playerId));
+      console.log(`${player?.name} (${playerId}): ${count} quarters`);
+    });
+
+    // 6. Validate final lineup
     const validation = validateFinalLineup({
       quarters: quarterResults,
       playersContext,

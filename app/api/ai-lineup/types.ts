@@ -111,3 +111,26 @@ export interface ValidationResult {
 }
 
 export type GameFormat = '7v7' | '9v9' | '11v11';
+
+// Autonomous iterative AI response types
+export interface AutonomousIterationResponse {
+  isComplete: boolean;
+  currentStep: string;
+  currentResults: any;
+  nextStrategy: string | null;
+  reasoning: string;
+  finalLineup?: {
+    quarters: AIQuarter[];
+  };
+  error?: boolean;
+  errorMessage?: string;
+}
+
+// Iteration log for debugging
+export interface IterationLog {
+  iteration: number;
+  step: string;
+  strategy: string;
+  results: any;
+  timestamp: string;
+}

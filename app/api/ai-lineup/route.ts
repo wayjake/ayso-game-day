@@ -54,9 +54,22 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Handle lineup generation action (uses Anthropic with sequential quarter planning)
   if (action === "generate") {
-    // Import sequential handler
-    const { handleSequentialLineupGeneration } = await import('./route-sequential');
-    return handleSequentialLineupGeneration(formData, user);
+    // Use OpenAI hybrid approach (GPT-5-chat reasoning + GPT-5-nano extraction)
+    const { handleOpenAIHybridGeneration } = await import('./route-openai-hybrid');
+    return handleOpenAIHybridGeneration(formData, user);
+
+    // Other approaches (kept for reference):
+    // Anthropic autonomous:
+    // const { handleAutonomousGeneration } = await import('./route-autonomous');
+    // return handleAutonomousGeneration(formData, user);
+
+    // Anthropic sequential by position:
+    // const { handleSequentialByPositionGeneration } = await import('./route-sequential-by-position');
+    // return handleSequentialByPositionGeneration(formData, user);
+
+    // Anthropic sequential:
+    // const { handleSequentialLineupGeneration } = await import('./route-sequential');
+    // return handleSequentialLineupGeneration(formData, user);
   }
 
   return data({ success: false, error: "Invalid action" }, { status: 400 });
