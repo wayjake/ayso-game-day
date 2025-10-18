@@ -14,16 +14,18 @@ import {
   buildCurrentLineup,
   buildAbsentInjuredContext,
 } from './data-fetchers';
-import {
-  buildFormationContext,
-  savePromptToFile,
-  saveResponseToFile
-} from './prompt-builder';
+import { buildFormationContext } from './prompt-builder';
 import {
   buildQuarterSystemPrompt,
   buildQuarterUserMessage
 } from './prompt-builder-sequential';
 import { generateSingleQuarterLineup } from './ai-client-sequential';
+
+// Lazy load server-only debug utilities
+async function getDebugUtils() {
+  const { savePromptToFile, saveResponseToFile } = await import('./debug-utils');
+  return { savePromptToFile, saveResponseToFile };
+}
 
 // Helper function to check if goalkeeper quarters are consecutive within same half
 function checkGoalkeeperConsecutiveQuarters(quarterNumbers: number[]): boolean {
@@ -240,6 +242,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
       });
 
       // Save prompts for debugging
+      const { savePromptToFile, saveResponseToFile } = await getDebugUtils();
       const promptFile = await savePromptToFile(systemPrompt, userMessage);
 
       // Call AI to generate this quarter

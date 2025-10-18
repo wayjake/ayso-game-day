@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.games.game.lineup";
 import { data, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
-import { eq, and, or, sql, lt } from "drizzle-orm";
+import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { getFormationsByFormat } from "~/utils/formations";
 import {

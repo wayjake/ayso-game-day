@@ -19,17 +19,20 @@ import {
 import {
   buildSystemPrompt,
   buildFormationContext,
-  buildUserMessage,
-  savePromptToFile,
-  saveResponseToFile
+  buildUserMessage
 } from './prompt-builder';
 import { generateLineupWithAnthropic } from './ai-client';
 import { validateAYSOCompliance } from './validation';
 
-// Lazy load server-only modules for auth
+// Lazy load server-only modules
 async function getAuth() {
   const { getUser } = await import("~/utils/auth.server");
   return { getUser };
+}
+
+async function getDebugUtils() {
+  const { savePromptToFile, saveResponseToFile } = await import('./debug-utils');
+  return { savePromptToFile, saveResponseToFile };
 }
 
 export async function loader() {
@@ -152,6 +155,7 @@ async function handleLineupGeneration(formData: FormData, user: any) {
     });
 
     // 4. Save prompts for debugging
+    const { savePromptToFile, saveResponseToFile } = await getDebugUtils();
     const promptFile = await savePromptToFile(systemPrompt, userMessage);
 
     // 5. Call AI to generate lineup

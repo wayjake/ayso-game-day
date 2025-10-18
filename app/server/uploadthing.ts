@@ -1,5 +1,4 @@
 import { createUploadthing, type FileRouter } from "uploadthing/server";
-import { UploadThingError } from "uploadthing/server";
 
 const f = createUploadthing({
   errorFormatter: (err) => {

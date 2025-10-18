@@ -23,7 +23,7 @@ import {
   buildCurrentLineup,
   buildAbsentInjuredContext,
 } from './data-fetchers';
-import { buildFormationContext, savePromptToFile, saveResponseToFile } from './prompt-builder';
+import { buildFormationContext } from './prompt-builder';
 import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs/promises';
 import * as path from 'path';
