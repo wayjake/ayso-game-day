@@ -242,8 +242,8 @@ async function generateReasoningWithChat(
   try {
     const completion = await openai.responses.parse({
       // model: "gpt-5-nano-2025-08-07",
-      model: "gpt-5-mini-2025-08-07",
-      // model: "gpt-5-2025-08-07",
+      // model: "gpt-5-mini-2025-08-07",
+      model: "gpt-5-2025-08-07",
       input: userPrompt,
       temperature: 1,
       reasoning: { effort: "medium" },
@@ -340,15 +340,19 @@ function buildReasoningPrompt(context: HybridGenerationContext): string {
     });
   }
 
+  const availablePlayers = context.teamPlayers.length - context.absentInjuredContext.filter(ai => !ai.quarter).length;
+  const subsPerQuarter = availablePlayers - context.positionsPerQuarter;
+
   return `
         You are an soccer coach creating a complete 4-quarter game lineup for ${context.format}.
         Analyze the context provided and create a balanced lineup
         that plays everyone at least 3 quarters.
 
         GAME INFO:
-        - Total players: ${context.teamPlayers.length}
+        - Total players on roster: ${context.teamPlayers.length}
+        - Available players (excluding absent/injured): ${availablePlayers}
         - Positions per quarter: ${context.positionsPerQuarter}
-        - Substitutes per quarter: ${context.teamPlayers.length - context.positionsPerQuarter}
+        - Substitutes per quarter: ${subsPerQuarter}
 
         ${context.formationContext}
 
@@ -365,6 +369,7 @@ function buildReasoningPrompt(context: HybridGenerationContext): string {
         4. Keep players in same positions when possible
         5. Substitutes array must include players not in assignments
         6. Substitutes must not appear in assignments
+        7. IMPORTANT: Absent/injured players must NOT be in assignments OR substitutes arrays
 
         ${context.userInput ? `User request: ${context.userInput}` : ''}`;
 }
@@ -401,10 +406,16 @@ function validateLineup(
       errors.push(`Q${qNum}: Expected ${positionsPerQuarter} assignments, got ${quarter.assignments.length}`);
     }
 
-    // Check substitutes + assignments = total players
+    // Calculate available players (excluding absent/injured for this quarter)
+    const absentThisQuarter = absentInjuredContext.filter(ai =>
+      ai.playerId && (!ai.quarter || ai.quarter === qNum)
+    );
+    const availablePlayers = teamPlayers.length - absentThisQuarter.length;
+
+    // Check substitutes + assignments = available players
     const totalInQuarter = quarter.assignments.length + quarter.substitutes.length;
-    if (totalInQuarter !== teamPlayers.length) {
-      errors.push(`Q${qNum}: Assignments (${quarter.assignments.length}) + Substitutes (${quarter.substitutes.length}) = ${totalInQuarter}, expected ${teamPlayers.length}`);
+    if (totalInQuarter !== availablePlayers) {
+      errors.push(`Q${qNum}: Assignments (${quarter.assignments.length}) + Substitutes (${quarter.substitutes.length}) = ${totalInQuarter}, expected ${availablePlayers} available (${teamPlayers.length} total - ${absentThisQuarter.length} absent)`);
     }
 
     // Check for duplicate assignments
