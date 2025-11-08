@@ -225,6 +225,26 @@ const formations11v11 = [
       { number: 7, abbreviation: 'CF', position: 'Striker' },
     ]),
   },
+  {
+    name: '5-4-1 Defensive',
+    format: '11v11' as const,
+    formation: '5-4-1',
+    description: 'Highly defensive formation with 5 defenders, 4 midfielders, 1 forward. Strong for defending leads.',
+    isDefault: false,
+    positions: JSON.stringify([
+      { number: 1, abbreviation: 'GK', position: 'Goalkeeper' },
+      { number: 2, abbreviation: 'RWB', position: 'Right Wing Back' },
+      { number: 5, abbreviation: 'CB', position: 'Center Back' },
+      { number: 4, abbreviation: 'CB', position: 'Center Back' },
+      { number: 3, abbreviation: 'CB', position: 'Center Back' },
+      { number: 6, abbreviation: 'LWB', position: 'Left Wing Back' },
+      { number: 7, abbreviation: 'RM', position: 'Right Midfielder' },
+      { number: 8, abbreviation: 'CM', position: 'Central Midfielder' },
+      { number: 10, abbreviation: 'CM', position: 'Central Midfielder' },
+      { number: 11, abbreviation: 'LM', position: 'Left Midfielder' },
+      { number: 9, abbreviation: 'CF', position: 'Striker' },
+    ]),
+  },
 ];
 
 async function seed() {
