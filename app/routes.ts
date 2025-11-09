@@ -28,6 +28,9 @@ export default [
       route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
       route("rotations", "routes/team.rotations.tsx"),
       route("player/remove", "routes/team.player.remove.tsx"),
+      route("contacts", "routes/team.contacts.tsx"),
+      route("contacts/new", "routes/team.contacts.new.tsx"),
+      route("contacts/:contactId/edit", "routes/team.contacts.edit.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

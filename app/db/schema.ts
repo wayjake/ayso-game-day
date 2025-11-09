@@ -113,6 +113,95 @@ export const shareLinks = sqliteTable('share_links', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+// Contacts table for player family communications
+export const contacts = sqliteTable('contacts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  playerId: integer('player_id').references(() => players.id), // Optional link to player
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  relationship: text('relationship', { enum: ['parent', 'guardian', 'self', 'emergency'] }), // Relationship to player
+  isPrimary: integer('is_primary', { mode: 'boolean' }).default(false),
+  notes: text('notes'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// OAuth tokens for Gmail integration
+export const oauthTokens = sqliteTable('oauth_tokens', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  provider: text('provider', { enum: ['gmail'] }).notNull(),
+  accessToken: text('access_token').notNull(), // Should be encrypted in production
+  refreshToken: text('refresh_token').notNull(), // Should be encrypted in production
+  tokenType: text('token_type').default('Bearer'),
+  expiresAt: text('expires_at').notNull(),
+  scope: text('scope'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Email logs for sent messages
+export const emailLogs = sqliteTable('email_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  gameId: integer('game_id').references(() => games.id), // Optional association
+  sentBy: integer('sent_by').notNull().references(() => users.id),
+  provider: text('provider', { enum: ['brevo', 'gmail'] }).notNull(),
+  providerMessageId: text('provider_message_id'), // External ID from Brevo/Gmail
+  subject: text('subject').notNull(),
+  recipients: text('recipients').notNull(), // JSON array of emails
+  body: text('body'),
+  status: text('status', { enum: ['sending', 'sent', 'failed', 'delivered', 'bounced'] }).default('sending'),
+  errorMessage: text('error_message'),
+  sentAt: text('sent_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  deliveredAt: text('delivered_at'),
+});
+
+// Inbox threads for team communications
+export const inboxThreads = sqliteTable('inbox_threads', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  gameId: integer('game_id').references(() => games.id),
+  subject: text('subject').notNull(),
+  participants: text('participants').notNull(), // JSON array of email addresses
+  lastMessageAt: text('last_message_at').notNull(),
+  lastMessagePreview: text('last_message_preview'),
+  isRead: integer('is_read', { mode: 'boolean' }).default(false),
+  messageCount: integer('message_count').default(1),
+  gmailThreadId: text('gmail_thread_id'), // For Gmail API integration
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Inbox messages within threads
+export const inboxMessages = sqliteTable('inbox_messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  threadId: integer('thread_id').notNull().references(() => inboxThreads.id),
+  provider: text('provider', { enum: ['brevo', 'gmail'] }).notNull(),
+  providerMessageId: text('provider_message_id').unique(),
+  gmailMessageId: text('gmail_message_id'), // Gmail specific
+  direction: text('direction', { enum: ['inbound', 'outbound'] }).notNull(),
+  fromEmail: text('from_email').notNull(),
+  fromName: text('from_name'),
+  toEmails: text('to_emails').notNull(), // JSON array
+  subject: text('subject').notNull(),
+  body: text('body'),
+  bodyHtml: text('body_html'),
+  attachments: text('attachments'), // JSON array of attachment metadata
+  receivedAt: text('received_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Thread notes for internal coach collaboration
+export const threadNotes = sqliteTable('thread_notes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  threadId: integer('thread_id').notNull().references(() => inboxThreads.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  note: text('note').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -132,3 +221,15 @@ export type SitOut = typeof sitOuts.$inferSelect;
 export type NewSitOut = typeof sitOuts.$inferInsert;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
+export type Contact = typeof contacts.$inferSelect;
+export type NewContact = typeof contacts.$inferInsert;
+export type OAuthToken = typeof oauthTokens.$inferSelect;
+export type NewOAuthToken = typeof oauthTokens.$inferInsert;
+export type EmailLog = typeof emailLogs.$inferSelect;
+export type NewEmailLog = typeof emailLogs.$inferInsert;
+export type InboxThread = typeof inboxThreads.$inferSelect;
+export type NewInboxThread = typeof inboxThreads.$inferInsert;
+export type InboxMessage = typeof inboxMessages.$inferSelect;
+export type NewInboxMessage = typeof inboxMessages.$inferInsert;
+export type ThreadNote = typeof threadNotes.$inferSelect;
+export type NewThreadNote = typeof threadNotes.$inferInsert;
