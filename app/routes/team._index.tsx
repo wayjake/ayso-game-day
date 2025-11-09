@@ -91,7 +91,7 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
         {/* Team actions - moved to top */}
         <div className="mb-8 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-6">
           <h2 className="text-lg font-semibold mb-4">Team Actions</h2>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <Link
               to={`/dashboard/team/${team.id}/games/new`}
               className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
@@ -102,7 +102,7 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
                 <div className="text-xs text-[var(--muted)]">Add a new game to the schedule</div>
               </div>
             </Link>
-            
+
             <Link
               to={`/dashboard/team/${team.id}/roster`}
               className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
@@ -113,7 +113,18 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
                 <div className="text-xs text-[var(--muted)]">Add and edit players</div>
               </div>
             </Link>
-            
+
+            <Link
+              to={`/dashboard/team/${team.id}/contacts`}
+              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
+            >
+              <div className="text-xl">📧</div>
+              <div>
+                <div className="font-medium text-sm">Manage Contacts</div>
+                <div className="text-xs text-[var(--muted)]">Player family contact info</div>
+              </div>
+            </Link>
+
             <Link
               to={`/dashboard/team/${team.id}/rotations`}
               className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
