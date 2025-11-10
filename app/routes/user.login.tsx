@@ -11,8 +11,6 @@ export function meta({ }: Route.MetaArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  console.log("Login action")
-  console.log(process.env)
   const session = await getSession(request.headers.get("Cookie"));
   const formData = await request.formData();
 
