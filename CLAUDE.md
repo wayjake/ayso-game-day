@@ -1,289 +1,526 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # AYSO Game Day Project
 
-This project is an AYSO (American Youth Soccer Organization) team management application built with React Router v7, Drizzle ORM, and SQLite.
+This project is an AYSO (American Youth Soccer Organization) team management application built with React Router v7, Drizzle ORM, and SQLite/Turso.
 
-## Project Overview
+## Technology Stack & Architecture
 
-AYSO Game Day helps coaches manage their teams, plan game rotations, track player assignments, and ensure AYSO fair-play compliance.
+### Core Framework
+- **React Router v7** - Full-stack React framework with server-side rendering
+- **TypeScript** - Full type safety with auto-generated route types
+- **Vite** - Build tool and dev server with HMR
+- **Node.js 20+** - Server runtime
 
-### Key Features
-- **Team Management**: Create and manage multiple teams
-- **Player Management**: Track players with profiles, profile pictures (via UploadThing), and preferred positions
-- **Game Planning**: Schedule games and plan formations
-- **Lineup Planner**: Drag-and-drop player assignment to positions per quarter
-- **Position Change Indicators**: Visual indicators showing when players change positions between quarters
-- **Quarter Playing Count**: Badge indicators showing how many quarters each player has played
-- **Previous Quarter Hints**: Visual hints showing which positions players played in the previous quarter
-- **Public Game View**: Shareable public links for parents/players to view game lineups without authentication
-- **AYSO Compliance**: Built-in sit-out tracking for fair play rules
-- **Formation Templates**: Pre-configured 7v7, 9v9, and 11v11 formations
+### Database Layer
+- **Drizzle ORM** - Type-safe database toolkit with schema inference
+- **Turso/LibSQL** - Production database (cloud-based SQLite)
+- **SQLite** - Local development fallback
+- **Automatic database switching**: Uses Turso (cloud) when `TURSO_URL` and `TURSO_TOKEN` are set, otherwise falls back to local SQLite (`DATABASE_URL` or `file:./local.db`)
+
+### Styling & UI
+- **Tailwind CSS v4** - Utility-first CSS framework
+- CSS custom properties for theming in `/app/app.css`
+- Color scheme: Cyan-Blue primary (#0EA5E9), AYSO Red accent (#EF4444)
+
+### File Uploads & AI
+- **UploadThing** - Image upload and CDN hosting with multi-size support
+- **OpenAI API** - AI-powered lineup generation and transcription
+- **Anthropic Claude SDK** - Advanced AI assistant features
+
+## Project Structure
+
+```
+app/
+├── api/
+│   └── ai-lineup/          # AI lineup generation modules
+│       ├── route.ts        # Main AI API endpoint
+│       ├── types.ts        # Shared TypeScript types
+│       ├── prompt-builder.ts
+│       ├── validation.ts
+│       └── data-fetchers.ts
+├── components/             # Reusable UI components
+├── db/
+│   ├── schema.ts          # Drizzle ORM schema definitions
+│   ├── index.ts           # Database client with Turso/SQLite fallback
+│   └── seed.ts            # Database seeding script
+├── hooks/                 # Custom React hooks
+├── routes/                # Route modules (file-based routing)
+├── server/                # Server-side utilities
+├── utils/
+│   ├── auth.server.ts     # Authentication utilities
+│   ├── formations.ts      # Formation definitions
+│   ├── position-changes.ts # Position change detection
+│   └── image.ts           # Image URL helpers
+├── app.css                # Global styles and theme
+├── root.tsx               # Root layout component
+├── routes.ts              # Route configuration
+└── sessions.server.ts     # Session management
+```
+
+## Development Commands
+
+```bash
+# Development
+npm run dev              # Start dev server (localhost:5173)
+npm run build            # Production build
+npm run start            # Start production server
+npm run typecheck        # TypeScript + route type generation
+
+# Database
+npm run db:push          # Apply schema changes to database
+npm run db:generate      # Create migration files
+npm run db:migrate       # Run migrations
+npm run db:seed          # Seed formations and positions
+npm run db:studio        # Open Drizzle Studio GUI (localhost:4983)
+```
 
 ## Database Schema
 
-The application uses Drizzle ORM with SQLite and includes these main entities:
+The application uses Drizzle ORM with 8 main tables:
 
-### Users
-- Authentication and profile information
-- Roles: coach, admin, assistant-coach
-- Team associations
-- Fields: id, email, password (bcrypt hashed), role, teamName, gameFormat, region, timestamps
+### Core Entities
+1. **users** - Authentication and user profiles
+   - Fields: id, email, password (bcrypt hashed), role, teamName, gameFormat, region, timestamps
+   - Roles: coach, admin, assistant-coach
 
-### Teams
-- Team information (name, format, age group, season)
-- Linked to coach/user
-- Fields: id, name, coachId, format (7v7/9v9/11v11), ageGroup, season, region, timestamps
+2. **teams** - Team information and settings
+   - Fields: id, name, coachId, format (7v7/9v9/11v11), ageGroup, season, region, timestamps
+   - Relationship: One user (coach) can have many teams
 
-### Players
-- Player profiles with names, descriptions, profile pictures (UploadThing integration)
-- Supports multi-size images with `profileImageBase` field
-- Preferred positions (stored as JSON array)
-- Team associations
-- Legacy `profilePicture` field for backward compatibility
-- Fields: id, teamId, coachId, name, description, profilePicture, profileImageBase, preferredPositions (JSON), timestamps
+3. **players** - Player profiles with photos and preferred positions
+   - Fields: id, teamId, coachId, name, description, profilePicture (legacy), profileImageBase, preferredPositions (JSON array), timestamps
+   - Multi-size image support: `-thumbnail.jpg`, `-medium.jpg`, `-large.jpg`
+   - Use `getImageUrl()` helper from `/app/utils/image.ts` for all player images
 
-### Template Formations
-- Pre-configured formations for 7v7, 9v9, and 11v11
-- Based on traditional soccer numbering (1-11)
-- Includes popular formations like 3-3-2, 4-3-3, etc.
-- Positions stored as JSON with x/y coordinates for visual rendering
-- Fields: id, name, format, formation, positions (JSON), description, isDefault, createdAt
+4. **templateFormations** - Pre-configured formation templates
+   - Fields: id, name, format, formation, positions (JSON with x/y coordinates), description, isDefault, createdAt
+   - Percentage-based coordinates (x: 0-100, y: 0-100)
+   - Traditional soccer numbering (1=GK, 2-11=field positions)
 
-### Games
-- Game scheduling and details
-- Formation assignments
-- Opponent information
-- Game status tracking (scheduled, in-progress, completed, cancelled)
-- Fields: id, teamId, formationId, opponent, gameDate, gameTime, field, homeAway, status, notes, timestamps
+5. **games** - Game scheduling and details
+   - Fields: id, teamId, formationId, opponent, gameDate, gameTime, field, homeAway, status, notes, timestamps
+   - Status: scheduled, in-progress, completed, cancelled
 
-### Assignments
-- Player position assignments per game/quarter
-- Traditional soccer position numbering (1-11)
-- Quarter-based tracking for AYSO compliance
-- Fields: id, gameId, playerId, positionNumber, positionName, quarter, isSittingOut, timestamps
+6. **assignments** - Player position assignments per game/quarter
+   - Fields: id, gameId, playerId, positionNumber, positionName, quarter, isSittingOut, timestamps
+   - Quarter-based tracking (1-4) for AYSO compliance
 
-### Positions
-- Static reference data for position definitions
-- Traditional soccer numbering system
-- Categorized by role (goalkeeper, defender, midfielder, forward)
-- Format-specific positions (7v7, 9v9, 11v11, or all)
-- Fields: id, number, abbreviation, fullName, category, format
+7. **positions** - Static reference data for position definitions
+   - Fields: id, number, abbreviation, fullName, category, format
+   - Categories: goalkeeper, defender, midfielder, forward
+   - Format-specific positions (7v7, 9v9, 11v11, or all)
 
-### Sit-outs
-- AYSO fair-play tracking
-- Tracks which players sit out per quarter
-- Includes reason for sitting out
-- Fields: id, gameId, playerId, quarter, reason, createdAt
+8. **shareLinks** - Public shareable links for game lineups
+   - Fields: id, gameId, teamId, shareId (unique), expiresAt, createdBy, createdAt
+   - Allows parents/players to view lineups without authentication
 
-### Share Links
-- Public shareable links for game lineups
-- Expires after set duration
-- Allows parents/players to view lineups without authentication
-- Tracks creator and associated game/team
-- Fields: id, gameId, teamId, shareId (unique), expiresAt, createdBy, createdAt
-
-## Database Setup
-
-```bash
-# Install dependencies
-npm i drizzle-orm @libsql/client
-npm i -D drizzle-kit
-
-# Generate and apply schema
-npm run db:push
-
-# Seed with formation templates
-npm run db:seed
-
-# Open database GUI
-npm run db:studio
-```
+9. **sitOuts** - AYSO fair-play tracking
+   - Fields: id, gameId, playerId, quarter, reason, createdAt
 
 ## Authentication System
 
-The app uses cookie-based sessions with bcrypt for password hashing:
-
 ### Session Management (`app/sessions.server.ts`)
-```typescript
-import { createCookieSessionStorage } from "react-router";
-
-type SessionData = {
-  userId: number;
-  userEmail: string;
-  userRole: 'coach' | 'admin' | 'assistant-coach';
-};
-
-const { getSession, commitSession, destroySession } = createCookieSessionStorage({
-  cookie: {
-    name: "ayso_session",
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-    secrets: [process.env.SESSION_SECRET],
-    secure: process.env.NODE_ENV === "production",
-  },
-});
-```
+- Cookie-based sessions with `createCookieSessionStorage`
+- Session cookie name: `ayso_session`
+- Max age: 1 week
+- HttpOnly, Secure in production
+- Session data: `userId`, `userEmail`, `userRole`
 
 ### Authentication Utilities (`app/utils/auth.server.ts`)
-- `hashPassword()` - bcrypt password hashing
-- `createUser()` - User registration with team creation
-- `authenticateUser()` - Login validation
-- `requireUserId()` - Protected route authentication
-- `getUser()` - Current user data fetching
+- `hashPassword(password)` - bcrypt password hashing (10 rounds)
+- `createUser(email, password, userData)` - User registration with automatic team creation
+- `authenticateUser(email, password)` - Email/password validation
+- `requireUserId(request)` - Throws redirect if not authenticated
+- `getUser(request)` - Fetches current user, optional redirect to `/user/login`
 
-### Route Protection
-
+### Route Protection Pattern
 Protected routes use the dashboard layout which automatically checks authentication:
 
 ```typescript
 // app/routes/dashboard.tsx
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await getUser(request); // Redirects if not authenticated
+  const user = await getUser(request); // Auto-redirects to /user/login if not authenticated
   return data({ user });
 }
 ```
 
-## Route Structure
+## Routing System (React Router v7)
 
-Current route configuration (`app/routes.ts`):
+### Route Configuration
+Routes are defined in `/app/routes.ts` using React Router v7's configuration:
 
+```typescript
+// Nested layout pattern
+route("dashboard", "routes/dashboard.tsx", [
+  route("", "routes/dashboard._index.tsx"),
+  route("team/:teamId", "routes/team.tsx", [
+    route("roster", "routes/team.roster.tsx"),
+    route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
+  ])
+])
 ```
-/ - Homepage (marketing site)
-/user/signup - User registration
-/user/login - User login
-/user/logout - Logout action
-/api/uploadthing - UploadThing file upload handler
-/public/game/:id - Public game lineup view (no auth required)
+
+### Route Module Pattern
+Every route file exports:
+- `loader()` - Server-side data fetching (runs on every request)
+- `action()` - Form submissions and mutations (POST/PUT/DELETE)
+- `default` component - React component
+- `meta()` - Page metadata (optional)
+
+Example:
+```typescript
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const user = await getUser(request);
+  const team = await db.query.teams.findFirst({
+    where: eq(teams.id, parseInt(params.teamId!)),
+  });
+  return data({ team, user });
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const _action = formData.get('_action');
+  // Handle different actions based on _action field
+  return data({ success: true });
+}
+
+export default function Component({ loaderData }: Route.ComponentProps) {
+  const { team, user } = loaderData;
+  return <div>...</div>;
+}
+```
+
+### Current Route Structure
+```
+/ - Homepage
+/user/signup - Registration
+/user/login - Login
+/user/logout - Logout
+/api/uploadthing - File upload handler
+/api/ai-lineup - AI lineup generation
+/public/game/:id - Public game view (no auth)
+
 /dashboard - Protected dashboard layout
-  /dashboard (index) - Dashboard overview with stats
-  /dashboard/teams - Team management
-  /dashboard/teams/new - Create new team
+  /dashboard - Dashboard overview
+  /dashboard/teams - Team list
+  /dashboard/teams/new - Create team
   /dashboard/team/:teamId - Team layout (nested routes)
-    /dashboard/team/:teamId (index) - Team overview/stats
-    /dashboard/team/:teamId/roster - View team roster
-    /dashboard/team/:teamId/roster/new-player - Add new player
+    /dashboard/team/:teamId - Team overview
+    /dashboard/team/:teamId/roster - Player roster
+    /dashboard/team/:teamId/roster/new-player - Add player
     /dashboard/team/:teamId/roster/player/:playerId/edit - Edit player
-    /dashboard/team/:teamId/games - View team games
-    /dashboard/team/:teamId/games/new - Create new game
-    /dashboard/team/:teamId/games/:gameId/lineup - Game lineup planner
-    /dashboard/team/:teamId/rotations - Player rotations overview
-    /dashboard/team/:teamId/player/remove - Remove player action
+    /dashboard/team/:teamId/games - Games list
+    /dashboard/team/:teamId/games/new - Create game
+    /dashboard/team/:teamId/games/:gameId/lineup - Lineup planner ⭐
+    /dashboard/team/:teamId/rotations - Rotation overview
+    /dashboard/team/:teamId/player/remove - Remove player
+```
+
+## Key Features & Implementation Patterns
+
+### 1. Lineup Planner (`/app/routes/team.games.game.lineup.tsx`)
+The core feature of the app with:
+- **Drag-and-drop player assignment**: Drag from roster to field positions
+- **Quarter-by-quarter management**: 4 quarters with independent lineups
+- **Formation selection**: Choose from templates or create custom
+- **Position change indicators**: Visual circles showing position changes between quarters
+- **Playing count badges**: Tracks how many quarters each player has played
+- **Previous quarter hints**: Faded indicators showing prior positions
+- **Absent/injured player tracking**: Modal to mark players unavailable
+- **AI Assistant Coach**: Voice and text-based lineup suggestions
+- **Public share links**: Generate expiring links for parents/players
+
+**Data Flow:**
+```
+loader() → Fetch game, players, assignments, formations
+action() → Handle assignPlayer, removePlayer, copyQuarter, updateFormation
+Component → Drag/drop UI, visual indicators, AI assistant
+```
+
+### 2. AI Assistant Coach (`/app/components/AIAssistantCoach.tsx` + `/app/api/ai-lineup/`)
+Features:
+- Text-based lineup suggestions
+- Voice recording and transcription (OpenAI Whisper)
+- Context-aware recommendations (player history, preferred positions)
+- Fair-play compliance validation
+- Multi-quarter lineup generation
+- Sequential and hybrid AI strategies
+
+AI Context Includes:
+- Player preferred positions
+- Position history across games
+- Absent/injured players
+- Current partial lineups
+- AYSO fair-play requirements
+
+### 3. Formation System (`/app/utils/formations.ts`)
+Supports 7v7, 9v9, and 11v11 formats:
+- **Storage**: Percentage-based coordinates (x: 0-100, y: 0-100)
+- **Numbering**: Traditional soccer numbering (1=GK, 2-11=field)
+- **Templates**: Pre-configured formations in database (seeded via `npm run db:seed`)
+- **Formats**:
+  - 11v11: 4-4-2, 4-3-3, 3-5-2, 4-2-3-1
+  - 9v9: 3-3-2, 3-2-3, 2-4-2
+  - 7v7: 2-3-1, 3-2-1, 2-2-2
+
+### 4. Image Upload System
+- **Server**: `/app/server/uploadthing.ts` - FileRouter configuration
+- **Client**: `/app/components/ImageUploader.tsx` - Upload UI with drag-drop
+- **Utilities**: `/app/utils/image.ts` - URL helpers
+- **Multi-size images**: Base URL in `profileImageBase`, variants auto-generated
+- **Legacy support**: `profilePicture` field for backward compatibility
+
+### 5. Position Change Detection (`/app/utils/position-changes.ts`)
+Change types:
+- `new_in` - Player coming from bench
+- `position_swap` - Player changing positions
+- `sitting_out` - Player going to bench
+- `new_position` - Player in different position
+
+Visual indicators:
+- Color-coded circles on field positions
+- Previous quarter ghost positions
+- Playing count badges per player
+
+### 6. Public Game Sharing
+Flow:
+1. Coach generates share link (stored in `shareLinks` table)
+2. Unique `shareId` created with expiration time
+3. Public route: `/public/game/:id` (no authentication required)
+4. Parents/players view lineup without login
+
+## Important Development Patterns
+
+### 1. Server-Only Code
+- Files suffixed `.server.ts` are never sent to client
+- Auth utilities, database queries stay server-side
+- Always use `getUser(request)` for protected routes
+
+### 2. Database Queries
+Always filter by `coachId` for ownership checks:
+```typescript
+const players = await db.query.players.findMany({
+  where: and(
+    eq(players.teamId, parseInt(params.teamId!)),
+    eq(players.coachId, user.id) // Ownership check
+  ),
+});
+```
+
+Common patterns:
+- Use `eq()`, `and()`, `or()` from `drizzle-orm`
+- Use `.limit(1)` for single record queries
+- Use `db.query.tableName.findFirst()` or `findMany()`
+
+### 3. Form Submission Pattern
+Use `_action` field to differentiate multiple actions in one route:
+
+```typescript
+// Client-side with useFetcher
+const fetcher = useFetcher();
+fetcher.submit(
+  { _action: "assignPlayer", playerId, positionNumber },
+  { method: "post" }
+);
+
+// Server-side action
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const _action = formData.get('_action');
+
+  if (_action === 'assignPlayer') {
+    // Handle assignment
+  } else if (_action === 'removePlayer') {
+    // Handle removal
+  }
+
+  return data({ success: true });
+}
+```
+
+### 4. Type Safety
+- Route types auto-generated with `react-router typegen`
+- Drizzle infers types from schema: `User`, `Player`, `Game`, etc.
+- Import route types: `import type { Route } from "./+types/routename"`
+- Always run `npm run typecheck` after route or schema changes
+
+### 5. Data Loading Pattern
+```typescript
+// Server-side (loader)
+const players = await db.query.players.findMany({
+  where: eq(players.teamId, teamId),
+});
+return data({ players });
+
+// Client-side (component)
+export default function Component({ loaderData }: Route.ComponentProps) {
+  const { players } = loaderData;
+  // Use players...
+}
+```
+
+### 6. Image URL Helpers
+Always use `getImageUrl()` helper for player images:
+```typescript
+import { getImageUrl } from '~/utils/image';
+
+// In component
+const imageUrl = getImageUrl(player, 'medium'); // 'thumbnail', 'medium', or 'large'
+```
+
+### 7. CSS Variables
+Use CSS custom properties for theming:
+```css
+/* Defined in /app/app.css */
+var(--primary-color)
+var(--accent-color)
+var(--background)
+var(--text-color)
 ```
 
 ## Environment Variables
 
-Required environment variables:
+Required:
 ```bash
-# Database
-DATABASE_URL=file:./local.db
-
-# Session security
-SESSION_SECRET=your-secret-key-here
-
-# UploadThing (for player profile images)
-UPLOADTHING_TOKEN=your-uploadthing-token
+DATABASE_URL=file:./local.db          # SQLite local database
+SESSION_SECRET=your-secret-key-here   # Required in production
+UPLOADTHING_TOKEN=your-token          # For image uploads
 ```
 
-## Formation System
-
-The app includes pre-configured formations based on traditional soccer numbering:
-
-### 7v7 Formations
-- Support for younger age groups
-- Smaller field formations
-
-### 9v9 Formations
-1. **3-3-2 Balanced** - Most common AYSO formation
-2. **3-2-3 Attack** - More attacking with strong wings
-3. **2-4-2 Midfield Control** - Emphasis on midfield dominance
-
-### 11v11 Formations
-1. **4-3-3 Classic** - Traditional formation
-2. **4-4-2 Traditional** - Classic two-striker system
-3. **3-5-2 Wing Play** - Wing-back focused
-
-### Position Numbering
-- 1: Goalkeeper
-- 2-5: Defenders (RB, LB, CB, CB)
-- 6, 8, 10: Midfielders (CDM, CM, CAM)
-- 7, 11: Wings (RM/RW, LM/LW)
-- 9: Striker/Center Forward
-
-## Lineup Planning Features
-
-The game lineup planner (`/dashboard/team/:teamId/games/:gameId/lineup`) includes:
-
-1. **Drag-and-Drop Interface**: Drag players from the roster to positions on the field
-2. **Quarter Management**: Separate lineup for each quarter with quick copy functionality
-3. **Position Change Indicators**: Visual circles showing positions where a player's assignment changes between quarters
-4. **Playing Count Badges**: Shows how many quarters each player has been assigned
-5. **Previous Quarter Hints**: Faded indicators showing where players were positioned in the previous quarter
-6. **Formation Selection**: Choose from pre-configured formations or create custom layouts
-7. **Public Sharing**: Generate shareable links for parents/players to view the lineup
-
-## Development Commands
-
+Optional:
 ```bash
-# Start development server
-npm run dev
-
-# Database commands
-npm run db:push      # Apply schema changes
-npm run db:generate  # Create migration files
-npm run db:migrate   # Run migrations
-npm run db:seed      # Seed initial data
-npm run db:studio    # Open Drizzle Studio
-
-# Build for production
-npm run build
-npm run start
+TURSO_URL=your-turso-url             # Cloud database (Turso)
+TURSO_TOKEN=your-turso-token         # Cloud database auth
+OPENAI_API_KEY=your-key              # For AI assistant
+ANTHROPIC_API_KEY=your-key           # For advanced AI features
 ```
 
 ## Testing & Quality Assurance
 
 ### Test User Account
-
-For testing authenticated features and logged-in views, use the following test account:
+For testing authenticated features:
 - **Email**: jake@dubsado.com
 - **Password**: Testing123
 
-This account should be used when testing dashboard features, team management, game planning, and other authenticated functionality.
+### No Formal Test Suite
+- Currently no Jest/Vitest/Playwright tests in codebase
+- Testing done manually with test account
+- Opportunity for future test implementation
 
-### Playwright Browser Testing
-
+### Playwright Browser Testing (when using MCP)
 When using Playwright for browser testing:
-
-1. **Always close the browser**: After completing any Playwright task, always close the browser using `mcp__playwright__browser_close` to free up resources.
-
-2. **Responsive Layout Testing**: When implementing major UI features or making significant layout changes, automatically test the following viewport sizes:
-   - **Mobile**: 375px width (iPhone size)
-   - **Tablet**: 768px width (iPad size)
-   - **Desktop**: 1440px width (standard desktop)
-
-3. **Testing Workflow**:
-   ```
-   1. Start dev server if needed
-   2. Navigate to the page
-   3. Test mobile viewport (375px)
-   4. Test tablet viewport (768px)
-   5. Test desktop viewport (1440px)
-   6. Take screenshots for documentation if needed
-   7. Close the browser when complete
-   ```
-
-4. **Layout Validation Checklist**:
+1. **Always close the browser** after completing tasks using `mcp__playwright__browser_close`
+2. **Responsive layout testing**: Test mobile (375px), tablet (768px), desktop (1440px) viewports
+3. **Layout validation checklist**:
    - Check for text overflow or truncation
    - Verify proper element stacking on mobile
-   - Ensure touch targets are appropriately sized (min 44x44px)
+   - Ensure touch targets are min 44x44px
    - Confirm responsive grid layouts adapt correctly
-   - Validate navigation menu behavior (mobile hamburger, desktop full)
+   - Validate navigation menu behavior
    - Test form field layouts and spacing
 
-## Common Issues
+## Common Issues & Solutions
 
-1. **Route not found**: Check route configuration in `routes.ts`
+1. **Route not found**: Check route configuration in `/app/routes.ts` and ensure route file exists
 2. **TypeScript errors**: Run `react-router typegen` to generate route types
-3. **Env variable not accessible**: Ensure client-side vars are prefixed with `VITE_`
-4. **SSR hydration mismatch**: Check for browser-only code in components
-5. **Authentication errors**: Ensure SESSION_SECRET is set in environment
+3. **Env variable not accessible on client**: Client-side vars must be prefixed with `VITE_`
+4. **SSR hydration mismatch**: Check for browser-only code in components (use `useEffect` for client-only code)
+5. **Authentication errors**: Ensure `SESSION_SECRET` is set in environment
 6. **Database errors**: Run `npm run db:push` to sync schema changes
-7. **UploadThing errors**: Ensure UPLOADTHING_TOKEN is set in environment
+7. **UploadThing errors**: Ensure `UPLOADTHING_TOKEN` is set in environment
+8. **Type errors after route changes**: Run `npm run typecheck` to regenerate types
+
+## Deployment
+
+### Docker Support
+Multi-stage Dockerfile included for containerized deployment:
+```bash
+docker build -t ayso-game-day .
+docker run -p 3000:3000 ayso-game-day
+```
+
+Compatible platforms: AWS ECS, Google Cloud Run, Azure Container Apps, Digital Ocean, Fly.io, Railway
+
+### Build Output
+```
+build/
+├── client/    # Static assets
+└── server/    # SSR server code
+```
+
+## Quick Reference for Common Tasks
+
+### Adding a new route
+1. Add route to `/app/routes.ts`
+2. Create route file in `/app/routes/`
+3. Export `loader()`, `action()`, and `default` component
+4. Run `npm run typecheck` to generate types
+
+### Database schema changes
+1. Edit `/app/db/schema.ts`
+2. Run `npm run db:push` to apply changes
+3. Update seed script if needed (`/app/db/seed.ts`)
+
+### Adding a new formation template
+1. Edit `/app/utils/formations.ts`
+2. Add formation definition with positions
+3. Run `npm run db:seed` to seed database
+
+### Creating protected routes
+```typescript
+export async function loader({ request }: Route.LoaderArgs) {
+  const user = await getUser(request); // Auto-redirects if not authenticated
+  // ... rest of loader
+}
+```
+
+### Handling form submissions with multiple actions
+```typescript
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const _action = formData.get('_action');
+
+  switch (_action) {
+    case 'create':
+      // Handle create
+      break;
+    case 'update':
+      // Handle update
+      break;
+    case 'delete':
+      // Handle delete
+      break;
+  }
+
+  return data({ success: true });
+}
+```
+
+## Key Files Reference
+
+| Purpose | File Path |
+|---------|-----------|
+| Route Config | `/app/routes.ts` |
+| Database Schema | `/app/db/schema.ts` |
+| Database Client | `/app/db/index.ts` |
+| Auth Utils | `/app/utils/auth.server.ts` |
+| Session Config | `/app/sessions.server.ts` |
+| Formation Data | `/app/utils/formations.ts` |
+| Position Changes | `/app/utils/position-changes.ts` |
+| Image Helpers | `/app/utils/image.ts` |
+| Main Lineup UI | `/app/routes/team.games.game.lineup.tsx` |
+| AI Assistant | `/app/components/AIAssistantCoach.tsx` |
+| AI API Endpoint | `/app/api/ai-lineup/route.ts` |
+| Global Styles | `/app/app.css` |
+| Root Layout | `/app/root.tsx` |
+| Dashboard Layout | `/app/routes/dashboard.tsx` |
+
+## Git Commit Guidelines
+
+When making commits:
+- Do NOT include the Claude Code watermark or "Co-Authored-By: Claude" line
+- Write clear, concise commit messages focused on the "why" rather than the "what"
+- Use conventional commit style when appropriate (feat:, fix:, docs:, refactor:, etc.)
