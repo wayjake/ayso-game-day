@@ -7,6 +7,7 @@ export default [
   // API routes
   route("api/uploadthing", "routes/api.uploadthing.ts"),
   route("api/ai-lineup", "api/ai-lineup/route.ts"),
+  route("api/roster-import", "api/roster-import/route.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("user", "routes/user.tsx", [

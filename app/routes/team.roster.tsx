@@ -1,11 +1,12 @@
 import type { Route } from "./+types/team.roster";
-import { Link, useFetcher } from "react-router";
+import { Link, useFetcher, useRevalidator } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { db, teams, players } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
 import { useState } from "react";
+import { RosterImportModal } from "~/components/RosterImportModal";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -150,7 +151,14 @@ function PlayerCard({ player, teamId }: { player: any; teamId: number }) {
 
 export default function TeamRoster({ loaderData }: Route.ComponentProps) {
   const { team, players } = loaderData;
-  
+  const [showImportModal, setShowImportModal] = useState(false);
+  const revalidator = useRevalidator();
+
+  const handleImportComplete = () => {
+    // Refresh the page data after import
+    revalidator.revalidate();
+  };
+
   return (
     <div className="py-4">
       <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
@@ -162,12 +170,20 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
               Manage players for your {team.format} team
             </p>
           </div>
-          <Link
-            to={`/dashboard/team/${team.id}/roster/new-player`}
-            className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-          >
-            Add Player
-          </Link>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
+            >
+              Import Roster
+            </button>
+            <Link
+              to={`/dashboard/team/${team.id}/roster/new-player`}
+              className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
+            >
+              Add Player
+            </Link>
+          </div>
         </div>
         
         {/* Players grid */}
@@ -201,6 +217,15 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </div>
+
+      {/* Import Roster Modal */}
+      <RosterImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        teamId={team.id}
+        existingPlayers={players.map((p) => ({ id: p.id, name: p.name }))}
+        onImportComplete={handleImportComplete}
+      />
     </div>
   );
 }
