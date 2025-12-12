@@ -29,6 +29,8 @@ import * as path from 'path';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
+export const maxDuration = 120;
+
 const MAX_ITERATIONS = 10;
 
 // Zod schema for the lineup response
