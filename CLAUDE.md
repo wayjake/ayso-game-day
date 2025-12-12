@@ -16,9 +16,14 @@ This project is an AYSO (American Youth Soccer Organization) team management app
 
 ### Database Layer
 - **Drizzle ORM** - Type-safe database toolkit with schema inference
-- **Turso/LibSQL** - Production database (cloud-based SQLite)
+- **Turso/LibSQL** - Cloud-based SQLite for staging and production
 - **SQLite** - Local development fallback
-- **Automatic database switching**: Uses Turso (cloud) when `TURSO_URL` and `TURSO_TOKEN` are set, otherwise falls back to local SQLite (`DATABASE_URL` or `file:./local.db`)
+- **Database environments**:
+  - **Local/Staging**: Uses `TURSO_URL` and `TURSO_TOKEN` (or falls back to local SQLite)
+    - Commands: `npm run db:push`, `npm run db:migrate`, `npm run db:studio`
+  - **Production**: Uses `TURSO_PROD_URL` and `TURSO_PROD_TOKEN`
+    - Commands: `npm run db:prod:migrate`, `npm run db:prod:studio`
+    - No `db:prod:push` by design (use migrations only for production)
 
 ### Styling & UI
 - **Tailwind CSS v4** - Utility-first CSS framework
@@ -69,12 +74,16 @@ npm run build            # Production build
 npm run start            # Start production server
 npm run typecheck        # TypeScript + route type generation
 
-# Database
+# Database (Local/Staging)
 npm run db:push          # Apply schema changes to database
 npm run db:generate      # Create migration files
 npm run db:migrate       # Run migrations
 npm run db:seed          # Seed formations and positions
 npm run db:studio        # Open Drizzle Studio GUI (localhost:4983)
+
+# Database (Production)
+npm run db:prod:migrate  # Run migrations on production
+npm run db:prod:studio   # Open Drizzle Studio for production
 ```
 
 ## Database Schema
@@ -392,8 +401,10 @@ UPLOADTHING_TOKEN=your-token          # For image uploads
 
 Optional:
 ```bash
-TURSO_URL=your-turso-url             # Cloud database (Turso)
-TURSO_TOKEN=your-turso-token         # Cloud database auth
+TURSO_URL=your-turso-url             # Staging database (Turso)
+TURSO_TOKEN=your-turso-token         # Staging database auth
+TURSO_PROD_URL=your-prod-url         # Production database (Turso)
+TURSO_PROD_TOKEN=your-prod-token     # Production database auth
 OPENAI_API_KEY=your-key              # For AI assistant
 ANTHROPIC_API_KEY=your-key           # For advanced AI features
 ```

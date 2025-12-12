@@ -703,7 +703,7 @@ Assign field positions now.`;
       const positionAbbr = pos.abbreviation;
 
       // Find the best available player for this position based on position history
-      let bestPlayer = null;
+      let bestPlayer: any = null;
       let bestExperience = -1;
 
       fieldPlayers.forEach(playerId => {

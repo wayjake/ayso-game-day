@@ -308,7 +308,6 @@ async function runAutonomousIterations(
     isComplete: false,
     currentStep: 'Max iterations reached',
     currentResults: accumulatedContext,
-    nextPrompt: null,
     nextStrategy: null,
     reasoning: `Reached maximum ${MAX_ITERATIONS} iterations without completing lineup`,
     error: true,
@@ -638,9 +637,9 @@ Use the autonomous_iteration tool to report your progress, next steps, and final
     });
 
     // Extract the tool use from the response
-    const toolUse = message.content.find((block: any) => block.type === 'tool_use');
+    const toolUse = message.content.find((block) => block.type === 'tool_use');
 
-    if (!toolUse || !toolUse.input) {
+    if (!toolUse || toolUse.type !== 'tool_use') {
       throw new Error('No tool use found in Anthropic response');
     }
 
@@ -663,7 +662,6 @@ Use the autonomous_iteration tool to report your progress, next steps, and final
       isComplete: false,
       currentStep: 'Error',
       currentResults: {},
-      nextPrompt: null,
       nextStrategy: null,
       reasoning: `Error calling AI: ${error}`,
       error: true,

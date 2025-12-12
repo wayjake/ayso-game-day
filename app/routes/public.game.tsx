@@ -290,13 +290,13 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
 
   // Get current quarter data
   const currentLineup = typeof currentQuarter === 'number' ? quarterAssignments.get(currentQuarter) || new Map() : new Map();
-  const currentSittingOut = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set() : new Set();
+  const currentSittingOut: Set<number> = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set<number>() : new Set<number>();
   const currentAbsentInjured = typeof currentQuarter === 'number' ? absentInjured.get(currentQuarter) || new Map() : new Map();
 
   // Get previous quarter data for hints and change detection
   const previousQuarter = currentQuarter > 1 ? currentQuarter - 1 : null;
   const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
-  const previousSittingOut = previousQuarter ? sittingOut.get(previousQuarter) || new Set() : new Set();
+  const previousSittingOut: Set<number> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<number>() : new Set<number>();
 
   // 🔄 Calculate position changes between quarters
   const positionChanges = previousQuarter ? calculatePositionChanges(

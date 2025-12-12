@@ -130,6 +130,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   try {
     const playerId = playerIdStr && playerIdStr !== "" ? parseInt(playerIdStr) : null;
+    const validRelationships = ['parent', 'guardian', 'self', 'emergency'] as const;
+    const relationshipValue = validRelationships.includes(relationship as typeof validRelationships[number])
+      ? (relationship as typeof validRelationships[number])
+      : null;
 
     await db
       .update(contacts)
@@ -137,7 +141,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         phone: phone?.trim() || null,
-        relationship: relationship || null,
+        relationship: relationshipValue,
         playerId: playerId,
         isPrimary: isPrimary,
         notes: notes?.trim() || null,
@@ -281,7 +285,7 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
                 id="isPrimary"
                 name="isPrimary"
                 type="checkbox"
-                defaultChecked={contact.isPrimary}
+                defaultChecked={contact.isPrimary ?? false}
                 className="h-4 w-4 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
               />
               <label htmlFor="isPrimary" className="ml-2 text-sm">

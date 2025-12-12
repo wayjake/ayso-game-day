@@ -147,9 +147,10 @@ export function buildQuarterUserMessage(params: {
 
   // Add goalkeeper consecutive warning if applicable
   let goalkeeperWarning = '';
-  if (previousGoalkeeper && quarterNumber >= 2 && quarterNumber <= 4) {
+  const gk = previousGoalkeeper as { playerId: number; playerName: string; quarter: number } | null;
+  if (gk && quarterNumber >= 2 && quarterNumber <= 4) {
     goalkeeperWarning = `\n\n⚽ GOALKEEPER CONSECUTIVE RULE (CRITICAL):
-  ${previousGoalkeeper.playerName} (ID: ${previousGoalkeeper.playerId})  should play in this quarter if it's likely they will play GK again in this game.`;
+  ${gk.playerName} (ID: ${gk.playerId})  should play in this quarter if it's likely they will play GK again in this game.`;
   }
 
   // Quarter-specific instructions

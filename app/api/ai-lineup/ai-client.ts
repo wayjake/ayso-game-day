@@ -87,9 +87,9 @@ export async function generateLineupWithAnthropic(params: {
   });
 
   // Extract the tool use from the response
-  const toolUse = message.content.find((block: any) => block.type === 'tool_use');
+  const toolUse = message.content.find((block) => block.type === 'tool_use');
 
-  if (!toolUse || !toolUse.input) {
+  if (!toolUse || toolUse.type !== 'tool_use') {
     throw new Error('No tool use found in Anthropic response');
   }
 

@@ -86,6 +86,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   try {
     const playerId = playerIdStr && playerIdStr !== "" ? parseInt(playerIdStr) : null;
+    const validRelationships = ['parent', 'guardian', 'self', 'emergency'] as const;
+    const relationshipValue = validRelationships.includes(relationship as typeof validRelationships[number])
+      ? (relationship as typeof validRelationships[number])
+      : null;
 
     await db.insert(contacts).values({
       teamId: teamId,
@@ -93,7 +97,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone?.trim() || null,
-      relationship: relationship || null,
+      relationship: relationshipValue,
       isPrimary: isPrimary,
       notes: notes?.trim() || null,
     });

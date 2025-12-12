@@ -17,7 +17,6 @@ export const uploadRouter = {
     image: {
       maxFileSize: "4MB",
       maxFileCount: 3, // Allow 3 files for thumbnail, medium, and large
-      acceptedFileTypes: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
     },
   })
     .middleware(async ({ req }) => {
@@ -39,7 +38,6 @@ export const uploadRouter = {
     image: {
       maxFileSize: "2MB",
       maxFileCount: 1,
-      acceptedFileTypes: ["image/png", "image/jpeg", "image/svg+xml"],
     },
   })
     .middleware(async ({ req }) => {

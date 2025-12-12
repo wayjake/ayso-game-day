@@ -72,25 +72,32 @@ export async function requireUserId(request: Request) {
   return userId;
 }
 
-export async function getUser(request: Request, shouldRedirect = true) {
+type User = typeof users.$inferSelect;
+
+// Overload: when shouldRedirect is true (default), always returns User (throws on null)
+export async function getUser(request: Request, shouldRedirect?: true): Promise<User>;
+// Overload: when shouldRedirect is false, may return null
+export async function getUser(request: Request, shouldRedirect: false): Promise<User | null>;
+// Implementation
+export async function getUser(request: Request, shouldRedirect = true): Promise<User | null> {
   const session = await getSession(request.headers.get("Cookie"));
   const userId = session.get("userId");
-  
+
   if (!userId) {
     if (shouldRedirect) {
       throw redirect("/user/login");
     }
     return null;
   }
-  
+
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  
+
   if (!user) {
     if (shouldRedirect) {
       throw redirect("/user/login");
     }
     return null;
   }
-  
+
   return user;
 }

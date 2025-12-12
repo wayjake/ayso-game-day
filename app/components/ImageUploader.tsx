@@ -219,7 +219,7 @@ export function ImageUploader({
       {displayImage && (
         <div className="relative">
           <img
-            src={previewUrl || getImageUrl(currentImage)}
+            src={previewUrl || getImageUrl(currentImage) || undefined}
             alt="Upload preview"
             className="w-32 h-32 rounded-lg object-cover border border-[var(--border)]"
           />

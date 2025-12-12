@@ -7,11 +7,13 @@
     "dev": "react-router dev --host",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "db:push": "drizzle-kit push --config=drizzle.config.ts",
     "db:seed": "tsx app/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
+    "db:prod:migrate": "drizzle-kit migrate --config=drizzle.config.prod.ts",
+    "db:prod:studio": "drizzle-kit studio --config=drizzle.config.prod.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
