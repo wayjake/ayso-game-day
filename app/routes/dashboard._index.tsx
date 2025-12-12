@@ -2,7 +2,7 @@ import type { Route } from "./+types/dashboard._index";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { db, teams, games, players } from "~/db";
-import { eq, count, and, gte } from "drizzle-orm";
+import { eq, count, and, gte, desc } from "drizzle-orm";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -126,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
       .from(teams)
       .where(eq(teams.coachId, user.id))
-      .orderBy(teams.createdAt)
+      .orderBy(desc(teams.createdAt))
       .limit(5);
     
     return data({

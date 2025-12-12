@@ -2,12 +2,12 @@ import type { Route } from "./+types/dashboard.teams";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { db, teams, players } from "~/db";
-import { eq, count } from "drizzle-orm";
+import { eq, count, desc } from "drizzle-orm";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
   
-  // Get teams for this coach
+  // Get teams for this coach, most recently created first
   const userTeams = await db
     .select({
       id: teams.id,
@@ -19,7 +19,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: teams.createdAt,
     })
     .from(teams)
-    .where(eq(teams.coachId, user.id));
+    .where(eq(teams.coachId, user.id))
+    .orderBy(desc(teams.createdAt));
   
   // Get player count for each team
   const teamsWithPlayerCounts = await Promise.all(
