@@ -49,6 +49,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .select({
       id: players.id,
       name: players.name,
+      jerseyNumber: players.jerseyNumber,
       profilePicture: players.profilePicture,
       preferredPositions: players.preferredPositions,
     })
@@ -617,6 +618,11 @@ function PlayerCard({
         )}
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate flex items-center gap-1">
+            {player.jerseyNumber != null && (
+              <span className="text-xs font-bold text-[var(--muted)] bg-[var(--bg)] px-1 rounded">
+                #{player.jerseyNumber}
+              </span>
+            )}
             {player.name}
             {/* 🔄 Position Change Indicator */}
             {showChangeIndicators && positionChange && (

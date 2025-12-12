@@ -33,6 +33,7 @@ export const players = sqliteTable('players', {
   teamId: integer('team_id').notNull().references(() => teams.id),
   coachId: integer('coach_id').references(() => users.id), // Historical record
   name: text('name').notNull(),
+  jerseyNumber: integer('jersey_number'), // Player's jersey number
   description: text('description'), // Notes about player (e.g., "Fast, good at defense")
   profilePicture: text('profile_picture'), // Legacy single URL
   profileImageBase: text('profile_image_base'), // Base URL for multi-size images (e.g., "https://utfs.io/f/abc123")
@@ -200,6 +201,33 @@ export const threadNotes = sqliteTable('thread_notes', {
   note: text('note').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Team members for multi-coach teams
+export const teamMembers = sqliteTable('team_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  role: text('role').notNull(),
+  invitedBy: integer('invited_by').references(() => users.id),
+  invitedAt: text('invited_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  joinedAt: text('joined_at'),
+  status: text('status').notNull().default('active'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Team invites for sharing team access
+export const teamInvites = sqliteTable('team_invites', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  email: text('email'),
+  shareCode: text('share_code').unique(),
+  role: text('role').notNull(),
+  invitedBy: integer('invited_by').notNull().references(() => users.id),
+  expiresAt: text('expires_at').notNull(),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Type exports

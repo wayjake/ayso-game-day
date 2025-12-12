@@ -87,6 +87,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   // Get form data
   const name = formData.get("name") as string;
+  const jerseyNumberStr = formData.get("jerseyNumber") as string;
+  const jerseyNumber = jerseyNumberStr ? parseInt(jerseyNumberStr, 10) : null;
   const description = formData.get("description") as string;
   const preferredPositions = formData.getAll("positions") as string[];
   const profilePictureUrl = formData.get("profilePictureUrl") as string;
@@ -125,6 +127,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     await db.update(players)
       .set({
         name: name.trim(),
+        jerseyNumber: jerseyNumber,
         description: description?.trim() || null,
         preferredPositions: preferredPositions.length > 0 ? JSON.stringify(preferredPositions) : null,
         profilePicture: profilePicturePath,
@@ -201,7 +204,24 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
                 placeholder="e.g., Alex Johnson"
               />
             </div>
-            
+
+            {/* Jersey Number */}
+            <div>
+              <label htmlFor="jerseyNumber" className="block text-sm font-medium mb-1">
+                Jersey Number (Optional)
+              </label>
+              <input
+                id="jerseyNumber"
+                name="jerseyNumber"
+                type="number"
+                min="0"
+                max="99"
+                defaultValue={player.jerseyNumber ?? ""}
+                className="w-32 rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                placeholder="e.g., 10"
+              />
+            </div>
+
             {/* Profile Picture Upload */}
             <div>
               <label className="block text-sm font-medium mb-2">
