@@ -534,7 +534,8 @@ function PlayerCard({
   onSitOut,
   quartersPlaying = 0,
   positionChange,
-  showChangeIndicators = true
+  showChangeIndicators = true,
+  isSittingOut = false
 }: {
   player: any;
   onDragStart: (player: any) => void;
@@ -544,6 +545,7 @@ function PlayerCard({
   quartersPlaying?: number;
   positionChange?: PositionChange;
   showChangeIndicators?: boolean;
+  isSittingOut?: boolean;
 }) {
   const preferredPositions = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
   const [showDropdown, setShowDropdown] = useState(false);
@@ -648,7 +650,7 @@ function PlayerCard({
       
       {/* Position Selection Dropdown */}
       {showDropdown && availablePositions && (
-        <div 
+        <div
           ref={dropdownRef}
           className="absolute z-[10001] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
         >
@@ -676,6 +678,18 @@ function PlayerCard({
                 );
               })}
             </div>
+            {/* Sit Out option - only show if not already sitting out */}
+            {onSitOut && !isSittingOut && (
+              <>
+                <div className="border-t border-[var(--border)] my-1"></div>
+                <button
+                  onClick={handleSitOutClick}
+                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-amber-50 transition text-amber-700"
+                >
+                  <span className="font-medium">Sit Out This Quarter</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1719,18 +1733,29 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
                       return (
                         <div key={player.id} className="relative">
-                          <PlayerCard
-                            player={player}
-                            onDragStart={handleDragStart}
-                            onAssign={handlePositionAssignment}
-                            availablePositions={getAvailablePositions()}
-                            onSitOut={handleSitOut}
-                            quartersPlaying={quartersSittingOut}
-                            positionChange={playerChange}
-                            showChangeIndicators={showChangeIndicators}
-                          />
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <PlayerCard
+                                player={player}
+                                onDragStart={handleDragStart}
+                                onAssign={handlePositionAssignment}
+                                availablePositions={getAvailablePositions()}
+                                onSitOut={handleSitOut}
+                                quartersPlaying={quartersSittingOut}
+                                positionChange={playerChange}
+                                showChangeIndicators={showChangeIndicators}
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleSitOut(player)}
+                              className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition flex items-center justify-center shrink-0"
+                              title="Move to Substitutes"
+                            >
+                              ↓
+                            </button>
+                          </div>
                           {/* Quick absent/injured buttons and subs indicator */}
-                          <div className="absolute top-1 right-1 flex gap-1">
+                          <div className="absolute top-1 right-12 flex gap-1">
                             <div
                               className={`w-7 h-5 text-[10px] font-bold ${subsBgColor} rounded flex items-center justify-center`}
                               title={`Sitting out ${quartersSittingOut} of 4 quarters`}
@@ -1809,6 +1834,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                                 quartersPlaying={quartersSittingOut}
                                 positionChange={playerChange}
                                 showChangeIndicators={showChangeIndicators}
+                                isSittingOut={true}
                               />
                             </div>
                             <button
