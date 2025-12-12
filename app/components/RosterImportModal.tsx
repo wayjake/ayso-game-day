@@ -269,11 +269,12 @@ export function RosterImportModal({
 
               {/* Drop zone */}
               <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onClick={() => fileInputRef.current?.click()}
+                onDrop={isExtracting ? undefined : handleDrop}
+                onDragOver={isExtracting ? undefined : handleDragOver}
+                onClick={isExtracting ? undefined : () => fileInputRef.current?.click()}
                 className={`
-                  border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition
+                  border-2 border-dashed rounded-lg p-8 text-center transition
+                  ${isExtracting ? 'cursor-default opacity-60' : 'cursor-pointer'}
                   ${file ? 'border-[var(--primary)] bg-[var(--primary)]/5' : 'border-[var(--border)] hover:border-[var(--primary)]/50'}
                 `}
               >
@@ -283,24 +284,27 @@ export function RosterImportModal({
                   accept={getAcceptString()}
                   onChange={handleFileInputChange}
                   className="hidden"
+                  disabled={isExtracting}
                 />
 
                 {file ? (
                   <div className="space-y-2">
-                    <div className="text-4xl">📄</div>
+                    <div className="text-4xl">{isExtracting ? '⏳' : '📄'}</div>
                     <p className="font-medium">{file.name}</p>
                     <p className="text-sm text-[var(--muted)]">
-                      {(file.size / 1024).toFixed(1)} KB
+                      {isExtracting ? 'Extracting player data...' : `${(file.size / 1024).toFixed(1)} KB`}
                     </p>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFile(null);
-                      }}
-                      className="text-sm text-red-500 hover:underline"
-                    >
-                      Remove
-                    </button>
+                    {!isExtracting && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFile(null);
+                        }}
+                        className="text-sm text-red-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-2">

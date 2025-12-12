@@ -156,6 +156,7 @@ async function handleImport(
             ? JSON.stringify(player.preferredPositions)
             : null,
           description: player.notes || null,
+          jerseyNumber: player.jerseyNumber ?? null,
         });
         results.created++;
       }
@@ -172,6 +173,10 @@ async function handleImport(
 
         if (player.notes) {
           updateData.description = player.notes;
+        }
+
+        if (player.jerseyNumber !== undefined) {
+          updateData.jerseyNumber = player.jerseyNumber;
         }
 
         await db

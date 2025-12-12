@@ -31,6 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: players.description,
       profilePicture: players.profilePicture,
       preferredPositions: players.preferredPositions,
+      jerseyNumber: players.jerseyNumber,
     })
     .from(players)
     .where(eq(players.teamId, teamId))
@@ -89,7 +90,14 @@ function PlayerCard({ player, teamId }: { player: any; teamId: number }) {
             </div>
           )}
           <div className="flex-1">
-            <h3 className="font-semibold text-[var(--text)]">{player.name}</h3>
+            <h3 className="font-semibold text-[var(--text)]">
+              {player.jerseyNumber !== null && (
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-[var(--primary)] text-white text-xs font-bold mr-2">
+                  {player.jerseyNumber}
+                </span>
+              )}
+              {player.name}
+            </h3>
             {player.description && (
               <p className="text-sm text-[var(--muted)] mt-1">{player.description}</p>
             )}
