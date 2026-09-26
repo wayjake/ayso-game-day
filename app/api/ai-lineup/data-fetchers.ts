@@ -38,14 +38,14 @@ export async function getQuarterFormations(game: any, teamFormat: GameFormat) {
   const gameNotes = game.notes ? JSON.parse(game.notes) : {};
   const quarterFormations = gameNotes.quarterFormations || {};
 
-  const { getFormationsByFormat } = await import('~/utils/formations');
+  const { getDefaultFormationIndex, getFormationsByFormat } = await import('~/utils/formations');
   const formationOptions = getFormationsByFormat(teamFormat);
   const formationKeys = Object.keys(formationOptions);
 
   const quarterFormationInfo: Record<number, QuarterFormationInfo> = {};
 
   for (let q = 1; q <= 4; q++) {
-    const formationIndex = quarterFormations[q] ?? 0;
+    const formationIndex = quarterFormations[q] ?? getDefaultFormationIndex(teamFormat);
     const formationKey = formationKeys[formationIndex];
     const formation = (formationOptions as any)[formationKey || formationKeys[0]];
 

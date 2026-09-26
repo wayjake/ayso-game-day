@@ -130,6 +130,22 @@ export const formations11v11: FormationSet = {
       { number: 10, x: 60, y: 25, abbreviation: 'ST' },
     ],
   },
+  '3-2-4-1': {
+    name: '3-2-4-1',
+    positions: [
+      { number: 1, x: 50, y: 92, abbreviation: 'GK' },
+      { number: 3, x: 25, y: 74, abbreviation: 'LB' }, // Left Back
+      { number: 4, x: 50, y: 78, abbreviation: 'SW' }, // Sweeper
+      { number: 2, x: 75, y: 74, abbreviation: 'RB' }, // Right Back
+      { number: 6, x: 38, y: 58, abbreviation: 'CDM' }, // Left CDM
+      { number: 5, x: 62, y: 58, abbreviation: 'CDM' }, // Right CDM
+      { number: 11, x: 15, y: 32, abbreviation: 'LW' }, // Left Wing
+      { number: 10, x: 38, y: 42, abbreviation: 'CAM' },
+      { number: 8, x: 62, y: 42, abbreviation: 'CAM' },
+      { number: 7, x: 85, y: 32, abbreviation: 'RW' }, // Right Wing
+      { number: 9, x: 50, y: 20, abbreviation: 'ST' }, // Striker
+    ],
+  },
 };
 
 export const formations9v9: FormationSet = {
@@ -216,4 +232,19 @@ export function getFormationsByFormat(format: '7v7' | '9v9' | '11v11'): Formatio
       // For 7v7 or unknown formats, return 9v9 as default
       return formations9v9;
   }
+}
+
+// Formation a quarter uses until the coach picks one. Formats not listed here
+// default to their first formation.
+const defaultFormationKeys: Partial<Record<'7v7' | '9v9' | '11v11', string>> = {
+  '11v11': '3-2-4-1',
+};
+
+// Quarter formations are saved in game.notes as indices into
+// Object.keys(getFormationsByFormat(format)), so add new formations at the end
+// of a set and point the default at them here instead of reordering.
+export function getDefaultFormationIndex(format: '7v7' | '9v9' | '11v11'): number {
+  const key = defaultFormationKeys[format];
+  if (!key) return 0;
+  return Math.max(0, Object.keys(getFormationsByFormat(format)).indexOf(key));
 }

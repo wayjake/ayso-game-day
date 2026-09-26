@@ -271,7 +271,7 @@ Supports 7v7, 9v9, and 11v11 formats:
 - **Numbering**: Traditional soccer numbering (1=GK, 2-11=field)
 - **Templates**: Pre-configured formations in database (seeded via `npm run db:seed`)
 - **Formats**:
-  - 11v11: 4-4-2, 4-3-3, 3-5-2, 4-2-3-1
+  - 11v11: 4-4-2, 4-3-3, 3-5-2, 4-1-4-1, 4-2-3-1, 4-3-2-1, 5-3-2, 3-2-4-1 (default)
   - 9v9: 3-3-2, 3-2-3, 2-4-2
   - 7v7: 2-3-1, 3-2-1, 2-2-2
 
@@ -476,9 +476,9 @@ build/
 3. Update seed script if needed (`/app/db/seed.ts`)
 
 ### Adding a new formation template
-1. Edit `/app/utils/formations.ts`
-2. Add formation definition with positions
-3. Run `npm run db:seed` to seed database
+1. Edit `/app/utils/formations.ts` and add the formation at the **end** of its format's set
+2. Each quarter's formation is saved in `game.notes` as an index into that set, so inserting or reordering shifts every saved lineup's formation
+3. To make it the default, set it in `defaultFormationKeys` (read via `getDefaultFormationIndex()`)
 
 ### Creating protected routes
 ```typescript

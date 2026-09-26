@@ -3,7 +3,7 @@ import { data } from "react-router";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
-import { getFormationsByFormat } from "~/utils/formations";
+import { getDefaultFormationIndex, getFormationsByFormat } from "~/utils/formations";
 import {
   calculatePositionChanges,
   hasPositionChange,
@@ -224,7 +224,8 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   }, [savedQuarterFormations]);
 
   // Get current quarter's formation
-  const currentFormationIndex = typeof currentQuarter === 'number' ? quarterFormations.get(currentQuarter) ?? 0 : 0;
+  const defaultFormationIndex = getDefaultFormationIndex(team.format);
+  const currentFormationIndex = typeof currentQuarter === 'number' ? quarterFormations.get(currentQuarter) ?? defaultFormationIndex : defaultFormationIndex;
   const currentFormationKey = formationKeys[currentFormationIndex];
   const currentFormation = (formationOptions as any)[currentFormationKey];
   const formationPositions = currentFormation?.positions || [];
