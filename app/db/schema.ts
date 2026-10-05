@@ -210,7 +210,7 @@ export const teamMembers = sqliteTable('team_members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   userId: integer('user_id').notNull().references(() => users.id),
-  role: text('role', { enum: ['coach'] }).notNull(),
+  role: text('role', { enum: ['owner', 'coach'] }).notNull(), // 'owner' rows are a legacy backfill of each team's creator
   invitedBy: integer('invited_by').references(() => users.id),
   invitedAt: text('invited_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   joinedAt: text('joined_at'),

@@ -6,7 +6,7 @@ import { requireTeamAccess, requireTeamOwner } from "~/utils/team-access.server"
 import { createInvites, inviteUrl, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
 import { isEmailConfigured } from "~/utils/email.server";
 import { db, teams, users, teamMembers, teamInvites } from "~/db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -29,7 +29,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })
     .from(teamMembers)
     .innerJoin(users, eq(teamMembers.userId, users.id))
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.status, "active")))
+    // Older data has the owner listed as a member of their own team; show them once
+    .where(and(
+      eq(teamMembers.teamId, teamId),
+      eq(teamMembers.status, "active"),
+      ne(teamMembers.userId, team.coachId)
+    ))
     .orderBy(teamMembers.joinedAt);
 
   let pendingInvites: { id: number; email: string | null; url: string; expiresAt: string }[] = [];

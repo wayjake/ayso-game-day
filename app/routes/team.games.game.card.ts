@@ -3,7 +3,7 @@ import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { buildGameCard } from "~/utils/game-card.server";
 import { db, games, players, users, teamMembers } from "~/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 
 // Resource route: the official AYSO lineup card for one game, filled in as a PDF
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -33,12 +33,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .where(eq(users.id, team.coachId))
     .limit(1);
 
-  // First coach to join is the assistant on the card
+  // First coach to join is the assistant on the card. Older data lists the
+  // owner as a member of their own team, so skip them.
   const [assistant] = await db
     .select({ name: users.name })
     .from(teamMembers)
     .innerJoin(users, eq(teamMembers.userId, users.id))
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.status, "active")))
+    .where(and(
+      eq(teamMembers.teamId, teamId),
+      eq(teamMembers.status, "active"),
+      ne(teamMembers.userId, team.coachId)
+    ))
     .orderBy(teamMembers.joinedAt)
     .limit(1);
 
