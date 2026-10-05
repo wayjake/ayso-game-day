@@ -1,6 +1,7 @@
 import type { Route } from "./+types/dashboard.teams";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players } from "~/db";
 import { eq, count, desc } from "drizzle-orm";
 
@@ -19,7 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: teams.createdAt,
     })
     .from(teams)
-    .where(eq(teams.coachId, user.id))
+    .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
   
   // Get player count for each team

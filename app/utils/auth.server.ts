@@ -15,16 +15,27 @@ export async function verifyPassword(password: string, hashedPassword: string) {
 export async function createUser(
   email: string,
   password: string,
-  role: 'coach' | 'admin' | 'assistant-coach' = 'coach',
-  teamName?: string,
-  gameFormat?: '7v7' | '9v9' | '11v11',
-  region?: string
+  {
+    name,
+    role = 'coach',
+    teamName,
+    gameFormat,
+    region,
+  }: {
+    name?: string;
+    role?: 'coach' | 'admin' | 'assistant-coach';
+    // Leave the team fields out to create an account with no team (e.g. an invited coach)
+    teamName?: string;
+    gameFormat?: '7v7' | '9v9' | '11v11';
+    region?: string;
+  } = {}
 ) {
   const hashedPassword = await hashPassword(password);
   
   const [user] = await db.insert(users).values({
     email,
     password: hashedPassword,
+    name,
     role,
     teamName,
     gameFormat,
@@ -59,6 +70,14 @@ export async function authenticateUser(email: string, password: string) {
   }
   
   return user;
+}
+
+// Only follow same-site paths after login, never "//evil.com" or full URLs
+export function safeRedirect(to: FormDataEntryValue | string | null | undefined, fallback = "/dashboard") {
+  if (typeof to !== "string" || !to.startsWith("/") || to.startsWith("//") || to.startsWith("/\\")) {
+    return fallback;
+  }
+  return to;
 }
 
 export async function requireUserId(request: Request) {

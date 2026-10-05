@@ -1,6 +1,7 @@
 import type { Route } from "./+types/team.games.game.lineup";
 import { data, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
@@ -26,7 +27,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {
@@ -136,7 +137,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {
@@ -145,8 +146,49 @@ export async function action({ request, params }: Route.ActionArgs) {
       { status: 404 }
     );
   }
-  
+
+  // The game and every player touched below must belong to this team. Without
+  // this, anyone with access to one team could edit another team's games by id.
+  const [ownedGame] = await db
+    .select({ id: games.id })
+    .from(games)
+    .where(and(eq(games.id, gameId), eq(games.teamId, teamId)))
+    .limit(1);
+
+  if (!ownedGame) {
+    return data(
+      { success: false, error: "Game not found" },
+      { status: 404 }
+    );
+  }
+
+  const teamPlayerIds = new Set(
+    (await db.select({ id: players.id }).from(players).where(eq(players.teamId, teamId)))
+      .map((p) => p.id)
+  );
+
+  // Rebuild assignment rows from whitelisted fields, forcing this game's id
+  const toAssignmentRows = (rows: any[]) =>
+    rows
+      .filter((row) => teamPlayerIds.has(Number(row.playerId)))
+      .map((row) => ({
+        gameId,
+        playerId: Number(row.playerId),
+        positionNumber: Number(row.positionNumber),
+        positionName: row.positionName ?? null,
+        quarter: Number(row.quarter) || 1,
+        isSittingOut: Boolean(row.isSittingOut),
+      }));
+
   const action = formData.get("_action") as string;
+
+  const playerIdField = formData.get("playerId");
+  if (playerIdField && !teamPlayerIds.has(parseInt(playerIdField as string))) {
+    return data(
+      { success: false, error: "Player not found" },
+      { status: 404 }
+    );
+  }
   
   if (action === "assignPlayer") {
     try {
@@ -241,8 +283,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
 
       // Insert all new assignments
-      if (assignmentsData.length > 0) {
-        await db.insert(assignments).values(assignmentsData);
+      const rows = toAssignmentRows(assignmentsData);
+      if (rows.length > 0) {
+        await db.insert(assignments).values(rows);
       }
 
       return data({ success: true, action: "bulkAssign" });
@@ -477,17 +520,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       const lineupData = JSON.parse(formData.get("lineupData") as string);
       
       // Insert new assignments
-      if (lineupData.assignments && lineupData.assignments.length > 0) {
-        await db.insert(assignments).values(
-          lineupData.assignments.map((assignment: any) => ({
-            gameId,
-            playerId: assignment.playerId,
-            positionNumber: assignment.positionNumber,
-            positionName: assignment.positionName,
-            quarter: assignment.quarter || 1,
-            isSittingOut: assignment.isSittingOut || false,
-          }))
-        );
+      const rows = toAssignmentRows(lineupData.assignments ?? []);
+      if (rows.length > 0) {
+        await db.insert(assignments).values(rows);
       }
       
       return data({ success: true, message: "Lineup saved successfully!" });
@@ -1627,6 +1662,20 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 </svg>
                 <span className="hidden sm:inline">Share</span>
               </button>
+
+              {/* Game Card Button: official AYSO lineup card PDF */}
+              <a
+                href={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
+                target="_blank"
+                rel="noopener"
+                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                title="Print the official AYSO lineup card"
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                <span className="hidden sm:inline">Game Card</span>
+              </a>
 
               {/* Summary Button */}
               <button

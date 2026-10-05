@@ -9,13 +9,27 @@ import type {
 } from './types';
 
 export async function getTeam(teamId: number, userId: number) {
-  const { db, teams } = await import('~/db');
-  const { eq, and } = await import('drizzle-orm');
+  const { db, teams, teamMembers } = await import('~/db');
+  const { eq, and, or, inArray } = await import('drizzle-orm');
 
+  // Same rule as canAccessTeam() in team-access.server.ts, which can't be
+  // imported here because route.ts pulls this file into the client graph
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, userId)))
+    .where(and(
+      eq(teams.id, teamId),
+      or(
+        eq(teams.coachId, userId),
+        inArray(
+          teams.id,
+          db
+            .select({ teamId: teamMembers.teamId })
+            .from(teamMembers)
+            .where(and(eq(teamMembers.userId, userId), eq(teamMembers.status, 'active')))
+        )
+      )
+    ))
     .limit(1);
 
   return team;

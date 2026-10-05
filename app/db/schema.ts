@@ -6,6 +6,7 @@ export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
+  name: text('name'), // Printed on game cards
   role: text('role', { enum: ['coach', 'admin', 'assistant-coach'] }).notNull().default('coach'),
   teamName: text('team_name'),
   gameFormat: text('game_format', { enum: ['7v7', '9v9', '11v11'] }),
@@ -23,6 +24,7 @@ export const teams = sqliteTable('teams', {
   ageGroup: text('age_group'), // e.g., U12, U14
   season: text('season'), // e.g., Fall 2024
   region: text('region'),
+  teamNumber: text('team_number'), // AYSO team # printed on game cards
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -208,11 +210,11 @@ export const teamMembers = sqliteTable('team_members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   userId: integer('user_id').notNull().references(() => users.id),
-  role: text('role').notNull(),
+  role: text('role', { enum: ['coach'] }).notNull(),
   invitedBy: integer('invited_by').references(() => users.id),
   invitedAt: text('invited_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   joinedAt: text('joined_at'),
-  status: text('status').notNull().default('active'),
+  status: text('status', { enum: ['active', 'removed'] }).notNull().default('active'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -223,10 +225,10 @@ export const teamInvites = sqliteTable('team_invites', {
   teamId: integer('team_id').notNull().references(() => teams.id),
   email: text('email'),
   shareCode: text('share_code').unique(),
-  role: text('role').notNull(),
+  role: text('role', { enum: ['coach'] }).notNull(),
   invitedBy: integer('invited_by').notNull().references(() => users.id),
   expiresAt: text('expires_at').notNull(),
-  status: text('status').notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'accepted', 'revoked'] }).notNull().default('pending'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -261,3 +263,7 @@ export type InboxMessage = typeof inboxMessages.$inferSelect;
 export type NewInboxMessage = typeof inboxMessages.$inferInsert;
 export type ThreadNote = typeof threadNotes.$inferSelect;
 export type NewThreadNote = typeof threadNotes.$inferInsert;
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type NewTeamMember = typeof teamMembers.$inferInsert;
+export type TeamInvite = typeof teamInvites.$inferSelect;
+export type NewTeamInvite = typeof teamInvites.$inferInsert;

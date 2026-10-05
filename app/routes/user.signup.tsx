@@ -14,6 +14,7 @@ export async function action({ request }: Route.ActionArgs) {
   const session = await getSession(request.headers.get("Cookie"));
   const formData = await request.formData();
   
+  const name = (formData.get("name") as string)?.trim();
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const teamName = formData.get("teamName") as string;
@@ -21,7 +22,7 @@ export async function action({ request }: Route.ActionArgs) {
   const region = formData.get("region") as string;
   
   // Basic validation
-  if (!email || !password || !teamName || !format) {
+  if (!name || !email || !password || !teamName || !format) {
     session.flash("error", "Please fill in all required fields");
     return data(
       { error: "Please fill in all required fields" },
@@ -46,14 +47,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
   
   try {
-    const user = await createUser(
-      email,
-      password,
-      'coach',
+    const user = await createUser(email, password, {
+      name,
       teamName,
-      format,
-      region || undefined
-    );
+      gameFormat: format,
+      region: region || undefined,
+    });
     
     session.set("userId", user.id);
     session.set("userEmail", user.email);
@@ -141,6 +140,25 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
 
           <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
             <div className="p-6 space-y-4">
+              {/* Name */}
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium mb-1">
+                  Your Name
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  autoComplete="name"
+                  className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                  placeholder="Alex Morgan"
+                />
+                <p className="text-xs text-[var(--muted)] mt-1">
+                  Printed as the coach's name on game cards
+                </p>
+              </div>
+
               {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium mb-1">

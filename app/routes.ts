@@ -10,6 +10,7 @@ export default [
   route("api/roster-import", "api/roster-import/route.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
+  route("invite/:code", "routes/invite.tsx"),
   route("user", "routes/user.tsx", [
     route("signup", "routes/user.signup.tsx"),
     route("login", "routes/user.login.tsx"),
@@ -27,11 +28,13 @@ export default [
       route("games", "routes/team.games.tsx"),
       route("games/new", "routes/team.games-new.tsx"),
       route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
+      route("games/:gameId/game-card", "routes/team.games.game.card.ts"),
       route("rotations", "routes/team.rotations.tsx"),
       route("player/remove", "routes/team.player.remove.tsx"),
       route("contacts", "routes/team.contacts.tsx"),
       route("contacts/new", "routes/team.contacts.new.tsx"),
       route("contacts/:contactId/edit", "routes/team.contacts.edit.tsx"),
+      route("settings", "routes/team.settings.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

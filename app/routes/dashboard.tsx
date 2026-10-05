@@ -2,6 +2,7 @@ import type { Route } from "./+types/dashboard";
 import { Outlet, Link, Form, useLocation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams } from "~/db";
 import { eq } from "drizzle-orm";
 import { Breadcrumbs, type BreadcrumbItem } from "~/components/Breadcrumbs";
@@ -18,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       ageGroup: teams.ageGroup,
     })
     .from(teams)
-    .where(eq(teams.coachId, user.id));
+    .where(canAccessTeam(user.id));
   
   return data({
     user: {
@@ -71,6 +72,8 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
             breadcrumbs.push({ label: "Games", isActive: true });
           } else if (path.includes("/rotations")) {
             breadcrumbs.push({ label: "Rotations", isActive: true });
+          } else if (path.includes("/settings")) {
+            breadcrumbs.push({ label: "Settings", isActive: true });
           }
         }
       }

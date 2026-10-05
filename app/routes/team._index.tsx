@@ -1,6 +1,7 @@
 import type { Route } from "./+types/team._index";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players } from "~/db";
 import { eq, and, gte } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
@@ -13,7 +14,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {
@@ -91,7 +92,7 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
         {/* Team actions - moved to top */}
         <div className="mb-8 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-6">
           <h2 className="text-lg font-semibold mb-4">Team Actions</h2>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <Link
               to={`/dashboard/team/${team.id}/games/new`}
               className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
@@ -133,6 +134,17 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
               <div>
                 <div className="font-medium text-sm">Plan Rotations</div>
                 <div className="text-xs text-[var(--muted)]">Create fair play rotations</div>
+              </div>
+            </Link>
+
+            <Link
+              to={`/dashboard/team/${team.id}/settings`}
+              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
+            >
+              <div className="text-xl">⚙️</div>
+              <div>
+                <div className="font-medium text-sm">Team Settings</div>
+                <div className="text-xs text-[var(--muted)]">Team details and coaches</div>
               </div>
             </Link>
           </div>

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/user.login";
-import { Form, data, redirect } from "react-router";
+import { Form, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
-import { authenticateUser } from "~/utils/auth.server";
+import { authenticateUser, safeRedirect } from "~/utils/auth.server";
 
 export function meta({ }: Route.MetaArgs) {
   return [
@@ -16,6 +16,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  const redirectTo = safeRedirect(formData.get("redirectTo"));
 
   // Basic validation
   if (!email || !password) {
@@ -50,7 +51,7 @@ export async function action({ request }: Route.ActionArgs) {
     session.set("userRole", user.role);
     session.flash("success", "Welcome back!");
 
-    return redirect("/dashboard", {
+    return redirect(redirectTo, {
       headers: {
         "Set-Cookie": await commitSession(session),
       },
@@ -72,9 +73,9 @@ export async function action({ request }: Route.ActionArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSession(request.headers.get("Cookie"));
 
-  // If already logged in, redirect to dashboard
+  // If already logged in, go straight to where they were headed
   if (session.has("userId")) {
-    return redirect("/dashboard");
+    return redirect(safeRedirect(new URL(request.url).searchParams.get("redirectTo")));
   }
 
   return data(
@@ -92,6 +93,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function Login({ loaderData }: Route.ComponentProps) {
   const { error, success } = loaderData;
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirectTo") ?? "";
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
@@ -132,6 +135,8 @@ export default function Login({ loaderData }: Route.ComponentProps) {
 
           <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
             <div className="p-6 space-y-4">
+              <input type="hidden" name="redirectTo" value={redirectTo} />
+
               {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium mb-1">
@@ -193,7 +198,7 @@ export default function Login({ loaderData }: Route.ComponentProps) {
               {/* Sign up link */}
               <p className="text-center text-sm text-[var(--muted)]">
                 Don't have an account?{" "}
-                <a href="/user/signup" className="text-[var(--primary)] hover:underline">
+                <a href={redirectTo.startsWith("/invite/") ? redirectTo : "/user/signup"} className="text-[var(--primary)] hover:underline">
                   Create one here
                 </a>
               </p>

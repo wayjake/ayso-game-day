@@ -2,6 +2,7 @@ import type { Route } from "./+types/team.roster";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
@@ -16,7 +17,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {

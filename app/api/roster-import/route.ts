@@ -3,6 +3,7 @@
 import { data } from 'react-router';
 import type { Route } from './+types/route';
 import { getUser } from '~/utils/auth.server';
+import { canAccessTeam } from '~/utils/team-access.server';
 import { db, teams, players } from '~/db';
 import { eq, and } from 'drizzle-orm';
 import { validateFile, getFileCategory } from './validation';
@@ -50,7 +51,7 @@ async function handleExtract(
   const [team] = await db
     .select({ id: teams.id })
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
 
   if (!team) {
@@ -119,7 +120,7 @@ async function handleImport(
   const [team] = await db
     .select({ id: teams.id })
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
 
   if (!team) {

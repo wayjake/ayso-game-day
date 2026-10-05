@@ -1,6 +1,7 @@
 import type { Route } from "./+types/team.player.remove";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { deletePlayerImage } from "~/utils/upload.server";
@@ -15,7 +16,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {

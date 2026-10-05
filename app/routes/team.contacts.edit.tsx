@@ -1,6 +1,7 @@
 import type { Route } from "./+types/team.contacts.edit";
 import { Form, data, redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, contacts } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
@@ -14,7 +15,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
 
   if (!team) {
@@ -60,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
 
   if (!team) {

@@ -2,6 +2,7 @@ import type { Route } from "./+types/team.games";
 import { Link } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games } from "~/db";
 import { eq, and } from "drizzle-orm";
 
@@ -13,7 +14,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [team] = await db
     .select()
     .from(teams)
-    .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
     .limit(1);
   
   if (!team) {
@@ -108,6 +109,14 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                       >
                         Plan Lineup
                       </Link>
+                      <a
+                        href={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
+                        target="_blank"
+                        rel="noopener"
+                        className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
+                      >
+                        Game Card
+                      </a>
                       <Link
                         to={`/dashboard/team/${team.id}/games/${game.id}/edit`}
                         className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"

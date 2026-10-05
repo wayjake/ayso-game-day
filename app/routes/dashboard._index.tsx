@@ -1,6 +1,7 @@
 import type { Route } from "./+types/dashboard._index";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players } from "~/db";
 import { eq, count, and, gte, desc } from "drizzle-orm";
 
@@ -17,7 +18,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const [selectedTeam] = await db
       .select()
       .from(teams)
-      .where(and(eq(teams.id, teamId), eq(teams.coachId, user.id)))
+      .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
       .limit(1);
     
     if (!selectedTeam) {
@@ -79,19 +80,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     const [teamCount] = await db
       .select({ count: count() })
       .from(teams)
-      .where(eq(teams.coachId, user.id));
+      .where(canAccessTeam(user.id));
       
     const [gameCount] = await db
       .select({ count: count() })
       .from(games)
       .innerJoin(teams, eq(games.teamId, teams.id))
-      .where(eq(teams.coachId, user.id));
+      .where(canAccessTeam(user.id));
       
     const [playerCount] = await db
       .select({ count: count() })
       .from(players)
       .innerJoin(teams, eq(players.teamId, teams.id))
-      .where(eq(teams.coachId, user.id));
+      .where(canAccessTeam(user.id));
     
     // Get upcoming games across all teams
     const today = new Date().toISOString().split('T')[0];
@@ -109,7 +110,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       .from(games)
       .innerJoin(teams, eq(games.teamId, teams.id))
       .where(and(
-        eq(teams.coachId, user.id),
+        canAccessTeam(user.id),
         gte(games.gameDate, today)
       ))
       .orderBy(games.gameDate)
@@ -125,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         createdAt: teams.createdAt,
       })
       .from(teams)
-      .where(eq(teams.coachId, user.id))
+      .where(canAccessTeam(user.id))
       .orderBy(desc(teams.createdAt))
       .limit(5);
     
