@@ -109,8 +109,9 @@ export async function getCurrentAssignments(gameId: number) {
 
 export async function getAbsentInjuredPlayers(gameId: number) {
   const { db, sitOuts } = await import('~/db');
-  const { eq } = await import('drizzle-orm');
+  const { eq, and, inArray } = await import('drizzle-orm');
 
+  // Only absences and injuries; other sit-out reasons are still available to play
   const absentInjuredPlayers = await db
     .select({
       playerId: sitOuts.playerId,
@@ -118,7 +119,7 @@ export async function getAbsentInjuredPlayers(gameId: number) {
       reason: sitOuts.reason,
     })
     .from(sitOuts)
-    .where(eq(sitOuts.gameId, gameId));
+    .where(and(eq(sitOuts.gameId, gameId), inArray(sitOuts.reason, ['absent', 'injured'])));
 
   return absentInjuredPlayers;
 }

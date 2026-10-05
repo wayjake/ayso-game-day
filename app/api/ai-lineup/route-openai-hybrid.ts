@@ -1,4 +1,5 @@
-// GPT-5 approach: Single call with reasoning and structured output
+// OpenAI approach: single call with reasoning and structured output, one retry
+// with the validation errors if the first lineup breaks a rule.
 // Uses Zod schema to get strongly-typed JSON directly from the model
 
 import { data } from "react-router";
@@ -31,7 +32,11 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export const maxDuration = 120;
 
-const MAX_ITERATIONS = 10;
+// Newest model first. If the API rejects it (unknown model, unsupported
+// parameter) we fall back to the last model verified with this route.
+// Set OPENAI_LINEUP_MODEL to pin a different one.
+const PRIMARY_MODEL = process.env.OPENAI_LINEUP_MODEL || "gpt-6.1-sol";
+const FALLBACK_MODEL = "gpt-5.2-2025-12-11";
 
 // Zod schema for the lineup response
 const LineupAssignmentSchema = z.object({
@@ -53,7 +58,7 @@ const LineupResponseSchema = z.object({
 // TypeScript type derived from Zod schema
 type LineupResponse = z.infer<typeof LineupResponseSchema>;
 
-interface HybridGenerationContext {
+export interface HybridGenerationContext {
   teamPlayers: any[];
   playersContext: PlayerContext[];
   quarterFormationInfo: any;
@@ -63,7 +68,49 @@ interface HybridGenerationContext {
   absentInjuredContext: any[];
   userInput: string;
   format: GameFormat;
-  positionsPerQuarter: number;
+  availability: Availability;
+}
+
+const QUARTERS = [1, 2, 3, 4] as const;
+
+// Who can play each quarter, and how many positions can actually be filled.
+// The prompt and the validator both read from this so they can't disagree.
+export interface Availability {
+  availableByQuarter: Record<number, Set<number>>;
+  positionsByQuarter: Record<number, number[]>;
+  // min(formation positions, available players): fewer than the formation means playing short
+  slotsByQuarter: Record<number, number>;
+  absentQuartersByPlayer: Map<number, { quarters: number[]; reason: string }>;
+}
+
+export function buildAvailability(
+  teamPlayers: { id: number }[],
+  absentInjuredContext: { playerId: number; quarter: number | null; reason: string }[],
+  quarterFormationInfo: Record<number, { positions: { number: number }[] }>
+): Availability {
+  const absentQuartersByPlayer = new Map<number, { quarters: number[]; reason: string }>();
+  for (const ai of absentInjuredContext) {
+    const quarters = ai.quarter ? [ai.quarter] : [...QUARTERS];
+    const entry = absentQuartersByPlayer.get(ai.playerId) ?? { quarters: [], reason: ai.reason };
+    entry.quarters = [...new Set([...entry.quarters, ...quarters])].sort();
+    absentQuartersByPlayer.set(ai.playerId, entry);
+  }
+
+  const availableByQuarter: Record<number, Set<number>> = {};
+  const positionsByQuarter: Record<number, number[]> = {};
+  const slotsByQuarter: Record<number, number> = {};
+
+  for (const q of QUARTERS) {
+    availableByQuarter[q] = new Set(
+      teamPlayers
+        .filter((p) => !absentQuartersByPlayer.get(p.id)?.quarters.includes(q))
+        .map((p) => p.id)
+    );
+    positionsByQuarter[q] = (quarterFormationInfo[q]?.positions ?? []).map((p) => p.number).sort((a, b) => a - b);
+    slotsByQuarter[q] = Math.min(positionsByQuarter[q].length, availableByQuarter[q].size);
+  }
+
+  return { availableByQuarter, positionsByQuarter, slotsByQuarter, absentQuartersByPlayer };
 }
 
 export async function handleOpenAIHybridGeneration(formData: FormData, user: any) {
@@ -72,10 +119,10 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
     const teamId = parseInt(formData.get("teamId") as string);
     const userInput = formData.get("userInput") as string;
 
-    console.log('\n=== GPT-5 LINEUP GENERATION ===\n');
+    console.log('\n=== AI LINEUP GENERATION ===\n');
     console.log(`Game ID: ${gameId}, Team ID: ${teamId}`);
     console.log(`User Input: ${userInput}`);
-    console.log(`Model: gpt-5-2025-08-07 with structured output\n`);
+    console.log(`Model: ${PRIMARY_MODEL} (fallback ${FALLBACK_MODEL}) with structured output\n`);
 
     // 1. Fetch all necessary data
     const team = await getTeam(teamId, user.id);
@@ -100,12 +147,12 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
     const currentLineup = buildCurrentLineup(currentAssignments);
     const pastGamesContext = buildPastGamesContext(pastGames, pastAssignments);
     const absentInjuredContext = buildAbsentInjuredContext(absentInjuredPlayers);
-    const positionsPerQuarter = quarterFormationInfo[1].positions.length;
     const formationContext = buildFormationContext(quarterFormationInfo);
+    const availability = buildAvailability(teamPlayers, absentInjuredContext, quarterFormationInfo);
 
     console.log(`Context Summary:`);
     console.log(`- Total players: ${teamPlayers.length}`);
-    console.log(`- Positions per quarter: ${positionsPerQuarter}`);
+    console.log(`- Available / slots per quarter: ${QUARTERS.map(q => `Q${q} ${availability.availableByQuarter[q].size}/${availability.slotsByQuarter[q]}`).join(', ')}`);
     console.log(`- Format: ${team.format}`);
     console.log(`- Past games: ${pastGamesContext.length}`);
     console.log(`- Absent/Injured: ${absentInjuredContext.length}`);
@@ -121,33 +168,45 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
       absentInjuredContext,
       userInput,
       format: team.format as GameFormat,
-      positionsPerQuarter
+      availability,
     };
 
-    // 4. Generate structured lineup with GPT-5
+    // 4. Generate structured lineup
     console.log('\n=== GENERATING LINEUP WITH STRUCTURED OUTPUT ===');
-    const extractedLineup = await generateReasoningWithChat(context);
+    let attempt = await generateLineup(buildReasoningPrompt(context), PRIMARY_MODEL);
 
-    if (!extractedLineup || !extractedLineup.quarters) {
+    if (!attempt) {
       return data({
         success: false,
         error: 'Failed to generate lineup'
       }, { status: 400 });
     }
 
-    // 5. Procedural validation
-    console.log('\n=== STAGE 3: VALIDATION ===');
-    const validation = validateLineup(extractedLineup, context);
+    // 5. Procedural validation, with one retry that shows the model its mistakes
+    console.log('\n=== VALIDATION ===');
+    let validation = validateLineup(attempt.lineup, context);
+
+    if (!validation.isValid) {
+      console.warn('Validation failed, retrying once:', validation.errors);
+      const retry = await generateLineup(buildReasoningPrompt(context, validation.errors), attempt.model);
+      if (retry) {
+        attempt = retry;
+        validation = validateLineup(attempt.lineup, context);
+      }
+    }
 
     if (!validation.isValid) {
       console.error('Validation failed:', validation.errors);
       return data({
         success: false,
-        error: 'Lineup validation failed',
+        error: ['Lineup validation failed:', ...validation.errors.map(e => `• ${e}`)].join('\n'),
         validationErrors: validation.errors
       }, { status: 400 });
     }
-    console.log('✅ All validation checks passed');
+    console.log(`✅ All validation checks passed (model: ${attempt.model})`);
+
+    const extractedLineup = attempt.lineup;
+    const message = [extractedLineup.message, ...validation.notes].filter(Boolean).join('\n\n');
 
     // 6. Convert to frontend format
     const quarterResults: QuarterWithDetails[] = extractedLineup.quarters.map((quarter) => {
@@ -208,88 +267,111 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
     });
 
     console.log('\n=== LINEUP GENERATION COMPLETE ===');
-    console.log(`Final message: ${extractedLineup.message}\n`);
+    console.log(`Final message: ${message}\n`);
 
     return data({
       success: true,
-      message: extractedLineup.message,
+      message,
       quarters: quarterResults
     });
 
   } catch (error) {
-    console.error("Error in GPT-5 generation:", error);
+    console.error("Error in AI lineup generation:", error);
     return data(
-      { success: false, error: "Failed to generate lineup with GPT-5" },
+      { success: false, error: "Failed to generate lineup" },
       { status: 500 }
     );
   }
 }
 
-async function generateReasoningWithChat(
-  context: HybridGenerationContext
-): Promise<LineupResponse | null> {
+async function callModel(openai: OpenAI, model: string, prompt: string): Promise<LineupResponse> {
+  const completion = await openai.responses.parse({
+    model,
+    input: prompt,
+    reasoning: { effort: "medium" },
+    text: {
+      format: {
+        name: "lineup",
+        strict: true,
+        type: "json_schema",
+        schema: zodToJsonSchema(LineupResponseSchema, {
+          $refStrategy: "none"
+        })
+      }
+    },
+  });
 
+  if (!completion?.output_parsed) {
+    throw new Error('Response returned empty output');
+  }
+
+  return LineupResponseSchema.parse(completion.output_parsed);
+}
+
+async function generateLineup(
+  prompt: string,
+  model: string
+): Promise<{ lineup: LineupResponse; model: string } | null> {
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  const userPrompt = buildReasoningPrompt(context);
-
   // Save prompts for debugging
-  await saveReasoningPrompt('', userPrompt);
+  await saveReasoningPrompt('', prompt);
 
-  console.log('Calling GPT-5 with structured output (Zod schema)...');
-  console.log(`Prompt length: ${userPrompt.length} chars`);
+  console.log(`Calling ${model} with structured output (Zod schema)...`);
+  console.log(`Prompt length: ${prompt.length} chars`);
 
   try {
-    const completion = await openai.responses.parse({
-      // model: "gpt-5-nano-2025-08-07",
-      // model: "gpt-5-mini-2025-08-07",
-      // model: "gpt-5-2025-08-07",
-      model: "gpt-5.2-2025-12-11",
-      input: userPrompt,
-      temperature: 1,
-      reasoning: { effort: "medium" },
-      text: {
-        format: {
-          name: "lineup",
-          strict: true,
-          type: "json_schema",
-          schema: zodToJsonSchema(LineupResponseSchema, {
-            $refStrategy: "none"
-          })
-        }
-      },
-    });
-
-    if (!completion?.output_parsed) {
-      throw new Error('Response returned empty output');
+    let usedModel = model;
+    let lineup: LineupResponse;
+    try {
+      lineup = await callModel(openai, model, prompt);
+    } catch (error) {
+      // A 4xx means the request itself was rejected (unknown model, unsupported
+      // parameter), so the fallback model can still answer it
+      const rejected = error instanceof OpenAI.APIError && error.status !== undefined && error.status >= 400 && error.status < 500 && error.status !== 429;
+      if (!rejected || model === FALLBACK_MODEL) throw error;
+      console.warn(`${model} rejected the request (${(error as InstanceType<typeof OpenAI.APIError>).status}): ${(error as Error).message}. Falling back to ${FALLBACK_MODEL}.`);
+      usedModel = FALLBACK_MODEL;
+      lineup = await callModel(openai, FALLBACK_MODEL, prompt);
     }
 
-    console.log(`✅ Generated structured lineup`);
+    await saveReasoningOutput(JSON.stringify(lineup, null, 2));
+    console.log(`✅ ${usedModel} returned ${lineup.quarters.length} quarters`);
 
-    // Parse and validate with Zod
-    const extractedLineup = LineupResponseSchema.parse(completion.output_parsed);
-
-    await saveReasoningOutput(JSON.stringify(extractedLineup, null, 2));
-    console.log(`✅ Parsed ${extractedLineup.quarters.length} quarters`);
-
-    return extractedLineup;
+    return { lineup, model: usedModel };
 
   } catch (error) {
-    console.error('Error calling GPT-5:', error);
+    console.error(`Error calling ${model}:`, error);
     return null;
   }
 }
 
 
-function buildReasoningPrompt(context: HybridGenerationContext): string {
-  const absentSection = context.absentInjuredContext.length > 0
-    ? `\n\nABSENT/INJURED PLAYERS:\n${context.absentInjuredContext.map(ai => {
-      const player = context.playersContext.find(p => p.id === ai.playerId);
-      const quarterInfo = ai.quarter ? ` Q${ai.quarter} only` : ' ALL QUARTERS';
-      return `- ${player?.name || 'Unknown'} (ID: ${ai.playerId})${quarterInfo}: ${ai.reason}`;
+export function buildReasoningPrompt(context: HybridGenerationContext, previousErrors: string[] = []): string {
+  const { availableByQuarter, positionsByQuarter, slotsByQuarter, absentQuartersByPlayer } = context.availability;
+
+  const absentSection = absentQuartersByPlayer.size > 0
+    ? `\n\nABSENT/INJURED PLAYERS (must NOT appear in assignments or substitutes for these quarters):\n${[...absentQuartersByPlayer.entries()].map(([playerId, { quarters, reason }]) => {
+      const player = context.playersContext.find(p => p.id === playerId);
+      const quarterInfo = quarters.length === 4 ? 'whole game' : quarters.map(q => `Q${q}`).join(', ');
+      return `- ${player?.name || 'Unknown'} (ID: ${playerId}): ${reason}, ${quarterInfo}`;
     }).join('\n')}`
+    : '';
+
+  const quarterPlan = QUARTERS.map(q => {
+    const available = availableByQuarter[q].size;
+    const positions = positionsByQuarter[q].length;
+    const slots = slotsByQuarter[q];
+    if (available < positions) {
+      return `- Q${q}: ${available} available players for ${positions} positions. PLAY SHORT: assign all ${available} players (exactly ${slots} assignments), leave ${positions - available} position(s) empty, never the goalkeeper (position 1). 0 substitutes.`;
+    }
+    return `- Q${q}: ${available} available players for ${positions} positions. Exactly ${slots} assignments and ${available - slots} substitutes.`;
+  }).join('\n');
+
+  const retrySection = previousErrors.length > 0
+    ? `\n\nYOUR PREVIOUS LINEUP FAILED THESE CHECKS. Fix every one of them:\n${previousErrors.map(e => `- ${e}`).join('\n')}`
     : '';
 
   // Build current lineup section if any quarters are already assigned
@@ -343,9 +425,6 @@ function buildReasoningPrompt(context: HybridGenerationContext): string {
     });
   }
 
-  const availablePlayers = context.teamPlayers.length - context.absentInjuredContext.filter(ai => !ai.quarter).length;
-  const subsPerQuarter = availablePlayers - context.positionsPerQuarter;
-
   return `
         You are an soccer coach creating a complete 4-quarter game lineup for ${context.format}.
         Analyze the context provided and create a balanced lineup
@@ -353,9 +432,8 @@ function buildReasoningPrompt(context: HybridGenerationContext): string {
 
         GAME INFO:
         - Total players on roster: ${context.teamPlayers.length}
-        - Available players (excluding absent/injured): ${availablePlayers}
-        - Positions per quarter: ${context.positionsPerQuarter}
-        - Substitutes per quarter: ${subsPerQuarter}
+        - Players and positions by quarter:
+        ${quarterPlan}
 
         ${context.formationContext}
 
@@ -366,31 +444,37 @@ function buildReasoningPrompt(context: HybridGenerationContext): string {
         ${pastGamesSection}
 
         RULES:
-        1. Each player plays at least 3/4 quarters (75% rule)
+        1. Each player plays at least 3 quarters, or every quarter they are available if that is fewer than 3 (75% rule)
         2. Goalkeepers play consecutive quarters
         3. GK limits: 7v7≤2, 9v9≤3, 11v11≤4 quarters
         4. Keep players in same positions when possible
-        5. Substitutes array must include players not in assignments
-        6. Substitutes must not appear in assignments
-        7. IMPORTANT: Absent/injured players must NOT be in assignments OR substitutes arrays
+        5. Each quarter has exactly the number of assignments listed above. Every positionNumber comes from that quarter's formation and is used at most once. Position 1 (GK) is always filled.
+        6. Substitutes are exactly the available players who are not in assignments
+        7. IMPORTANT: Absent/injured players must NOT be in assignments OR substitutes for the quarters they are out
+        ${retrySection}
 
         ${context.userInput ? `User request: ${context.userInput}` : ''}`;
 }
 
-function validateLineup(
+export function validateLineup(
   lineup: LineupResponse,
   context: HybridGenerationContext
-): { isValid: boolean; errors: string[] } {
+): { isValid: boolean; errors: string[]; notes: string[] } {
 
   const errors: string[] = [];
-  const { teamPlayers, playersContext, positionsPerQuarter, format, absentInjuredContext } = context;
+  const notes: string[] = [];
+  const { teamPlayers, playersContext, format, availability } = context;
+  const { availableByQuarter, positionsByQuarter, slotsByQuarter, absentQuartersByPlayer } = availability;
+  const nameOf = (id: number) => playersContext.find(p => p.id === id)?.name ?? `Unknown player ${id}`;
+  const rosterIds = new Set(teamPlayers.map(p => p.id));
 
   console.log('Running procedural validation...');
 
-  // Check each quarter exists
-  if (lineup.quarters.length !== 4) {
-    errors.push(`Expected 4 quarters, got ${lineup.quarters.length}`);
-    return { isValid: false, errors };
+  // Check each quarter exists exactly once
+  const quarterNumbers = lineup.quarters.map(q => q.number).sort();
+  if (lineup.quarters.length !== 4 || quarterNumbers.join(',') !== '1,2,3,4') {
+    errors.push(`Expected quarters 1-4, got ${quarterNumbers.join(', ') || 'none'}`);
+    return { isValid: false, errors, notes };
   }
 
   // Track playing time
@@ -403,53 +487,63 @@ function validateLineup(
 
   lineup.quarters.forEach(quarter => {
     const qNum = quarter.number;
+    const available = availableByQuarter[qNum];
+    const validPositions = new Set(positionsByQuarter[qNum]);
+    const slots = slotsByQuarter[qNum];
 
-    // Check quarter has correct number of assignments
-    if (quarter.assignments.length !== positionsPerQuarter) {
-      errors.push(`Q${qNum}: Expected ${positionsPerQuarter} assignments, got ${quarter.assignments.length}`);
+    // Right number of players on the field (fewer than the formation when playing short)
+    if (quarter.assignments.length !== slots) {
+      const short = slots < positionsByQuarter[qNum].length ? ` (only ${available.size} players available, so play short)` : '';
+      errors.push(`Q${qNum}: Expected ${slots} assignments, got ${quarter.assignments.length}${short}`);
     }
 
-    // Calculate available players (excluding absent/injured for this quarter)
-    const absentThisQuarter = absentInjuredContext.filter(ai =>
-      ai.playerId && (!ai.quarter || ai.quarter === qNum)
-    );
-    const availablePlayers = teamPlayers.length - absentThisQuarter.length;
-
-    // Check substitutes + assignments = available players
-    const totalInQuarter = quarter.assignments.length + quarter.substitutes.length;
-    if (totalInQuarter !== availablePlayers) {
-      errors.push(`Q${qNum}: Assignments (${quarter.assignments.length}) + Substitutes (${quarter.substitutes.length}) = ${totalInQuarter}, expected ${availablePlayers} available (${teamPlayers.length} total - ${absentThisQuarter.length} absent)`);
+    // Positions must exist in this quarter's formation, once each, and GK is always filled
+    const positionNumbers = quarter.assignments.map(a => a.positionNumber);
+    const invalidPositions = positionNumbers.filter(n => !validPositions.has(n));
+    if (invalidPositions.length > 0) {
+      errors.push(`Q${qNum}: Position(s) ${[...new Set(invalidPositions)].join(', ')} are not in this quarter's formation`);
+    }
+    if (positionNumbers.length !== new Set(positionNumbers).size) {
+      errors.push(`Q${qNum}: The same position is assigned to more than one player`);
+    }
+    if (slots > 0 && !positionNumbers.includes(1)) {
+      errors.push(`Q${qNum}: No goalkeeper (position 1) assigned`);
     }
 
     // Check for duplicate assignments
     const assignedIds = quarter.assignments.map(a => a.playerId);
-    const uniqueIds = new Set(assignedIds);
-    if (assignedIds.length !== uniqueIds.size) {
+    if (assignedIds.length !== new Set(assignedIds).size) {
       errors.push(`Q${qNum}: Duplicate player assignments detected`);
     }
 
     // Check player not in both assignments and substitutes
     quarter.assignments.forEach(a => {
       if (quarter.substitutes.includes(a.playerId)) {
-        const player = playersContext.find(p => p.id === a.playerId);
-        errors.push(`Q${qNum}: ${player?.name} (${a.playerId}) in both assignments and substitutes`);
+        errors.push(`Q${qNum}: ${nameOf(a.playerId)} (${a.playerId}) in both assignments and substitutes`);
       }
     });
 
-    // Check absent/injured players not assigned
-    absentInjuredContext.forEach(ai => {
-      const isAbsentThisQuarter = !ai.quarter || ai.quarter === qNum;
-      if (isAbsentThisQuarter) {
-        const isAssigned = quarter.assignments.some(a => a.playerId === ai.playerId);
-        if (isAssigned) {
-          const player = playersContext.find(p => p.id === ai.playerId);
-          errors.push(`Q${qNum}: ${player?.name} (${ai.playerId}) is ${ai.reason} but assigned to play`);
-        }
+    // Everyone on the field or bench must be on the roster and available this quarter
+    [...assignedIds, ...quarter.substitutes].forEach(id => {
+      if (!rosterIds.has(id)) {
+        errors.push(`Q${qNum}: Player ID ${id} is not on this team`);
+      } else if (!available.has(id)) {
+        const reason = absentQuartersByPlayer.get(id)?.reason ?? 'unavailable';
+        const where = assignedIds.includes(id) ? 'assigned to play' : 'listed as a substitute';
+        errors.push(`Q${qNum}: ${nameOf(id)} (${id}) is ${reason} but ${where}`);
       }
     });
+
+    // Every available player is either playing or on the bench
+    const accountedFor = new Set([...assignedIds, ...quarter.substitutes]);
+    const missing = [...available].filter(id => !accountedFor.has(id));
+    if (missing.length > 0) {
+      errors.push(`Q${qNum}: ${missing.map(id => `${nameOf(id)} (${id})`).join(', ')} missing from both assignments and substitutes`);
+    }
 
     // Track quarter counts
     quarter.assignments.forEach(a => {
+      if (!rosterIds.has(a.playerId)) return;
       quarterCounts[a.playerId]++;
       if (a.positionNumber === 1) {
         gkCounts[a.playerId]++;
@@ -457,22 +551,26 @@ function validateLineup(
     });
   });
 
-  // Check 75% rule (3/4 quarters minimum)
-  playersContext.forEach(player => {
-    const quartersPlayed = quarterCounts[player.id] || 0;
+  // Check 75% rule (3 quarters, or every available quarter if fewer). When
+  // injuries leave fewer field spots than that adds up to, it can't be met, so
+  // note it instead of failing every attempt.
+  const requiredQuarters = (playerId: number) =>
+    Math.min(3, QUARTERS.filter(q => availableByQuarter[q].has(playerId)).length);
+  const totalRequired = playersContext.reduce((sum, p) => sum + requiredQuarters(p.id), 0);
+  const totalSlots = QUARTERS.reduce((sum, q) => sum + slotsByQuarter[q], 0);
 
-    // Account for absent/injured
-    const absentQuarters = absentInjuredContext.filter(ai =>
-      ai.playerId === player.id && (!ai.quarter || [1, 2, 3, 4].includes(ai.quarter))
-    ).length;
-
-    const availableQuarters = 4 - absentQuarters;
-    const requiredQuarters = Math.ceil(availableQuarters * 0.75);
-
-    if (availableQuarters > 0 && quartersPlayed < requiredQuarters) {
-      errors.push(`${player.name} played ${quartersPlayed}/${availableQuarters} available quarters (needs ${requiredQuarters}+)`);
-    }
-  });
+  if (totalRequired <= totalSlots) {
+    playersContext.forEach(player => {
+      const required = requiredQuarters(player.id);
+      const quartersPlayed = quarterCounts[player.id] || 0;
+      if (required > 0 && quartersPlayed < required) {
+        const availableQuarters = QUARTERS.filter(q => availableByQuarter[q].has(player.id)).length;
+        errors.push(`${player.name} played ${quartersPlayed}/${availableQuarters} available quarters (needs ${required}+)`);
+      }
+    });
+  } else {
+    notes.push(`Note: with ${totalSlots} field spots across the game, not every player can get 3 quarters, so the 3/4 rule couldn't be fully met.`);
+  }
 
   // Check goalkeeper limits
   const gkLimits: Record<GameFormat, number> = { '7v7': 2, '9v9': 3, '11v11': 4 };
@@ -512,7 +610,8 @@ function validateLineup(
 
   return {
     isValid: errors.length === 0,
-    errors
+    errors,
+    notes
   };
 }
 
