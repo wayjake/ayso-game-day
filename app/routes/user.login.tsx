@@ -1,5 +1,5 @@
 import type { Route } from "./+types/user.login";
-import { Form, data, redirect, useSearchParams } from "react-router";
+import { Form, Link, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
 import { authenticateUser, safeRedirect } from "~/utils/auth.server";
 import { Alert, Button, Card, inputClass, labelClass } from "~/components/ui";
@@ -134,9 +134,14 @@ export default function Login({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div>
-            <label htmlFor="password" className={labelClass}>
-              Password
-            </label>
+            <div className="mb-1.5 flex items-baseline justify-between gap-4">
+              <label htmlFor="password" className="text-sm font-medium text-ink">
+                Password
+              </label>
+              <Link to="/user/forgot-password" className="text-sm font-medium text-primary hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               name="password"

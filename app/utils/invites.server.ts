@@ -125,7 +125,7 @@ export async function sendInviteEmail({
       <p><strong>Team${teamNames.length === 1 ? "" : "s"}:</strong> ${escapeHtml(teamList)}</p>
       <p>You'll be able to plan lineups, manage the roster, and edit games.</p>
       <p style="margin: 24px 0;">
-        <a href="${escapeHtml(url)}" style="background: #0EA5E9; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Accept invite</a>
+        <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Accept invite</a>
       </p>
       <p style="color: #64748b; font-size: 13px;">Or paste this link into your browser:<br>${escapeHtml(url)}</p>
       <p style="color: #64748b; font-size: 13px;">This link expires in ${INVITE_TTL_DAYS} days.</p>
