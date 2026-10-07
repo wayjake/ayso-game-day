@@ -6,6 +6,7 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players } from "~/db";
 import { eq, and, gte } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
+import { formatGameDateTime, todayISO } from "~/utils/dates";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -23,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   
   // Get upcoming games for rotation planning
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayISO();
   const upcomingGames = await db
     .select({
       id: games.id,
@@ -108,8 +109,7 @@ export default function TeamRotations({ loaderData }: Route.ComponentProps) {
                     <div>
                       <h3 className="text-lg font-semibold">vs {game.opponent}</h3>
                       <div className="text-sm text-[var(--muted)]">
-                        {new Date(game.gameDate).toLocaleDateString()} 
-                        {game.gameTime && ` at ${game.gameTime}`}
+                        {formatGameDateTime(game.gameDate, game.gameTime)}
                         {game.field && ` • ${game.field}`}
                       </div>
                     </div>

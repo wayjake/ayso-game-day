@@ -4,6 +4,7 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players } from "~/db";
 import { eq, count, and, gte, desc } from "drizzle-orm";
+import { formatGameDateTime, todayISO } from "~/utils/dates";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -37,7 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       .where(eq(games.teamId, teamId));
     
     // Get upcoming games (next 3)
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const upcomingGames = await db
       .select({
         id: games.id,
@@ -95,7 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       .where(canAccessTeam(user.id));
     
     // Get upcoming games across all teams
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const upcomingGames = await db
       .select({
         id: games.id,
@@ -228,7 +229,7 @@ function OverviewDashboard({ loaderData }: { loaderData: any }) {
                     <div>
                       <div className="font-medium">{game.teamName} vs {game.opponent}</div>
                       <div className="text-sm text-[var(--muted)]">
-                        {new Date(game.gameDate).toLocaleDateString()} {game.gameTime && `at ${game.gameTime}`}
+                        {formatGameDateTime(game.gameDate, game.gameTime)}
                       </div>
                       {game.field && <div className="text-sm text-[var(--muted)]">Field: {game.field}</div>}
                     </div>
@@ -374,7 +375,7 @@ function TeamDashboard({ loaderData }: { loaderData: any }) {
                   <div key={game.id} className="p-3 border border-[var(--border)] rounded">
                     <div className="font-medium">vs {game.opponent}</div>
                     <div className="text-sm text-[var(--muted)]">
-                      {new Date(game.gameDate).toLocaleDateString()} {game.gameTime && `at ${game.gameTime}`}
+                      {formatGameDateTime(game.gameDate, game.gameTime)}
                     </div>
                     {game.field && <div className="text-sm text-[var(--muted)]">Field: {game.field}</div>}
                     <div className="mt-2">

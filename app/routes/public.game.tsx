@@ -14,6 +14,8 @@ import {
   type PositionChange
 } from "~/utils/position-changes";
 import { useState, useEffect } from "react";
+import { formatGameDateTime } from "~/utils/dates";
+import { parseGameNotes } from "~/utils/game-notes";
 
 export async function loader({ params }: Route.LoaderArgs) {
   const shareId = params.id;
@@ -114,7 +116,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     ));
 
   // Parse saved quarter formations from game notes
-  const savedFormations = game.notes ? JSON.parse(game.notes) : {};
+  const savedFormations = parseGameNotes(game.notes);
   const quarterFormations = savedFormations.quarterFormations || {};
 
   return data({
@@ -345,8 +347,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
             )}
           </div>
           <p className="mt-2 text-[var(--muted)]">
-            vs {game.opponent} • {new Date(game.gameDate).toLocaleDateString()}
-            {game.gameTime && ` at ${game.gameTime}`}
+            vs {game.opponent} • {formatGameDateTime(game.gameDate, game.gameTime)}
           </p>
           <div className="mt-2">
             <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">

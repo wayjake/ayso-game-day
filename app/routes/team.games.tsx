@@ -5,6 +5,8 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games } from "~/db";
 import { eq, and } from "drizzle-orm";
+import { formatGameDate, formatGameTime, todayISO } from "~/utils/dates";
+import { gameNotesText } from "~/utils/game-notes";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -53,7 +55,7 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
   const { team, games } = loaderData;
   
   // Separate upcoming and past games
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayISO();
   const upcomingGames = games.filter((game: any) => game.gameDate >= today);
   const pastGames = games.filter((game: any) => game.gameDate < today);
   
@@ -96,10 +98,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                         </span>
                       </div>
                       <div className="text-[var(--muted)] space-y-1">
-                        <div>📅 {new Date(game.gameDate).toLocaleDateString()}</div>
-                        {game.gameTime && <div>🕐 {game.gameTime}</div>}
+                        <div>📅 {formatGameDate(game.gameDate)}</div>
+                        {game.gameTime && <div>🕐 {formatGameTime(game.gameTime)}</div>}
                         {game.field && <div>📍 Field: {game.field}</div>}
-                        {game.notes && <div className="mt-2 text-sm">📝 {game.notes}</div>}
+                        {gameNotesText(game.notes) && <div className="mt-2 text-sm">📝 {gameNotesText(game.notes)}</div>}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -173,10 +175,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                         </span>
                       </div>
                       <div className="text-[var(--muted)] space-y-1">
-                        <div>📅 {new Date(game.gameDate).toLocaleDateString()}</div>
-                        {game.gameTime && <div>🕐 {game.gameTime}</div>}
+                        <div>📅 {formatGameDate(game.gameDate)}</div>
+                        {game.gameTime && <div>🕐 {formatGameTime(game.gameTime)}</div>}
                         {game.field && <div>📍 Field: {game.field}</div>}
-                        {game.notes && <div className="mt-2 text-sm">📝 {game.notes}</div>}
+                        {gameNotesText(game.notes) && <div className="mt-2 text-sm">📝 {gameNotesText(game.notes)}</div>}
                       </div>
                     </div>
                     <div className="flex gap-2">

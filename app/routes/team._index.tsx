@@ -5,6 +5,7 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players } from "~/db";
 import { eq, and, gte } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
+import { formatGameDateTime, todayISO } from "~/utils/dates";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -22,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   
   // Get upcoming games (next 3)
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayISO();
   const upcomingGames = await db
     .select({
       id: games.id,
@@ -168,7 +169,7 @@ export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
                   <div key={game.id} className="p-3 border border-[var(--border)] rounded">
                     <div className="font-medium">vs {game.opponent}</div>
                     <div className="text-sm text-[var(--muted)]">
-                      {new Date(game.gameDate).toLocaleDateString()} {game.gameTime && `at ${game.gameTime}`}
+                      {formatGameDateTime(game.gameDate, game.gameTime)}
                     </div>
                     {game.field && <div className="text-sm text-[var(--muted)]">Field: {game.field}</div>}
                     <div className="mt-2">

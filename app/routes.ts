@@ -27,6 +27,7 @@ export default [
       route("roster/player/:playerId/edit", "routes/team.roster.player.edit.tsx"),
       route("games", "routes/team.games.tsx"),
       route("games/new", "routes/team.games-new.tsx"),
+      route("games/:gameId/edit", "routes/team.games.edit.tsx"),
       route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
       route("games/:gameId/game-card", "routes/team.games.game.card.ts"),
       route("rotations", "routes/team.rotations.tsx"),

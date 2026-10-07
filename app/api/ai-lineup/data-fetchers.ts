@@ -49,7 +49,8 @@ export async function getGame(gameId: number, teamId: number) {
 }
 
 export async function getQuarterFormations(game: any, teamFormat: GameFormat) {
-  const gameNotes = game.notes ? JSON.parse(game.notes) : {};
+  const { parseGameNotes } = await import('~/utils/game-notes');
+  const gameNotes = parseGameNotes(game.notes);
   const quarterFormations = gameNotes.quarterFormations || {};
 
   const { getDefaultFormationIndex, getFormationsByFormat } = await import('~/utils/formations');

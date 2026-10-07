@@ -17,6 +17,8 @@ import {
 } from "~/utils/position-changes";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AIAssistantCoach } from "~/components/AIAssistantCoach";
+import { formatGameDateTime } from "~/utils/dates";
+import { parseGameNotes, serializeGameNotes } from "~/utils/game-notes";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -102,7 +104,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ));
   
   // Parse saved quarter formations from game notes
-  const savedFormations = game.notes ? JSON.parse(game.notes) : {};
+  const savedFormations = parseGameNotes(game.notes);
   const quarterFormations = savedFormations.quarterFormations || {};
 
   // Get active share link if one exists
@@ -371,14 +373,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       
       // Parse existing quarter formations or create new object
-      const existingFormations = currentGame.notes ? JSON.parse(currentGame.notes) : {};
+      const existingFormations = parseGameNotes(currentGame.notes);
       const quarterFormations = existingFormations.quarterFormations || {};
       
       // Update the formation for this quarter
       quarterFormations[quarter] = formationIndex;
       
       // Save back to the notes field (temporary solution)
-      const updatedNotes = JSON.stringify({
+      const updatedNotes = serializeGameNotes({
         ...existingFormations,
         quarterFormations
       });
@@ -1715,8 +1717,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
           <p className="mt-2 text-[var(--muted)]">
-            vs {game.opponent} • {new Date(game.gameDate).toLocaleDateString()} 
-            {game.gameTime && ` at ${game.gameTime}`}
+            vs {game.opponent} • {formatGameDateTime(game.gameDate, game.gameTime)}
           </p>
           <div className="mt-2">
             <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">
