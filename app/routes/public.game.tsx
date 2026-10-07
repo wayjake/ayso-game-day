@@ -1,8 +1,7 @@
 import type { Route } from "./+types/public.game";
-import { data } from "react-router";
+import { data, Link } from "react-router";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
-import { getImageUrl } from "~/utils/image";
 import { getDefaultFormationIndex, getFormationsByFormat } from "~/utils/formations";
 import {
   calculatePositionChanges,
@@ -16,6 +15,9 @@ import {
 import { useState, useEffect } from "react";
 import { formatGameDateTime } from "~/utils/dates";
 import { parseGameNotes } from "~/utils/game-notes";
+import { AppMark } from "~/components/AppMark";
+import { Badge, Card, CardHeader, Page, PlayerAvatar, buttonClass } from "~/components/ui";
+import { CalendarBlank, Eye, FirstAid, SoccerBall, UserMinus, X } from "@phosphor-icons/react";
 
 export async function loader({ params }: Route.LoaderArgs) {
   const shareId = params.id;
@@ -161,40 +163,38 @@ function PositionSlot({
       style={{ left: `${100 - position.x}%`, top: `${position.y}%` }}
     >
       <div className="relative">
-        {/* 🟠 Change indicator ring */}
+        {/* Change indicator ring */}
         {showChangeIndicators && hasChange && (
-          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse pointer-events-none"></div>
+          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-warning animate-pulse pointer-events-none"></div>
         )}
         <div
-          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-display font-bold tabular ${
             assignedPlayer
-              ? 'bg-[var(--primary)] border-[var(--primary)] text-white'
-              : 'bg-[var(--surface)] border-[var(--border)] border-dashed'
-          } ${showChangeIndicators && hasChange ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}
+              ? 'bg-primary text-white text-base sm:text-lg ring-2 ring-white shadow-raised'
+              : 'bg-pitch-dark/60 text-white border-2 border-dashed border-white/60'
+          } ${showChangeIndicators && hasChange ? 'outline-2 outline-offset-2 outline-warning' : ''}`}
           title={showChangeIndicators && hasChange && changeDescription ? changeDescription : undefined}
         >
           {assignedPlayer ? (
-            <div className="text-center">
-              <div className="text-xs font-bold">{position.number}</div>
-            </div>
+            <div className="text-center">{position.number}</div>
           ) : (
-            <div className="text-center">
+            <div className="text-center leading-none">
               <div className="text-xs">{position.number}</div>
-              <div className="text-xs text-[var(--muted)]">{position.abbreviation}</div>
+              <div className="text-[10px] font-sans font-semibold text-white/75">{position.abbreviation}</div>
             </div>
           )}
         </div>
 
         {/* Player name below position circle */}
         {assignedPlayer && (
-          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-1 sm:px-2 py-1 pointer-events-none z-20 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap">
+          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-ink/85 text-white text-xs font-semibold rounded-md px-1.5 sm:px-2 py-0.5 shadow-card pointer-events-none z-20 max-w-[72px] sm:max-w-none truncate sm:whitespace-nowrap">
             {assignedPlayer.name.length > 12 ? `${assignedPlayer.name.substring(0, 10)}...` : assignedPlayer.name}
           </div>
         )}
 
         {/* Previous quarter player hint when position is empty */}
         {!assignedPlayer && previousQuarterPlayer && (
-          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-gray-200/90 text-gray-600 text-[10px] sm:text-xs rounded px-1 sm:px-2 py-0.5 pointer-events-none z-10 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap border border-gray-300/50">
+          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-pitch-dark/80 text-white/80 text-[10px] sm:text-xs rounded-md px-1.5 sm:px-2 py-0.5 pointer-events-none z-10 max-w-[72px] sm:max-w-none truncate sm:whitespace-nowrap ring-1 ring-white/30">
             {previousQuarterPlayer.name.length > 12 ? `${previousQuarterPlayer.name.substring(0, 10)}...` : previousQuarterPlayer.name}
           </div>
         )}
@@ -301,7 +301,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
   const previousSittingOut: Set<number> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<number>() : new Set<number>();
 
-  // 🔄 Calculate position changes between quarters
+  // Calculate position changes between quarters
   const positionChanges = previousQuarter ? calculatePositionChanges(
     previousLineup,
     currentLineup,
@@ -316,216 +316,209 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-bold">{team.name} Lineup</h1>
-              <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-green-500 text-green-700 bg-green-50">
-                VIEW ONLY
-              </span>
-            </div>
+    <div className="min-h-dvh bg-canvas text-ink">
+      {/* Slim header */}
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link to="/" aria-label="AYSO Game Day home">
+            <AppMark />
+          </Link>
+          <Badge>
+            <Eye size={14} weight="bold" />
+            View only
+          </Badge>
+        </div>
+      </header>
 
-            {/* Position Changes Toggle - Public View */}
+      <Page>
+        {/* Game header */}
+        <header className="mb-6">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold text-primary">{team.name}</span>
+            <Badge tone="primary">{team.format}</Badge>
+          </div>
+          <div className="mt-1 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">vs {game.opponent}</h1>
+
+            {/* Position changes toggle */}
             {currentQuarter > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowChangeIndicators(!showChangeIndicators)}
-                  className={`px-3 py-2 text-sm font-medium border rounded-lg transition flex items-center gap-2 ${
-                    showChangeIndicators
-                      ? 'border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100'
-                      : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)]'
-                  }`}
-                  title="Toggle position change indicators"
-                >
-                  <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"></span>
-                  <span className="hidden lg:inline">Changes</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowChangeIndicators(!showChangeIndicators)}
+                aria-pressed={showChangeIndicators}
+                className={
+                  showChangeIndicators
+                    ? buttonClass({ variant: "ghost", size: "sm", className: "bg-warning-soft text-warning! ring-1 ring-warning" })
+                    : buttonClass({ variant: "secondary", size: "sm" })
+                }
+                title="Toggle position change indicators"
+              >
+                <span className="h-2 w-2 rounded-full bg-warning" />
+                {showChangeIndicators ? "Hide changes" : "Show changes"}
+              </button>
             )}
           </div>
-          <p className="mt-2 text-[var(--muted)]">
-            vs {game.opponent} • {formatGameDateTime(game.gameDate, game.gameTime)}
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
+            <CalendarBlank size={16} />
+            {formatGameDateTime(game.gameDate, game.gameTime)}
           </p>
-          <div className="mt-2">
-            <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">
-              {team.format} Formation
-            </span>
-          </div>
-        </div>
+        </header>
 
-        {/* Quarter Tabs - Desktop Only */}
-        <div className="mb-6 hidden sm:block">
-          <div className="border-b border-[var(--border)]">
-            <nav className="-mb-px flex space-x-4">
-              {[1, 2, 3, 4].map((quarter) => (
-                <button
-                  key={quarter}
-                  onClick={() => setCurrentQuarter(quarter)}
-                  className={`py-2 px-4 border-b-2 font-medium text-sm transition ${
-                    currentQuarter === quarter
-                      ? 'border-[var(--primary)] text-[var(--primary)]'
-                      : 'border-transparent text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--border)]'
-                  }`}
-                >
-                  Quarter {quarter}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
+        {/* Quarter tabs (desktop) */}
+        <nav className="mb-6 hidden border-b border-line sm:flex sm:gap-1" aria-label="Quarter">
+          {[1, 2, 3, 4].map((quarter) => {
+            const isActive = currentQuarter === quarter;
+            return (
+              <button
+                key={quarter}
+                type="button"
+                onClick={() => setCurrentQuarter(quarter)}
+                aria-current={isActive ? "page" : undefined}
+                className={`-mb-px whitespace-nowrap border-b-2 px-3 pt-2 pb-3 text-sm font-semibold transition ${
+                  isActive
+                    ? "border-primary text-ink"
+                    : "border-transparent text-muted hover:border-line-strong hover:text-ink"
+                }`}
+              >
+                Quarter {quarter}
+              </button>
+            );
+          })}
+        </nav>
 
         {/* Main lineup content */}
-        <div className="flex flex-col lg:grid lg:gap-8 lg:grid-cols-3 space-y-6 lg:space-y-0">
-          {/* Substitutes / Available Players */}
-          <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
-            {/* Subs - Sitting Out Players */}
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Substitutes - Q{currentQuarter}</h2>
-              <div className="space-y-2 min-h-[200px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50">
-                <div className="space-y-2">
-                  {sittingOutPlayers.length > 0 ? (
-                    sittingOutPlayers.map((player: any) => {
-                      const playerChange = getPlayerChange(player.id, positionChanges);
+        <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3">
+          {/* Substitutes and absent players */}
+          <div className="order-2 space-y-6 lg:order-1 lg:col-span-1">
+            {/* Subs: players sitting out */}
+            <Card className="p-5">
+              <CardHeader title={`Sitting out · Q${currentQuarter}`} count={sittingOutPlayers.length} />
+              {sittingOutPlayers.length > 0 ? (
+                <ul className="mt-3 divide-y divide-line">
+                  {sittingOutPlayers.map((player: any) => {
+                    const playerChange = getPlayerChange(player.id, positionChanges);
+                    const preferred: string[] = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
 
-                      return (
-                        <div key={player.id} className="flex items-center gap-2 p-2 border border-[var(--border)] rounded bg-[var(--surface)]">
-                          {getImageUrl(player.profilePicture) ? (
-                            <img
-                              src={getImageUrl(player.profilePicture)!}
-                              alt={player.name}
-                              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-                              {player.name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate flex items-center gap-1">
-                              {player.jerseyNumber != null && (
-                                <span className="text-xs font-bold text-[var(--muted)] bg-[var(--bg)] px-1 rounded">
-                                  #{player.jerseyNumber}
-                                </span>
-                              )}
-                              {player.name}
-                              {/* 🔄 Position Change Indicator */}
-                              {showChangeIndicators && playerChange && (
-                                <span
-                                  className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"
-                                  title={getChangeDescription(playerChange)}
-                                />
-                              )}
-                            </div>
-                            {player.preferredPositions && JSON.parse(player.preferredPositions).length > 0 && (
-                              <div className="text-xs text-[var(--muted)] truncate">
-                                {JSON.parse(player.preferredPositions).slice(0, 3).join(', ')}
-                              </div>
+                    return (
+                      <li key={player.id} className="flex items-center gap-3 py-2.5">
+                        <PlayerAvatar player={player} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-sm font-semibold">
+                            <span className="truncate">{player.name}</span>
+                            {player.jerseyNumber != null && (
+                              <span className="shrink-0 font-normal text-subtle tabular">#{player.jerseyNumber}</span>
                             )}
-                            {/* 📝 Change description */}
+                            {/* Position change indicator */}
                             {showChangeIndicators && playerChange && (
-                              <div className="text-xs text-orange-600 truncate">
-                                {getChangeDescription(playerChange)}
-                              </div>
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full bg-warning"
+                                title={getChangeDescription(playerChange)}
+                              />
                             )}
                           </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-amber-700 text-center py-4">
-                      All players are on the field
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Absent/Injured Players */}
-            {absentInjuredPlayersForQuarter.length > 0 && (
-              <div>
-                <h2 className="text-lg font-semibold mb-4">Absent/Injured - Q{currentQuarter}</h2>
-                <div className="space-y-2 border border-dashed border-red-300 rounded-lg p-2 bg-red-50">
-                  <div className="space-y-2">
-                    {absentInjuredPlayersForQuarter.map((player: any) => {
-                      const reason = currentAbsentInjured.get(player.id);
-                      return (
-                        <div key={player.id} className="flex items-center gap-2 p-2 border border-red-200 rounded bg-white">
-                          {getImageUrl(player.profilePicture) ? (
-                            <img
-                              src={getImageUrl(player.profilePicture)!}
-                              alt={player.name}
-                              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-xs font-semibold text-red-600">
-                              {player.name.charAt(0).toUpperCase()}
+                          {preferred.length > 0 && (
+                            <div className="truncate text-xs text-muted">{preferred.slice(0, 3).join(', ')}</div>
+                          )}
+                          {/* Change description */}
+                          {showChangeIndicators && playerChange && (
+                            <div className="truncate text-xs font-medium text-warning">
+                              {getChangeDescription(playerChange)}
                             </div>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{player.name}</div>
-                            <div className="text-xs text-red-600 capitalize">{reason}</div>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-3 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-3 text-sm text-muted">
+                  <SoccerBall size={16} />
+                  All players are on the field
+                </p>
+              )}
+            </Card>
+
+            {/* Absent/injured players */}
+            {absentInjuredPlayersForQuarter.length > 0 && (
+              <Card className="p-5">
+                <CardHeader title={`Absent or injured · Q${currentQuarter}`} count={absentInjuredPlayersForQuarter.length} />
+                <ul className="mt-3 divide-y divide-line">
+                  {absentInjuredPlayersForQuarter.map((player: any) => {
+                    const reason = currentAbsentInjured.get(player.id);
+                    return (
+                      <li key={player.id} className="flex items-center gap-3 py-2.5">
+                        <PlayerAvatar player={player} size="sm" className="opacity-60" />
+                        <div className="min-w-0 flex-1 truncate text-sm font-semibold text-muted">{player.name}</div>
+                        <Badge tone={reason === 'injured' ? 'danger' : 'neutral'} className="capitalize">
+                          {reason === 'injured' ? <FirstAid size={14} weight="bold" /> : <UserMinus size={14} weight="bold" />}
+                          {reason}
+                        </Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
             )}
           </div>
 
-          {/* Formation Field */}
-          <div className="lg:col-span-2 order-1 lg:order-2">
-            {/* Formation Display */}
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Field Formation</h2>
-              <span className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium border border-[var(--border)] rounded bg-[var(--surface)]">
-                {currentFormationKey}
-              </span>
-            </div>
+          {/* Formation field */}
+          <Card className="order-1 p-4 sm:p-5 lg:order-2 lg:col-span-2">
+            <CardHeader
+              title="Formation"
+              actions={
+                <span className="rounded-md bg-surface-2 px-2 py-0.5 font-display text-base font-bold tabular text-ink">
+                  {currentFormationKey}
+                </span>
+              }
+              className="mb-4"
+            />
 
-            {/* 📍 Position Change Legend */}
+            {/* Position change legend */}
             {showChangeIndicators && positionChanges.length > 0 && currentQuarter > 1 && (
-              <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                      <span className="text-orange-700 font-medium">Position Changes from Q{previousQuarter}</span>
-                    </div>
-                    <span className="text-orange-600">
-                      {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setShowChangeIndicators(false)}
-                    className="text-orange-600 hover:text-orange-800 text-sm"
-                    title="Hide change indicators"
-                  >
-                    ✕
-                  </button>
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg bg-warning-soft py-1.5 pr-1.5 pl-3 text-sm text-warning">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-warning" />
+                    Changes from Q{previousQuarter}
+                  </span>
+                  <span className="tabular">
+                    {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
+                  </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowChangeIndicators(false)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition hover:bg-warning/10"
+                  title="Hide change indicators"
+                  aria-label="Hide change indicators"
+                >
+                  <X size={16} weight="bold" />
+                </button>
               </div>
             )}
 
-            <div className="relative bg-green-700 rounded-lg h-[28rem] sm:h-[32rem] w-full">
+            <div className="relative h-[28rem] w-full rounded-xl bg-pitch sm:h-[32rem]">
+              {/* Mowing stripes, clipped to the field. Slots live outside this layer so their labels never clip. */}
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl" aria-hidden>
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="absolute inset-x-0 bg-pitch-dark" style={{ top: `${(i * 2 + 1) * (100 / 12)}%`, height: `${100 / 12}%` }} />
+                ))}
+              </div>
+
               {/* Field markings */}
-              <div className="absolute inset-2 border-2 border-white rounded">
+              <div className="pointer-events-none absolute inset-2 rounded-md border-2 border-white/70" aria-hidden>
                 {/* Center line */}
-                <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white"></div>
+                <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white/70"></div>
                 {/* Center circle */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-16 sm:h-16 border-2 border-white rounded-full"></div>
+                <div className="absolute top-1/2 left-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 sm:h-20 sm:w-20"></div>
                 {/* Top penalty area */}
-                <div className="absolute top-0 left-1/3 w-1/3 h-8 sm:h-12 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-1/4 h-10 w-1/2 border-x-2 border-b-2 border-white/70 sm:h-14"></div>
                 {/* Top goal area */}
-                <div className="absolute top-0 left-[40%] w-1/5 h-4 sm:h-6 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-[37.5%] h-4 w-1/4 border-x-2 border-b-2 border-white/70 sm:h-6"></div>
                 {/* Bottom penalty area */}
-                <div className="absolute bottom-0 left-1/3 w-1/3 h-8 sm:h-12 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-1/4 h-10 w-1/2 border-x-2 border-t-2 border-white/70 sm:h-14"></div>
                 {/* Bottom goal area */}
-                <div className="absolute bottom-0 left-[40%] w-1/5 h-4 sm:h-6 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-[37.5%] h-4 w-1/4 border-x-2 border-t-2 border-white/70 sm:h-6"></div>
               </div>
 
               {/* Position slots */}
@@ -551,33 +544,38 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
                 );
               })}
             </div>
-          </div>
+          </Card>
         </div>
-      </div>
+      </Page>
 
-      {/* Mobile Bottom Navigation */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] shadow-[0_-8px_32px_rgba(0,0,0,0.12)] z-30">
-        <div className="grid grid-cols-4 text-center">
-          {[1, 2, 3, 4].map((quarter) => (
-            <button
-              key={quarter}
-              onClick={() => setCurrentQuarter(quarter)}
-              className={`py-6 px-2 text-base font-bold transition min-h-[68px] flex items-center justify-center ${
-                currentQuarter === quarter
-                  ? 'text-[var(--primary)] bg-[var(--bg)] shadow-inner'
-                  : 'text-gray-700 hover:text-black hover:bg-[var(--bg)] active:bg-gray-100'
-              }`}
-            >
-              Q{quarter}
-            </button>
-          ))}
+      {/* Room for the fixed quarter bar on phones */}
+      <div className="h-20 sm:hidden" aria-hidden />
+
+      {/* Quarter tabs (mobile): bottom bar within thumb reach */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-overlay sm:hidden"
+        aria-label="Quarter"
+      >
+        <div className="grid grid-cols-4">
+          {[1, 2, 3, 4].map((quarter) => {
+            const isActive = currentQuarter === quarter;
+            return (
+              <button
+                key={quarter}
+                type="button"
+                onClick={() => setCurrentQuarter(quarter)}
+                aria-current={isActive ? "page" : undefined}
+                className={`relative flex min-h-16 items-center justify-center font-display text-xl font-bold tabular transition ${
+                  isActive ? "text-primary" : "text-muted active:bg-surface-2"
+                }`}
+              >
+                {isActive && <span className="absolute inset-x-4 top-0 h-1 rounded-b-full bg-primary" />}
+                Q{quarter}
+              </button>
+            );
+          })}
         </div>
-        {/* Extra padding for iPhone home indicator */}
-        <div className="h-2 bg-white"></div>
-      </div>
-
-      {/* Mobile padding bottom */}
-      <div className="sm:hidden h-24"></div>
+      </nav>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { useUploadThing } from "~/utils/uploadthing";
 import { getImageUrl } from "~/utils/image";
+import { buttonClass, cx } from "~/components/ui";
+import { Camera, CircleNotch, ClipboardText, UploadSimple } from "@phosphor-icons/react";
 import {
   processImageToSizes,
   validateImage,
@@ -32,7 +34,7 @@ export function ImageUploader({
 
   const { startUpload } = useUploadThing(endpoint, {
     onClientUploadComplete: (res) => {
-      // 🎉 Upload complete!
+      // Upload complete
       if (enableResize && res?.length > 0) {
         // Extract base URL from the first uploaded file
         // Assuming filename pattern: player_123456_abc7-medium.jpg
@@ -51,7 +53,7 @@ export function ImageUploader({
       setUploadProgress(0);
     },
     onUploadError: (error: Error) => {
-      // 💥 Something went wrong
+      // Something went wrong
       console.error("Upload error:", error);
       onUploadError?.(error.message || "Upload failed");
       setIsUploading(false);
@@ -59,7 +61,7 @@ export function ImageUploader({
       setPreviewUrl(null);
     },
     onUploadProgress: (progress) => {
-      // 📊 Track upload progress
+      // Track upload progress
       setUploadProgress(progress);
     },
   });
@@ -191,71 +193,61 @@ export function ImageUploader({
   }, [processFile, isProcessing, isUploading]);
 
   const displayImage = previewUrl || currentImage;
+  const busy = isUploading || isProcessing;
 
   return (
-    <div className={`space-y-4 ${className} ${isPasteReady ? 'ring-2 ring-[var(--primary)] ring-opacity-30 rounded-lg p-2' : ''}`}>
-      {/* Paste indicator */}
-      {!displayImage && !isProcessing && !isUploading && (
-        <div className="border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center">
-          <div className="text-2xl mb-2">📋</div>
-          <p className="text-sm text-[var(--muted)] mb-2">
-            Paste an image from your clipboard
-          </p>
-          <p className="text-xs text-[var(--muted)]">
-            Copy an image and press Ctrl+V (Cmd+V on Mac)
-          </p>
-          <div className="relative mt-4 mb-2">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[var(--border)]"></div>
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="px-2 bg-[var(--bg)] text-[var(--muted)]">OR</span>
-            </div>
-          </div>
-        </div>
+    <div
+      className={cx(
+        "flex items-start gap-4 rounded-xl transition",
+        isPasteReady && "ring-2 ring-primary/20 ring-offset-4 ring-offset-surface",
+        className
       )}
-      
-      {/* Current/Preview Image */}
-      {displayImage && (
-        <div className="relative">
+    >
+      {/* Current/preview image, or an empty tile that hints at pasting */}
+      {displayImage ? (
+        <div className="relative shrink-0">
           <img
             src={previewUrl || getImageUrl(currentImage) || undefined}
             alt="Upload preview"
-            className="w-32 h-32 rounded-lg object-cover border border-[var(--border)]"
+            className="h-24 w-24 rounded-2xl object-cover ring-1 ring-line"
           />
-          {(isUploading || isProcessing) && (
-            <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
-              <div className="text-white text-sm font-medium">
+          {busy && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-ink/60">
+              <div className="text-sm font-semibold text-white tabular">
                 {isProcessing ? "Processing..." : `${uploadProgress}%`}
               </div>
             </div>
           )}
         </div>
+      ) : (
+        <div className="flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-line-strong text-subtle">
+          {busy ? <CircleNotch size={24} className="animate-spin" /> : <Camera size={24} />}
+        </div>
       )}
 
-      {/* Upload Button */}
-      <div>
+      <div className="min-w-0 flex-1">
+        {/* Upload button */}
         <label
           htmlFor="image-upload"
-          className={`inline-flex items-center justify-center px-4 py-2 rounded font-medium border transition cursor-pointer
-            ${(isUploading || isProcessing)
-              ? "bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed" 
-              : "border-[var(--primary)] bg-transparent text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white"
-            }`}
+          className={buttonClass({
+            variant: "secondary",
+            className: busy ? "pointer-events-none opacity-50" : "cursor-pointer",
+          })}
         >
           {isProcessing ? (
             <>
-              <span className="animate-spin mr-2">⚙️</span>
+              <CircleNotch size={18} className="animate-spin" />
               Processing image...
             </>
           ) : isUploading ? (
             <>
-              <span className="animate-spin mr-2">⚡</span>
+              <CircleNotch size={18} className="animate-spin" />
               Uploading... {uploadProgress}%
             </>
           ) : (
             <>
-              📸 {displayImage ? "Change" : "Upload"} Photo
+              <UploadSimple size={18} />
+              {displayImage ? "Change photo" : "Upload photo"}
             </>
           )}
         </label>
@@ -264,26 +256,27 @@ export function ImageUploader({
           type="file"
           accept="image/png,image/jpeg,image/jpg,image/webp"
           onChange={handleFileSelect}
-          disabled={isUploading || isProcessing}
+          disabled={busy}
           className="hidden"
         />
-      </div>
 
-      {/* Help text */}
-      <div className="space-y-1">
-        <p className="text-xs text-[var(--muted)]">
-          {endpoint === "playerImage" 
-            ? "Max 10MB • PNG, JPG, or WebP" 
-            : "Max 2MB • PNG, JPG, or SVG"}
-        </p>
-        <p className="text-xs text-[var(--muted)]">
-          💡 Tip: You can paste an image with Ctrl+V (or Cmd+V on Mac)
-        </p>
-        {enableResize && (
-          <p className="text-xs text-[var(--muted)]">
-            Images will be resized to: 150px (thumbnail), 600px (medium), 1200px (large)
+        {/* Help text */}
+        <div className="mt-2 space-y-0.5 text-xs text-muted">
+          <p className="flex items-center gap-1.5">
+            <ClipboardText size={14} className="shrink-0" />
+            Or paste an image with Ctrl+V (Cmd+V on Mac)
           </p>
-        )}
+          <p>
+            {endpoint === "playerImage"
+              ? "Max 10MB · PNG, JPG, or WebP"
+              : "Max 2MB · PNG, JPG, or SVG"}
+          </p>
+          {enableResize && (
+            <p className="text-subtle">
+              Saved at 150px (thumbnail), 600px (medium) and 1200px (large)
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -2,10 +2,12 @@ import type { Route } from "./+types/user.signup";
 import { Form, data, redirect } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser } from "~/utils/auth.server";
+import { Check } from "@phosphor-icons/react";
+import { Alert, Button, Card, hintClass, inputClass, labelClass } from "~/components/ui";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Sign Up - AYSO Game Day" },
+    { title: "Sign up - AYSO Game Day" },
     { name: "description", content: "Create your AYSO Game Day account to start planning games and rotations" },
   ];
 }
@@ -57,7 +59,7 @@ export async function action({ request }: Route.ActionArgs) {
     session.set("userId", user.id);
     session.set("userEmail", user.email);
     session.set("userRole", user.role);
-    session.flash("success", "Account created successfully!");
+    session.flash("success", "Account created.");
     
     return redirect("/dashboard", {
       headers: {
@@ -102,48 +104,28 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function Signup({ loaderData }: Route.ComponentProps) {
   const { error, success } = loaderData;
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
-      {/* Simple header */}
-      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <nav className="container mx-auto px-4 flex items-center justify-between h-14">
-          <a href="/" className="flex items-center gap-2 font-semibold">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-[var(--accent)] text-white text-xs">AY</span>
-            <span>AYSO Game Day</span>
-          </a>
-          <a href="/" className="text-[var(--muted)] hover:text-[var(--text)] transition text-sm">
-            Back to Home
-          </a>
-        </nav>
-      </header>
+    <>
+      <div className="mb-6">
+        <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Create your account</h1>
+        <p className="mt-1 text-muted">Set up your team and plan your first game in a few minutes.</p>
+      </div>
 
-      {/* Signup form */}
-      <section className="py-16">
-        <div className="container mx-auto px-4 max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold">Create Your Account</h1>
-            <p className="mt-2 text-[var(--muted)]">
-              Start planning your AYSO games in minutes
-            </p>
-            
-            {/* Error/Success messages */}
-            {error && (
-              <div className="mt-4 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="mt-4 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
-                {success}
-              </div>
-            )}
-          </div>
+      {/* Error/success messages */}
+      {(error || success) && (
+        <div className="mb-4 space-y-2">
+          {error && <Alert>{error}</Alert>}
+          {success && <Alert tone="success">{success}</Alert>}
+        </div>
+      )}
 
-          <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
-            <div className="p-6 space-y-4">
-              {/* Name */}
+      <Card>
+        <Form method="post" className="divide-y divide-line">
+          <div className="p-6 sm:p-8">
+            <fieldset className="min-w-0 space-y-5">
+              <legend className="sr-only">About you</legend>
               <div>
-                <label htmlFor="name" className="block text-sm font-medium mb-1">
-                  Your Name
+                <label htmlFor="name" className={labelClass}>
+                  Your name
                 </label>
                 <input
                   id="name"
@@ -151,17 +133,14 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   type="text"
                   required
                   autoComplete="name"
-                  className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                  className={inputClass}
                   placeholder="Alex Morgan"
                 />
-                <p className="text-xs text-[var(--muted)] mt-1">
-                  Printed as the coach's name on game cards
-                </p>
+                <p className={hintClass}>Printed as the coach's name on game cards</p>
               </div>
 
-              {/* Email */}
               <div>
-                <label htmlFor="email" className="block text-sm font-medium mb-1">
+                <label htmlFor="email" className={labelClass}>
                   Email
                 </label>
                 <input
@@ -169,14 +148,13 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   name="email"
                   type="email"
                   required
-                  className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                  className={inputClass}
                   placeholder="coach@club.org"
                 />
               </div>
 
-              {/* Password */}
               <div>
-                <label htmlFor="password" className="block text-sm font-medium mb-1">
+                <label htmlFor="password" className={labelClass}>
                   Password
                 </label>
                 <input
@@ -184,129 +162,101 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   name="password"
                   type="password"
                   required
-                  className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                  className={inputClass}
                   placeholder="••••••••"
                 />
-                <p className="text-xs text-[var(--muted)] mt-1">
-                  Must be at least 8 characters
-                </p>
+                <p className={hintClass}>At least 8 characters</p>
+              </div>
+            </fieldset>
+          </div>
+
+          {/* Team info */}
+          <div className="p-6 sm:p-8">
+            <fieldset className="min-w-0 space-y-5">
+              <legend className="text-base font-semibold">Your team</legend>
+
+              <div>
+                <label htmlFor="teamName" className={labelClass}>
+                  Team name
+                </label>
+                <input
+                  id="teamName"
+                  name="teamName"
+                  type="text"
+                  required
+                  className={inputClass}
+                  placeholder="U12 Spartans"
+                />
               </div>
 
-              {/* Team Info */}
-              <div className="border-t border-[var(--border)] pt-4">
-                <h3 className="text-sm font-medium mb-3">Team Information</h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="teamName" className="block text-sm font-medium mb-1">
-                      Team Name
-                    </label>
-                    <input
-                      id="teamName"
-                      name="teamName"
-                      type="text"
-                      required
-                      className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                      placeholder="U12 Spartans"
-                    />
-                  </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="format" className={labelClass}>
+                    Game format
+                  </label>
+                  <select id="format" name="format" required className={inputClass}>
+                    <option value="">Select format</option>
+                    <option value="7v7">7v7</option>
+                    <option value="9v9">9v9</option>
+                    <option value="11v11">11v11</option>
+                  </select>
+                </div>
 
-                  <div>
-                    <label htmlFor="format" className="block text-sm font-medium mb-1">
-                      Game Format
-                    </label>
-                    <select
-                      id="format"
-                      name="format"
-                      required
-                      className="w-full rounded border border-[var(--border)] px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                    >
-                      <option value="">Select format</option>
-                      <option value="7v7">7v7</option>
-                      <option value="9v9">9v9</option>
-                      <option value="11v11">11v11</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="region" className="block text-sm font-medium mb-1">
-                      AYSO Region (Optional)
-                    </label>
-                    <input
-                      id="region"
-                      name="region"
-                      type="text"
-                      className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                      placeholder="Region 678"
-                    />
-                  </div>
+                <div>
+                  <label htmlFor="region" className={labelClass}>
+                    AYSO region <span className="font-normal text-subtle">(optional)</span>
+                  </label>
+                  <input
+                    id="region"
+                    name="region"
+                    type="text"
+                    className={inputClass}
+                    placeholder="Region 678"
+                  />
                 </div>
               </div>
-
-              {/* Terms */}
-              <div className="flex items-start">
-                <input
-                  id="terms"
-                  name="terms"
-                  type="checkbox"
-                  required
-                  className="mt-1 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
-                />
-                <label htmlFor="terms" className="ml-2 text-sm text-[var(--muted)]">
-                  I agree to the Terms of Service and Privacy Policy
-                </label>
-              </div>
-
-              {/* Submit */}
-              <button
-                type="submit"
-                className="w-full inline-flex items-center justify-center px-5 py-3 text-base rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Create Free Account
-              </button>
-
-              {/* Already have account */}
-              <p className="text-center text-sm text-[var(--muted)]">
-                Already have an account?{" "}
-                <a href="/user/login" className="text-[var(--primary)] hover:underline">
-                  Sign in here
-                </a>
-              </p>
-            </div>
-          </Form>
-
-          {/* Benefits */}
-          <div className="mt-8 space-y-3">
-            <div className="flex items-start gap-3">
-              <span className="h-5 w-5 inline-flex items-center justify-center rounded-full bg-[var(--success)] text-white text-xs mt-0.5">
-                ✓
-              </span>
-              <div>
-                <p className="text-sm font-medium">Start with the Free plan</p>
-                <p className="text-xs text-[var(--muted)]">1 team, 10 games, no credit card required</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="h-5 w-5 inline-flex items-center justify-center rounded-full bg-[var(--success)] text-white text-xs mt-0.5">
-                ✓
-              </span>
-              <div>
-                <p className="text-sm font-medium">AYSO compliant rotations</p>
-                <p className="text-xs text-[var(--muted)]">Fair play time tracking built-in</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="h-5 w-5 inline-flex items-center justify-center rounded-full bg-[var(--success)] text-white text-xs mt-0.5">
-                ✓
-              </span>
-              <div>
-                <p className="text-sm font-medium">Upgrade anytime</p>
-                <p className="text-xs text-[var(--muted)]">Switch to Coach or Club plans as you grow</p>
-              </div>
-            </div>
+            </fieldset>
           </div>
-        </div>
-      </section>
-    </div>
+
+          <div className="space-y-5 p-6 sm:p-8">
+            {/* Terms */}
+            <label htmlFor="terms" className="flex items-start gap-2.5 text-sm text-muted">
+              <input id="terms" name="terms" type="checkbox" required className="mt-0.5 h-4 w-4 shrink-0 rounded accent-primary" />
+              I agree to the Terms of Service and Privacy Policy
+            </label>
+
+            <Button type="submit" size="lg" className="w-full">
+              Create account
+            </Button>
+          </div>
+        </Form>
+      </Card>
+
+      <p className="mt-6 text-center text-sm text-muted">
+        Already have an account?{" "}
+        <a href="/user/login" className="font-semibold text-primary hover:underline">
+          Sign in
+        </a>
+      </p>
+
+      {/* Benefits */}
+      <ul className="mt-8 space-y-3 border-t border-line pt-6">
+        {[
+          { title: "Start with the Free plan", detail: "1 team, 10 games, no credit card required" },
+          { title: "AYSO-compliant rotations", detail: "Fair play time tracking built in" },
+          { title: "Upgrade anytime", detail: "Switch to Coach or Club plans as you grow" },
+        ].map((benefit) => (
+          <li key={benefit.title} className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+              <Check size={12} weight="bold" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">{benefit.title}</p>
+              <p className="text-xs text-muted">{benefit.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { CalendarBlank, CaretLeft, CaretRight, Clock, X } from "@phosphor-icons/react";
 import {
   addDays,
   dayOfWeek,
@@ -12,13 +13,16 @@ import {
 // Date and time pickers for scheduling games. Both submit the same plain values
 // the native inputs did ("YYYY-MM-DD" and "HH:MM"), so actions don't change.
 
+// Matches inputClass in ui.tsx, laid out as a button with an icon on the right
 const triggerClass =
-  "w-full flex items-center justify-between gap-2 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-left focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent";
+  "flex w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-left text-sm text-ink transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 const popoverClass =
-  "absolute z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 shadow-lg";
-const chipBase = "rounded-full border px-3 py-1 text-sm font-medium transition";
-const chipIdle = "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--primary)] hover:text-[var(--primary)]";
-const chipActive = "border-[var(--primary)] bg-[var(--primary)] text-white";
+  "absolute z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-surface p-3 shadow-overlay ring-1 ring-line";
+const chipBase = "rounded-full border px-3 py-1.5 text-sm font-medium transition";
+const chipIdle = "border-line-strong bg-surface text-ink hover:border-primary hover:text-primary";
+const chipActive = "border-primary bg-primary text-white";
+const iconClass = "shrink-0 text-muted";
+const navButtonClass = "flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink";
 
 // Open state for a popover that closes on any click outside it
 function usePopover() {
@@ -52,14 +56,6 @@ function FormValue({ name, value, required }: { name: string; value: string; req
       onChange={() => {}}
       className="pointer-events-none absolute bottom-0 left-4 h-px w-px opacity-0"
     />
-  );
-}
-
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg className="h-5 w-5 shrink-0 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      {children}
-    </svg>
   );
 }
 
@@ -154,12 +150,10 @@ export function GameDatePicker({
         onClick={() => (open ? setOpen(false) : openCalendar())}
         className={triggerClass}
       >
-        <span className={value ? "" : "text-[var(--muted)]"}>
+        <span className={value ? "" : "text-subtle"}>
           {value ? formatGameDate(value, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Pick a date"}
         </span>
-        <Icon>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </Icon>
+        <CalendarBlank size={20} className={iconClass} aria-hidden />
       </button>
       <FormValue name={name} value={value} required={required} />
 
@@ -181,18 +175,18 @@ export function GameDatePicker({
       {open && (
         <div id={popoverId} role="dialog" aria-label="Choose game date" className={`${popoverClass} left-0`}>
           <div className="mb-2 flex items-center justify-between">
-            <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="rounded p-1.5 hover:bg-[var(--bg)]">
-              <Icon><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></Icon>
+            <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className={navButtonClass}>
+              <CaretLeft size={18} weight="bold" aria-hidden />
             </button>
             <div className="font-semibold" aria-live="polite">{monthLabel}</div>
-            <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className="rounded p-1.5 hover:bg-[var(--bg)]">
-              <Icon><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></Icon>
+            <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className={navButtonClass}>
+              <CaretRight size={18} weight="bold" aria-hidden />
             </button>
           </div>
 
-          <div className="grid grid-cols-7 text-center text-xs font-medium text-[var(--muted)]">
+          <div className="grid grid-cols-7 text-center text-xs font-medium text-muted">
             {WEEKDAYS.map((day, i) => (
-              <div key={i} className={`py-1 ${i === 6 ? "text-[var(--primary)]" : ""}`}>{day}</div>
+              <div key={i} className={`py-1 ${i === 6 ? "text-primary" : ""}`}>{day}</div>
             ))}
           </div>
 
@@ -213,14 +207,14 @@ export function GameDatePicker({
                   aria-pressed={selected}
                   onClick={() => choose(iso)}
                   className={[
-                    "h-9 rounded text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
+                    "h-9 rounded-lg text-sm tabular transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                     selected
-                      ? "bg-[var(--primary)] font-semibold text-white"
+                      ? "bg-primary font-semibold text-white"
                       : saturday && inMonth
-                        ? "bg-sky-50 text-[var(--text)] hover:bg-sky-100"
-                        : "hover:bg-[var(--bg)]",
-                    !selected && !inMonth ? "text-gray-400" : "",
-                    !selected && isToday ? "font-semibold ring-1 ring-inset ring-[var(--primary)]" : "",
+                        ? "bg-primary-soft text-primary-ink hover:bg-primary/15"
+                        : "hover:bg-surface-2",
+                    !selected && !inMonth ? "text-subtle" : "",
+                    !selected && isToday ? "font-semibold ring-1 ring-inset ring-primary" : "",
                   ].join(" ")}
                 >
                   {parts.day}
@@ -229,12 +223,12 @@ export function GameDatePicker({
             })}
           </div>
 
-          <div className="mt-2 flex justify-between border-t border-[var(--border)] pt-2 text-sm">
-            <button type="button" onClick={() => choose(today)} className="font-medium text-[var(--primary)] hover:underline">
+          <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm">
+            <button type="button" onClick={() => choose(today)} className="rounded-md px-2 py-1.5 font-medium text-primary hover:bg-primary-soft">
               Today
             </button>
             {!required && value && (
-              <button type="button" onClick={() => choose("")} className="text-[var(--muted)] hover:underline">
+              <button type="button" onClick={() => choose("")} className="rounded-md px-2 py-1.5 text-muted hover:bg-surface-2 hover:text-ink">
                 Clear
               </button>
             )}
@@ -287,19 +281,17 @@ export function GameTimePicker({
           onClick={() => setOpen(!open)}
           className={triggerClass}
         >
-          <span className={value ? "" : "text-[var(--muted)]"}>{value ? formatGameTime(value) : "Pick a time"}</span>
-          <Icon>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </Icon>
+          <span className={value ? "" : "text-subtle"}>{value ? formatGameTime(value) : "Pick a time"}</span>
+          <Clock size={20} className={iconClass} aria-hidden />
         </button>
         {value && (
           <button
             type="button"
             onClick={() => setValue("")}
             aria-label="Clear time"
-            className="absolute right-10 top-1/2 -translate-y-1/2 rounded px-1.5 text-lg leading-none text-[var(--muted)] hover:text-[var(--text)]"
+            className="absolute right-10 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted transition hover:bg-surface-2 hover:text-ink"
           >
-            ×
+            <X size={16} weight="bold" aria-hidden />
           </button>
         )}
       </div>
@@ -314,7 +306,7 @@ export function GameTimePicker({
           // Right-aligned: the time field sits in the right-hand column
           className={`${popoverClass} right-0`}
         >
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">Hour</div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Hour</div>
           <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Hour">
             {HOURS.map((h) => (
               <button
@@ -322,14 +314,14 @@ export function GameTimePicker({
                 type="button"
                 aria-pressed={hour === h}
                 onClick={() => setValue(`${pad(h)}:${pad(minute ?? 0)}`)}
-                className={`rounded border py-1.5 text-sm font-medium transition ${hour === h ? chipActive : chipIdle}`}
+                className={`rounded-lg border py-1.5 text-sm font-medium transition ${hour === h ? chipActive : chipIdle}`}
               >
                 {hourLabel(h)}
               </button>
             ))}
           </div>
 
-          <div className="mb-1 mt-3 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">Minute</div>
+          <div className="mb-1.5 mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Minute</div>
           <div className="grid grid-cols-6 gap-1.5" role="group" aria-label="Minute">
             {MINUTES.map((m) => (
               <button
@@ -341,25 +333,25 @@ export function GameTimePicker({
                   setValue(`${pad(hour!)}:${pad(m)}`);
                   close();
                 }}
-                className={`rounded border py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${minute === m && hour !== null ? chipActive : chipIdle}`}
+                className={`rounded-lg border py-1.5 text-sm font-medium tabular transition disabled:cursor-not-allowed disabled:opacity-40 ${minute === m && hour !== null ? chipActive : chipIdle}`}
               >
                 :{pad(m)}
               </button>
             ))}
           </div>
-          {hour === null && <p className="mt-2 text-xs text-[var(--muted)]">Pick an hour first.</p>}
+          {hour === null && <p className="mt-2 text-xs text-muted">Pick an hour first.</p>}
 
-          <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3 text-sm">
-            <label className="flex items-center gap-2 text-[var(--muted)]">
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 text-sm">
+            <label className="flex items-center gap-2 text-muted">
               Other time
               <input
                 type="time"
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                className="rounded border border-[var(--border)] px-2 py-1 text-[var(--text)]"
+                className="rounded-md border border-line-strong bg-surface px-2 py-1 text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </label>
-            <button type="button" onClick={close} className="font-medium text-[var(--primary)] hover:underline">
+            <button type="button" onClick={close} className="rounded-md px-2 py-1.5 font-medium text-primary hover:bg-primary-soft">
               Done
             </button>
           </div>

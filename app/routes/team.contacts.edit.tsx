@@ -1,8 +1,10 @@
 import type { Route } from "./+types/team.contacts.edit";
-import { Form, data, redirect } from "react-router";
+import { Form, Link, data, redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, contacts } from "~/db";
+import { Alert, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
+import { Trash } from "@phosphor-icons/react";
 import { eq, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
@@ -172,29 +174,23 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
   const error = actionData?.error;
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-2xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Edit Contact</h1>
-          <p className="mt-2 text-[var(--muted)]">
-            Update contact information for {team.name}
-          </p>
-        </div>
+    <Page width="narrow">
+      <PageHeader
+        back={{ to: `/dashboard/team/${team.id}/contacts`, label: "Contacts" }}
+        title="Edit contact"
+        description={contact.name}
+      />
 
-        {/* Error message */}
-        {error && (
-          <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
+      {/* Error message */}
+      {error && <Alert className="mb-6">{error}</Alert>}
 
-        <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
-          <div className="p-6 space-y-6">
+      <Card>
+        <Form method="post">
+          <div className="space-y-5 p-5 sm:p-6">
             {/* Contact name */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium mb-1">
-                Contact Name <span className="text-red-500">*</span>
+              <label htmlFor="name" className={labelClass}>
+                Contact name <span className="text-danger">*</span>
               </label>
               <input
                 id="name"
@@ -202,15 +198,15 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
                 type="text"
                 required
                 defaultValue={contact.name}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                placeholder="e.g., Sarah Johnson"
+                className={inputClass}
+                placeholder="e.g. Sarah Johnson"
               />
             </div>
 
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-1">
-                Email Address <span className="text-red-500">*</span>
+              <label htmlFor="email" className={labelClass}>
+                Email address <span className="text-danger">*</span>
               </label>
               <input
                 id="email"
@@ -218,85 +214,83 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
                 type="email"
                 required
                 defaultValue={contact.email}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                placeholder="e.g., sarah.johnson@example.com"
+                className={inputClass}
+                placeholder="e.g. sarah.johnson@example.com"
               />
             </div>
 
             {/* Phone */}
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium mb-1">
-                Phone Number
+              <label htmlFor="phone" className={labelClass}>
+                Phone number
               </label>
               <input
                 id="phone"
                 name="phone"
                 type="tel"
                 defaultValue={contact.phone || ""}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                placeholder="e.g., (555) 123-4567"
+                className={inputClass}
+                placeholder="e.g. (555) 123-4567"
               />
             </div>
 
             {/* Player */}
             <div>
-              <label htmlFor="playerId" className="block text-sm font-medium mb-1">
-                Associated Player
+              <label htmlFor="playerId" className={labelClass}>
+                Player
               </label>
               <select
                 id="playerId"
                 name="playerId"
                 defaultValue={contact.playerId || ""}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                className={inputClass}
               >
-                <option value="">None (General team contact)</option>
+                <option value="">None (general team contact)</option>
                 {players.map((player) => (
                   <option key={player.id} value={player.id}>
                     {player.name}
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Select the player this contact is associated with, if applicable
+              <p className={hintClass}>
+                The player this contact belongs to, if any.
               </p>
             </div>
 
             {/* Relationship */}
             <div>
-              <label htmlFor="relationship" className="block text-sm font-medium mb-1">
+              <label htmlFor="relationship" className={labelClass}>
                 Relationship
               </label>
               <select
                 id="relationship"
                 name="relationship"
                 defaultValue={contact.relationship || ""}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+                className={inputClass}
               >
-                <option value="">Select relationship...</option>
+                <option value="">Select relationship…</option>
                 <option value="parent">Parent</option>
                 <option value="guardian">Guardian</option>
                 <option value="self">Self</option>
-                <option value="emergency">Emergency Contact</option>
+                <option value="emergency">Emergency contact</option>
               </select>
             </div>
 
             {/* Primary contact checkbox */}
-            <div className="flex items-center">
+            <label htmlFor="isPrimary" className="flex min-h-10 cursor-pointer items-center gap-3 text-sm">
               <input
                 id="isPrimary"
                 name="isPrimary"
                 type="checkbox"
                 defaultChecked={contact.isPrimary ?? false}
-                className="h-4 w-4 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
+                className="h-4 w-4 shrink-0 accent-primary"
               />
-              <label htmlFor="isPrimary" className="ml-2 text-sm">
-                This is the primary contact for this player
-              </label>
-            </div>
+              This is the primary contact for this player
+            </label>
 
             {/* Notes */}
             <div>
-              <label htmlFor="notes" className="block text-sm font-medium mb-1">
+              <label htmlFor="notes" className={labelClass}>
                 Notes
               </label>
               <textarea
@@ -304,46 +298,44 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
                 name="notes"
                 rows={3}
                 defaultValue={contact.notes || ""}
-                className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-                placeholder="Any additional notes about this contact..."
+                className={inputClass}
+                placeholder="Anything else to know about this contact"
               />
             </div>
           </div>
 
           {/* Form actions */}
-          <div className="px-6 py-4 bg-[var(--bg)] border-t border-[var(--border)] flex gap-3 justify-between rounded-b-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-4 sm:px-6">
             <button
               type="submit"
               name="intent"
               value="delete"
-              className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-red-200 bg-transparent text-red-600 hover:bg-red-50 transition"
+              className={buttonClass({ variant: "danger-soft", className: "-ml-2" })}
               onClick={(e) => {
                 if (!confirm(`Are you sure you want to delete ${contact.name}?`)) {
                   e.preventDefault();
                 }
               }}
             >
-              Delete Contact
+              <Trash size={18} />
+              Delete
             </button>
-            <div className="flex gap-3">
-              <a
-                href={`/dashboard/team/${team.id}/contacts`}
-                className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-              >
+            <div className="ml-auto flex gap-2">
+              <Link to={`/dashboard/team/${team.id}/contacts`} className={buttonClass({ variant: "ghost" })}>
                 Cancel
-              </a>
+              </Link>
               <button
                 type="submit"
                 name="intent"
                 value="update"
-                className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
+                className={buttonClass()}
               >
-                Save Changes
+                Save changes
               </button>
             </div>
           </div>
         </Form>
-      </div>
-    </div>
+      </Card>
+    </Page>
   );
 }

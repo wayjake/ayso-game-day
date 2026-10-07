@@ -5,6 +5,9 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams } from "~/db";
 import { desc } from "drizzle-orm";
+import { SignOut } from "@phosphor-icons/react";
+import { AppMark } from "~/components/AppMark";
+import { buttonClass } from "~/components/ui";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -37,31 +40,32 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const { user } = loaderData;
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
-      {/* Top navigation */}
-      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <nav className="container mx-auto px-4 sm:px-6 max-w-[1600px] flex items-center justify-between h-14">
-          <Link to="/dashboard" className="flex items-center gap-2 font-semibold">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-[var(--accent)] text-white text-xs">AY</span>
-            <span>AYSO Game Day</span>
+    <div className="min-h-dvh bg-canvas text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-raised"
+      >
+        Skip to content
+      </a>
+      <header className="border-b border-line bg-surface">
+        <nav className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+          <Link to="/dashboard" aria-label="AYSO Game Day home">
+            <AppMark />
           </Link>
 
-          {/* User menu */}
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:block text-sm text-[var(--muted)]">{user.email}</span>
+          <div className="flex items-center gap-1">
+            <span className="hidden px-2 text-sm text-muted sm:block">{user.email}</span>
             <Form action="/user/logout" method="post">
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-              >
-                Logout
+              <button type="submit" className={buttonClass({ variant: "ghost", size: "sm" })}>
+                <SignOut size={18} />
+                <span className="hidden sm:inline">Log out</span>
               </button>
             </Form>
           </div>
         </nav>
       </header>
 
-      <main className="flex-1">
+      <main id="main">
         <Outlet />
       </main>
     </div>

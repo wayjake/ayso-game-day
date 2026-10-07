@@ -1,24 +1,86 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Every color here becomes a Tailwind utility
+ * (bg-surface, text-muted, border-line, bg-primary-soft, ...).
+ * Neutrals are one cool slate family; there is one accent (royal blue).
+ * Green, amber and red are status colors only. Brand red is the logo mark.
+ */
 @theme {
+	--font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+	--font-display: "Barlow Semi Condensed", "Geist", ui-sans-serif, system-ui, sans-serif;
+
+	--color-canvas: #F4F6F9;
+	--color-surface: #FFFFFF;
+	--color-surface-2: #EEF1F5;
+	--color-line: #DFE4EA;
+	--color-line-strong: #C3CCD7;
+	--color-ink: #101B2D;
+	--color-muted: #536175;
+	--color-subtle: #8693A5;
+
+	--color-primary: #2251C4;
+	--color-primary-hover: #1A41A3;
+	--color-primary-soft: #E9EEFB;
+	--color-primary-ink: #1A3E9C;
+
+	--color-success: #157A3E;
+	--color-success-soft: #E5F4EA;
+	--color-warning: #A9560B;
+	--color-warning-soft: #FCF1E1;
+	--color-danger: #C42B2B;
+	--color-danger-soft: #FCEBEA;
+	--color-brand: #E03131;
+
+	--color-pitch: #2F7D3E;
+	--color-pitch-dark: #276A34;
+
+	--shadow-card: 0 1px 2px rgb(16 27 45 / 0.05), 0 1px 3px rgb(16 27 45 / 0.04);
+	--shadow-raised: 0 4px 12px -2px rgb(16 27 45 / 0.08), 0 2px 4px -2px rgb(16 27 45 / 0.06);
+	--shadow-overlay: 0 16px 40px -8px rgb(16 27 45 / 0.22), 0 4px 12px -4px rgb(16 27 45 / 0.12);
 }
 
+/* Legacy names, kept so older markup still picks up the palette */
 :root {
-	--bg: #F8FAFC;
-	--surface: #FFFFFF;
-	--text: #1F2937; /* Darker for better contrast */
-	--muted: #4B5563; /* Darker muted text for better readability */
-	--primary: #0EA5E9; /* Cyan-Blue */
-	--primary-600: #0284C7;
-	--accent: #EF4444; /* AYSO red hint */
-	--danger: #DC2626;
-	--warning: #D97706; /* Darker for better contrast */
-	--success: #059669; /* Darker for better contrast */
-	--border: #D1D5DB; /* Slightly darker for better definition */
+	--bg: var(--color-canvas);
+	--surface: var(--color-surface);
+	--text: var(--color-ink);
+	--muted: var(--color-muted);
+	--primary: var(--color-primary);
+	--primary-600: var(--color-primary-hover);
+	--accent: var(--color-brand);
+	--danger: var(--color-danger);
+	--warning: var(--color-warning);
+	--success: var(--color-success);
+	--border: var(--color-line);
 }
 
 html,
 body {
-	background-color: var(--bg);
-	color: var(--text);
+	background-color: var(--color-canvas);
+	color: var(--color-ink);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3 {
+	text-wrap: balance;
+}
+
+p {
+	text-wrap: pretty;
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+@layer utilities {
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
 }

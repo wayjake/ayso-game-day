@@ -5,9 +5,10 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players } from "~/db";
 import { eq, and } from "drizzle-orm";
-import { getImageUrl } from "~/utils/image";
 import { useState } from "react";
 import { RosterImportModal } from "~/components/RosterImportModal";
+import { Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, PlayerAvatar, buttonClass, cx } from "~/components/ui";
+import { CaretRight, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -51,7 +52,7 @@ export function meta({ params }: Route.MetaArgs) {
   ];
 }
 
-function PlayerCard({ player, teamId }: { player: any; teamId: number }) {
+function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
   const fetcher = useFetcher();
   const [showConfirm, setShowConfirm] = useState(false);
   const busy = fetcher.state !== "idle";
@@ -75,86 +76,65 @@ function PlayerCard({ player, teamId }: { player: any; teamId: number }) {
     setShowConfirm(false);
   };
 
+  const positions: string[] = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
+
   return (
-    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm hover:shadow-md transition-shadow">
-      <div className="p-6">
-        <div className="flex items-start gap-4">
-          {getImageUrl(player.profilePicture) ? (
-            <img
-              src={getImageUrl(player.profilePicture)!}
-              alt={player.name}
-              className="w-12 h-12 rounded-full object-cover border border-[var(--border)]"
-            />
-          ) : (
-            <div className="w-12 h-12 rounded-full bg-[var(--bg)] flex items-center justify-center text-lg font-semibold text-[var(--muted)]">
-              {player.name.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className="flex-1">
-            <h3 className="font-semibold text-[var(--text)]">
+    <li className={cx("flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 sm:px-3", busy && "opacity-50")}>
+      {/* Whole row opens the edit page */}
+      <Link
+        to={`/dashboard/team/${teamId}/roster/player/${player.id}/edit`}
+        className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-surface-2"
+      >
+        {/* Jersey number sits beside the name, so the avatar falls back to the initial */}
+        <PlayerAvatar player={{ ...player, jerseyNumber: null }} size="lg" />
+        <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
               {player.jerseyNumber !== null && (
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-[var(--primary)] text-white text-xs font-bold mr-2">
+                <span className="font-display text-xl font-bold leading-none text-primary tabular">
                   {player.jerseyNumber}
                 </span>
               )}
-              {player.name}
-            </h3>
+              <span className="truncate font-semibold">{player.name}</span>
+            </div>
             {player.description && (
-              <p className="text-sm text-[var(--muted)] mt-1">{player.description}</p>
-            )}
-            {player.preferredPositions && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {JSON.parse(player.preferredPositions).map((pos: string) => (
-                  <span key={pos} className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">
-                    {pos}
-                  </span>
-                ))}
-              </div>
+              <p className="mt-0.5 line-clamp-2 text-sm text-muted sm:line-clamp-1">{player.description}</p>
             )}
           </div>
-        </div>
-        <div className="mt-4 space-y-2">
-          {showConfirm ? (
-            <>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleRemove}
-                  disabled={busy}
-                  className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-red-200 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition"
-                >
-                  {busy ? "Removing..." : "✓ Confirm"}
-                </button>
-                <button
-                  onClick={handleCancel}
-                  disabled={busy}
-                  className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-                >
-                  Cancel
-                </button>
-              </div>
-              <div className="text-xs text-red-600 text-center">
-                Are you sure you want to remove {player.name}?
-              </div>
-            </>
-          ) : (
-            <div className="flex gap-2">
-              <Link
-                to={`/dashboard/team/${teamId}/roster/player/${player.id}/edit`}
-                className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-              >
-                Edit
-              </Link>
-              <button
-                onClick={handleRemove}
-                className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-red-200 bg-transparent text-red-600 hover:bg-red-50 transition"
-              >
-                Remove
-              </button>
+          {positions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1 sm:mt-0 sm:max-w-[40%] sm:justify-end">
+              {positions.map((pos) => (
+                <Badge key={pos}>{pos}</Badge>
+              ))}
             </div>
           )}
         </div>
-      </div>
-    </div>
+        <CaretRight size={16} className="hidden shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-ink sm:block" />
+      </Link>
+
+      {showConfirm ? (
+        <div className="flex w-full items-center justify-end gap-2 pb-1.5 sm:w-auto sm:pb-0">
+          <span className="mr-1 min-w-0 truncate text-sm font-medium text-danger">Remove {player.name}?</span>
+          <Button variant="ghost" onClick={handleCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleRemove} disabled={busy}>
+            <Trash size={16} weight="bold" />
+            {busy ? "Removing..." : "Remove"}
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleRemove}
+          aria-label={`Remove ${player.name}`}
+          title="Remove player"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+        >
+          <Trash size={18} />
+        </button>
+      )}
+    </li>
   );
 }
 
@@ -168,64 +148,59 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
     revalidator.revalidate();
   };
 
+  const importButton = (
+    <Button variant="secondary" onClick={() => setShowImportModal(true)}>
+      <UploadSimple size={18} />
+      Import roster
+    </Button>
+  );
+  const addPlayerLink = (
+    <Link to={`/dashboard/team/${team.id}/roster/new-player`} className={buttonClass()}>
+      <Plus size={18} weight="bold" />
+      Add player
+    </Link>
+  );
+
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Roster</h1>
-            <p className="mt-2 text-[var(--muted)]">
-              Manage players for your {team.format} team
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-            >
-              Import Roster
-            </button>
-            <Link
-              to={`/dashboard/team/${team.id}/roster/new-player`}
-              className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-            >
-              Add Player
-            </Link>
-          </div>
-        </div>
-        
-        {/* Players grid */}
+    <Page>
+      <PageHeader
+        title="Roster"
+        description={`Manage players for your ${team.format} team.`}
+        actions={
+          players.length > 0 && (
+            <>
+              {importButton}
+              {addPlayerLink}
+            </>
+          )
+        }
+      />
+
+      <Card>
         {players.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {players.map((player) => (
-              <PlayerCard key={player.id} player={player} teamId={team.id} />
-            ))}
-          </div>
+          <>
+            <CardHeader title="Players" count={players.length} className="px-5 pt-5 pb-2 sm:px-6" />
+            <ul className="divide-y divide-line pb-2">
+              {players.map((player) => (
+                <PlayerRow key={player.id} player={player} teamId={team.id} />
+              ))}
+            </ul>
+          </>
         ) : (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
-            <div className="max-w-sm mx-auto">
-              <div className="mb-4">
-                <div className="h-12 w-12 mx-auto bg-[var(--bg)] rounded-full flex items-center justify-center">
-                  <span className="text-[var(--muted)] text-xl">👥</span>
-                </div>
+          <EmptyState
+            icon={<UsersThree size={24} />}
+            title="No players yet"
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                {importButton}
+                {addPlayerLink}
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
-                No players yet
-              </h3>
-              <p className="text-[var(--muted)] mb-6">
-                Add players to your roster to start planning game rotations and lineups.
-              </p>
-              <Link
-                to={`/dashboard/team/${team.id}/roster/new-player`}
-                className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Add Your First Player
-              </Link>
-            </div>
-          </div>
+            }
+          >
+            Add players one at a time, or import a roster from a photo, PDF or CSV file.
+          </EmptyState>
         )}
-      </div>
+      </Card>
 
       {/* Import Roster Modal */}
       <RosterImportModal
@@ -235,6 +210,6 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
         existingPlayers={players.map((p) => ({ id: p.id, name: p.name }))}
         onImportComplete={handleImportComplete}
       />
-    </div>
+    </Page>
   );
 }

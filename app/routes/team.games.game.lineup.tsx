@@ -19,6 +19,29 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AIAssistantCoach } from "~/components/AIAssistantCoach";
 import { formatGameDateTime } from "~/utils/dates";
 import { parseGameNotes, serializeGameNotes } from "~/utils/game-notes";
+import { Alert, Badge, Button, Card, CardHeader, HomeAwayBadge, Page, PlayerAvatar, buttonClass, cx, inputClass } from "~/components/ui";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowsLeftRight,
+  CaretLeft,
+  CaretRight,
+  ChartBar,
+  Chair,
+  Copy,
+  Eye,
+  FirstAidKit,
+  Link as LinkIcon,
+  Printer,
+  Question,
+  ShareNetwork,
+  Sparkle,
+  Star,
+  Trash,
+  UserMinus,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -557,11 +580,18 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
-    { title: `Plan Lineup - ${loaderData?.game?.opponent || 'Game'} - AYSO Game Day` },
+    { title: `Lineup - ${loaderData?.game?.opponent || 'Game'} - AYSO Game Day` },
     { name: "description", content: "Plan your team lineup and rotations" },
   ];
 }
 
+// Badge colors for "quarters sitting out": 0 is the normal case, more is worse
+function sittingOutBadgeClass(quartersSittingOut: number) {
+  if (quartersSittingOut === 0) return "bg-surface-2 text-muted";
+  if (quartersSittingOut === 1) return "bg-primary-soft text-primary-ink";
+  if (quartersSittingOut === 2) return "bg-warning-soft text-warning";
+  return "bg-danger-soft text-danger";
+}
 
 function PlayerCard({
   player,
@@ -641,44 +671,34 @@ function PlayerCard({
         draggable
         onDragStart={handleDragStart}
         onClick={handleClick}
-        className="flex items-center gap-2 p-2 border border-[var(--border)] rounded bg-[var(--surface)] cursor-pointer hover:shadow-md transition-shadow active:cursor-grabbing"
+        className="flex min-h-12 cursor-grab items-center gap-2.5 rounded-xl bg-surface p-2 ring-1 ring-line/70 transition hover:shadow-raised hover:ring-line-strong active:cursor-grabbing"
         data-player-card={player.id}
       >
-        {getImageUrl(player.profilePicture) ? (
-          <img
-            src={getImageUrl(player.profilePicture)!}
-            alt={player.name}
-            className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-          />
-        ) : (
-          <div className="w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-            {player.name.charAt(0).toUpperCase()}
-          </div>
-        )}
+        <PlayerAvatar player={{ ...player, jerseyNumber: null }} size="sm" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate flex items-center gap-1">
+          <div className="flex items-center gap-1.5 text-sm font-medium">
             {player.jerseyNumber != null && (
-              <span className="text-xs font-bold text-[var(--muted)] bg-[var(--bg)] px-1 rounded">
+              <span className="shrink-0 font-display text-sm font-bold text-subtle tabular">
                 #{player.jerseyNumber}
               </span>
             )}
-            {player.name}
-            {/* 🔄 Position Change Indicator */}
+            <span className="truncate">{player.name}</span>
+            {/* Position change indicator */}
             {showChangeIndicators && positionChange && (
               <span
-                className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"
+                className="h-2 w-2 shrink-0 rounded-full bg-warning"
                 title={getChangeDescription(positionChange)}
               />
             )}
           </div>
           {preferredPositions.length > 0 && (
-            <div className="text-xs text-[var(--muted)] truncate">
+            <div className="truncate text-xs text-muted">
               {preferredPositions.slice(0, 3).join(', ')}
             </div>
           )}
-          {/* 📝 Change description tooltip */}
+          {/* Change description */}
           {showChangeIndicators && positionChange && (
-            <div className="text-xs text-orange-600 truncate">
+            <div className="truncate text-xs font-medium text-warning">
               {getChangeDescription(positionChange)}
             </div>
           )}
@@ -689,45 +709,44 @@ function PlayerCard({
       {showDropdown && availablePositions && (
         <div
           ref={dropdownRef}
-          className="absolute z-[10001] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
+          className="absolute left-0 z-[10001] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl bg-surface p-1.5 shadow-overlay ring-1 ring-line"
         >
-          <div className="p-2">
-            <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
-              Assign to Position:
-            </div>
-            <div className="max-h-48 overflow-y-auto">
-              {availablePositions.map((pos) => {
-                const isPreferred = preferredPositions.includes(pos.abbreviation);
-                return (
-                  <button
-                    key={pos.number}
-                    onClick={() => handlePositionSelect(pos)}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-[var(--bg)] transition ${
-                      isPreferred ? 'bg-green-50' : ''
-                    }`}
-                  >
-                    <span className="font-medium">#{pos.number} {pos.abbreviation}</span>
-                    <span className="text-xs text-[var(--muted)] ml-1">
-                      - {pos.fullName}
-                      {isPreferred && ' ⭐'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Sit Out option - only show if not already sitting out */}
-            {onSitOut && !isSittingOut && (
-              <>
-                <div className="border-t border-[var(--border)] my-1"></div>
-                <button
-                  onClick={handleSitOutClick}
-                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-amber-50 transition text-amber-700"
-                >
-                  <span className="font-medium">Sit Out This Quarter</span>
-                </button>
-              </>
-            )}
+          <div className="px-2.5 pt-1 pb-1.5 text-xs font-semibold text-muted">
+            Assign to position
           </div>
+          <div className="max-h-56 overflow-y-auto">
+            {availablePositions.map((pos) => {
+              const isPreferred = preferredPositions.includes(pos.abbreviation);
+              return (
+                <button
+                  key={pos.number}
+                  onClick={() => handlePositionSelect(pos)}
+                  className={cx(
+                    "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                    isPreferred ? "bg-success-soft hover:brightness-95" : "hover:bg-surface-2"
+                  )}
+                >
+                  <span className="w-6 shrink-0 font-display font-bold tabular">{pos.number}</span>
+                  <span className="font-medium">{pos.abbreviation}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted">{pos.fullName}</span>
+                  {isPreferred && <Star size={14} weight="fill" className="shrink-0 text-success" aria-label="Preferred" />}
+                </button>
+              );
+            })}
+          </div>
+          {/* Sit Out option - only show if not already sitting out */}
+          {onSitOut && !isSittingOut && (
+            <>
+              <div className="mx-2 my-1.5 border-t border-line"></div>
+              <button
+                onClick={handleSitOutClick}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-warning transition hover:bg-warning-soft"
+              >
+                <Chair size={16} />
+                Sit out this quarter
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -838,14 +857,14 @@ function PositionSlot({
   
   return (
     <div
-      className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${showDropdown ? 'z-[10000]' : 'z-10'}`}
+      className={`absolute -translate-x-1/2 -translate-y-1/2 ${showDropdown ? 'z-[10000]' : 'z-10'}`}
       style={{ left: `${position.x}%`, top: `${position.y}%` }}
       data-position={position.number}
     >
       <div className="relative">
-        {/* 🟠 Change indicator ring */}
+        {/* Change indicator ring */}
         {showChangeIndicators && hasChange && (
-          <div className="absolute inset-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-orange-500 animate-pulse pointer-events-none"></div>
+          <div className="pointer-events-none absolute inset-0 h-10 w-10 animate-pulse rounded-full border-2 border-warning sm:h-12 sm:w-12"></div>
         )}
         <div
           draggable={!!assignedPlayer}
@@ -853,21 +872,26 @@ function PositionSlot({
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           onClick={handleClick}
-          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
+          className={cx(
+            "flex h-10 w-10 items-center justify-center rounded-full font-display font-bold tabular shadow-raised transition sm:h-12 sm:w-12",
             assignedPlayer
-              ? 'bg-[var(--primary)] border-[var(--primary)] text-white hover:bg-[var(--primary-600)] cursor-grab active:cursor-grabbing'
-              : 'bg-[var(--surface)] border-[var(--border)] border-dashed hover:border-[var(--primary)] cursor-pointer'
-          } ${showChangeIndicators && hasChange ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}
+              ? "cursor-grab bg-surface text-lg text-ink active:cursor-grabbing sm:text-xl"
+              : "cursor-pointer border-2 border-dashed border-white/70 bg-surface/80 text-ink hover:border-primary hover:bg-surface",
+            // One ring at a time: selected (menu open) > position change > default
+            showDropdown
+              ? "ring-[3px] ring-primary"
+              : showChangeIndicators && hasChange
+                ? "ring-2 ring-warning ring-offset-1 ring-offset-pitch"
+                : assignedPlayer && "ring-2 ring-white/60 hover:ring-primary"
+          )}
           title={showChangeIndicators && hasChange && changeDescription ? changeDescription : undefined}
         >
           {assignedPlayer ? (
-            <div className="text-center">
-              <div className="text-xs font-bold">{position.number}</div>
-            </div>
+            <div className="text-center leading-none">{position.number}</div>
           ) : (
-            <div className="text-center">
-              <div className="text-xs">{position.number}</div>
-              <div className="text-xs text-[var(--muted)]">{position.abbreviation}</div>
+            <div className="text-center leading-none">
+              <div className="text-sm">{position.number}</div>
+              <div className="mt-0.5 font-sans text-[9px] font-semibold text-muted sm:text-[10px]">{position.abbreviation}</div>
             </div>
           )}
         </div>
@@ -875,12 +899,10 @@ function PositionSlot({
         {/* Sitting out badge indicator */}
         {assignedPlayer && quartersSittingOut !== undefined && (
           <div
-            className={`absolute -top-1 -right-1 w-5 h-4 text-[9px] font-bold rounded flex items-center justify-center pointer-events-none z-30 ${
-              quartersSittingOut === 0 ? 'bg-green-500 text-white' :
-              quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
-              quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
-              'bg-red-500 text-white'
-            }`}
+            className={cx(
+              "pointer-events-none absolute -top-1 -right-2 z-30 flex h-4 items-center justify-center rounded px-1 text-[9px] font-bold tabular shadow-card",
+              sittingOutBadgeClass(quartersSittingOut)
+            )}
             title={`Sitting out ${quartersSittingOut} of 4 quarters`}
           >
             {quartersSittingOut}/4
@@ -889,14 +911,14 @@ function PositionSlot({
 
         {/* Player name below position circle */}
         {assignedPlayer && (
-          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs rounded px-1 sm:px-2 py-1 pointer-events-none z-20 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap">
+          <div className="pointer-events-none absolute top-12 left-1/2 z-20 max-w-[70px] -translate-x-1/2 truncate rounded-md bg-ink/85 px-1.5 py-0.5 text-xs font-medium text-white sm:top-14 sm:max-w-none sm:px-2 sm:whitespace-nowrap">
             {assignedPlayer.name.length > 12 ? `${assignedPlayer.name.substring(0, 10)}...` : assignedPlayer.name}
           </div>
         )}
 
         {/* Previous quarter player hint when position is empty */}
         {!assignedPlayer && previousQuarterPlayer && (
-          <div className="absolute top-12 sm:top-14 left-1/2 transform -translate-x-1/2 bg-gray-200/90 text-gray-600 text-[10px] sm:text-xs rounded px-1 sm:px-2 py-0.5 pointer-events-none z-10 max-w-[70px] sm:max-w-none truncate sm:whitespace-nowrap border border-gray-300/50">
+          <div className="pointer-events-none absolute top-12 left-1/2 z-10 max-w-[70px] -translate-x-1/2 truncate rounded-md bg-surface/75 px-1.5 py-0.5 text-[10px] text-muted sm:top-14 sm:max-w-none sm:px-2 sm:text-xs sm:whitespace-nowrap">
             {previousQuarterPlayer.name.length > 12 ? `${previousQuarterPlayer.name.substring(0, 10)}...` : previousQuarterPlayer.name}
           </div>
         )}
@@ -905,63 +927,68 @@ function PositionSlot({
         {showDropdown && (
           <div 
             ref={dropdownRef}
-            className="absolute z-[10001] mt-1 left-1/2 transform -translate-x-1/2 w-48 bg-white border border-[var(--border)] rounded-lg shadow-xl"
+            className="absolute left-1/2 z-[10001] mt-1 w-48 -translate-x-1/2 rounded-xl bg-surface p-1.5 shadow-overlay ring-1 ring-line"
           >
-            <div className="p-2">
-              {assignedPlayer ? (
-                <>
-                  <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
-                    {assignedPlayer.name}
-                  </div>
-                  <div className="border-t border-[var(--border)] mt-2 pt-2 space-y-1">
-                    <button
-                      onClick={handleClearClick}
-                      className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-blue-50 text-blue-600 transition"
-                    >
-                      ↑ Move to Available Players
-                    </button>
-                    {onSitOut && (
-                      <button
-                        onClick={handleSitOutClick}
-                        className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-amber-50 text-amber-700 transition"
-                      >
-                        🪑 Move to Substitutes
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-xs font-semibold text-[var(--muted)] px-2 py-1">
-                    Assign Player to #{position.number} {position.abbreviation}:
-                  </div>
-                  <div className="max-h-48 overflow-y-auto">
-                    {availablePlayers && availablePlayers.length > 0 ? (
-                      availablePlayers.map((player) => {
-                        const playerPrefs = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
-                        const isPreferred = playerPrefs.includes(position.abbreviation);
-                        return (
-                          <button
-                            key={player.id}
-                            onClick={() => handlePlayerSelect(player)}
-                            className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-[var(--bg)] transition ${
-                              isPreferred ? 'bg-green-50' : ''
-                            }`}
-                          >
-                            <span className="font-medium">{player.name}</span>
-                            {isPreferred && <span className="text-xs text-green-600 ml-1">⭐ Preferred</span>}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="text-xs text-[var(--muted)] px-2 py-2">
-                        No substitutes available
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            {assignedPlayer ? (
+              <>
+                <div className="truncate px-2.5 pt-1 pb-1.5 text-xs font-semibold text-muted">
+                  {assignedPlayer.name}
+                </div>
+                <div className="mx-2 mb-1.5 border-t border-line"></div>
+                <button
+                  onClick={handleClearClick}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-ink transition hover:bg-surface-2"
+                >
+                  <ArrowUp size={16} className="text-muted" />
+                  Move to available
+                </button>
+                {onSitOut && (
+                  <button
+                    onClick={handleSitOutClick}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-warning transition hover:bg-warning-soft"
+                  >
+                    <Chair size={16} />
+                    Move to substitutes
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="px-2.5 pt-1 pb-1.5 text-xs font-semibold text-muted">
+                  Assign to #{position.number} {position.abbreviation}
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  {availablePlayers && availablePlayers.length > 0 ? (
+                    availablePlayers.map((player) => {
+                      const playerPrefs = player.preferredPositions ? JSON.parse(player.preferredPositions) : [];
+                      const isPreferred = playerPrefs.includes(position.abbreviation);
+                      return (
+                        <button
+                          key={player.id}
+                          onClick={() => handlePlayerSelect(player)}
+                          className={cx(
+                            "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                            isPreferred ? "bg-success-soft hover:brightness-95" : "hover:bg-surface-2"
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
+                          {isPreferred && (
+                            <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-success">
+                              <Star size={12} weight="fill" />
+                              Preferred
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="px-2.5 py-2 text-xs text-muted">
+                      No substitutes available
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1393,7 +1420,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
   const previousSittingOut: Set<number> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<number>() : new Set<number>();
 
-  // 🔄 Calculate position changes between quarters
+  // Calculate position changes between quarters
   const positionChanges = previousQuarter ? calculatePositionChanges(
     previousLineup,
     currentLineup,
@@ -1580,59 +1607,69 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   };
   
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
+    <Page>
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold">Plan Lineup</h1>
-              <div className="relative">
-                <button
-                  ref={instructionsButtonRef}
-                  onClick={() => setShowInstructions(!showInstructions)}
-                  onMouseEnter={() => setShowInstructions(true)}
-                  onMouseLeave={(e) => {
-                    // Only close if not hovering over the tooltip
-                    if (!instructionsRef.current?.contains(e.relatedTarget as Node)) {
-                      setShowInstructions(false);
-                    }
-                  }}
-                  className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)] text-[var(--muted)] text-sm font-bold transition"
-                  aria-label="How to plan your lineup"
-                >
-                  ?
-                </button>
-              
-              {/* Instructions Tooltip */}
-              {showInstructions && (
-                <div 
-                  ref={instructionsRef}
-                  className="absolute z-50 left-8 top-0 w-80 p-4 bg-white border border-[var(--border)] rounded-lg shadow-xl"
-                  onMouseEnter={() => setShowInstructions(true)}
-                  onMouseLeave={() => setShowInstructions(false)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-[var(--text)]">How to Plan Your Lineup</h3>
-                    <button
-                      onClick={() => setShowInstructions(false)}
-                      className="text-[var(--muted)] hover:text-[var(--text)] text-lg leading-none"
-                      aria-label="Close"
+        <header className="mb-6">
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-primary">Lineup</div>
+              {/* Title row is the tooltip's anchor so it stays on screen at phone width */}
+              <div className="relative mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">vs {game.opponent}</h1>
+                <HomeAwayBadge homeAway={game.homeAway} />
+                <div>
+                  <button
+                    ref={instructionsButtonRef}
+                    onClick={() => setShowInstructions(!showInstructions)}
+                    onMouseEnter={() => setShowInstructions(true)}
+                    onMouseLeave={(e) => {
+                      // Only close if not hovering over the tooltip
+                      if (!instructionsRef.current?.contains(e.relatedTarget as Node)) {
+                        setShowInstructions(false);
+                      }
+                    }}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-subtle transition hover:bg-surface-2 hover:text-ink"
+                    aria-label="How to plan your lineup"
+                  >
+                    <Question size={20} />
+                  </button>
+
+                  {/* Instructions Tooltip */}
+                  {showInstructions && (
+                    <div
+                      ref={instructionsRef}
+                      className="absolute top-full left-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl bg-surface p-4 shadow-overlay ring-1 ring-line"
+                      onMouseEnter={() => setShowInstructions(true)}
+                      onMouseLeave={() => setShowInstructions(false)}
                     >
-                      ×
-                    </button>
-                  </div>
-                  <ul className="text-xs text-[var(--muted)] space-y-1.5">
-                    <li>• Select a quarter tab to plan that quarter's lineup</li>
-                    <li>• <strong>Drag</strong> players to positions OR <strong>click</strong> names/positions for dropdown menus</li>
-                    <li>• Click assigned players on field to move them or sit them out</li>
-                    <li>• Each player should play at least 2 quarters (AYSO Fair Play)</li>
-                    <li>• No player should sit out more than 1 quarter</li>
-                    <li>• Save all quarters when complete</li>
-                  </ul>
+                      <div className="mb-2 flex items-start justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-ink">How to plan your lineup</h3>
+                        <button
+                          onClick={() => setShowInstructions(false)}
+                          className="-mt-1 -mr-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-surface-2 hover:text-ink"
+                          aria-label="Close"
+                        >
+                          <X size={16} weight="bold" />
+                        </button>
+                      </div>
+                      <ul className="list-disc space-y-1.5 pl-4 text-xs text-muted marker:text-subtle">
+                        <li>Pick a quarter tab to plan that quarter's lineup</li>
+                        <li><strong className="font-semibold text-ink">Drag</strong> players onto positions, or <strong className="font-semibold text-ink">click</strong> a name or position for a menu</li>
+                        <li>Click a player on the field to move them or sit them out</li>
+                        <li>Each player should play at least 2 quarters (AYSO fair play)</li>
+                        <li>No player should sit out more than 1 quarter</li>
+                        <li>Changes save as you make them</li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-muted">{formatGameDateTime(game.gameDate, game.gameTime)}</span>
+                <Badge tone="primary" className="tabular">
+                  {team.format} · {currentFormationKey}
+                </Badge>
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -1641,14 +1678,15 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               {currentQuarter > 1 && (
                 <button
                   onClick={() => setShowChangeIndicators(!showChangeIndicators)}
-                  className={`px-3 py-2 text-sm font-medium border rounded-lg transition flex items-center gap-2 ${
+                  className={
                     showChangeIndicators
-                      ? 'border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100'
-                      : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)]'
-                  }`}
+                      ? "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-soft px-4 text-sm font-semibold whitespace-nowrap text-primary-ink ring-1 ring-primary/25 transition active:translate-y-px"
+                      : buttonClass({ variant: "secondary" })
+                  }
+                  aria-pressed={showChangeIndicators}
                   title="Toggle position change indicators"
                 >
-                  <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0"></span>
+                  <ArrowsLeftRight size={18} weight={showChangeIndicators ? "bold" : "regular"} />
                   <span className="hidden lg:inline">Changes</span>
                 </button>
               )}
@@ -1656,12 +1694,10 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               {/* Share Button */}
               <button
                 onClick={handleShare}
-                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                className={buttonClass({ variant: "secondary" })}
                 title="Share lineup"
               >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m9.032 4.026a9.001 9.001 0 01-7.432 0m9.032-4.026A9.001 9.001 0 0112 3c-4.474 0-8.268 3.12-9.032 7.326m0 0A9.001 9.001 0 0012 21c4.474 0 8.268-3.12 9.032-7.326M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <ShareNetwork size={18} />
                 <span className="hidden sm:inline">Share</span>
               </button>
 
@@ -1670,94 +1706,80 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 href={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
                 target="_blank"
                 rel="noopener"
-                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
+                className={buttonClass({ variant: "secondary" })}
                 title="Print the official AYSO lineup card"
               >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                </svg>
-                <span className="hidden sm:inline">Game Card</span>
+                <Printer size={18} />
+                <span className="hidden sm:inline">Game card</span>
               </a>
 
               {/* Summary Button */}
               <button
                 onClick={() => setShowOverview(true)}
-                className="px-3 sm:px-4 py-2 text-sm font-medium border border-[var(--border)] rounded-lg bg-[var(--surface)] hover:bg-[var(--bg)] transition flex items-center gap-2"
-                title="View summary"
+                className={buttonClass({ variant: "secondary" })}
+                title="View fair play summary"
               >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+                <ChartBar size={18} />
                 <span className="hidden sm:inline">Summary</span>
               </button>
 
               {/* Clear Lineup Button */}
               <button
                 onClick={handleClearLineup}
-                className="px-3 sm:px-4 py-2 text-sm font-medium border border-red-500 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition flex items-center gap-2"
+                className={buttonClass({ variant: "danger-soft" })}
                 title="Clear all assignments"
               >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
+                <Trash size={18} />
                 <span className="hidden sm:inline">Clear</span>
               </button>
 
               {/* AI Assistant Coach Button */}
               <button
                 onClick={() => setShowAIAssistant(true)}
-                className="px-3 sm:px-4 py-2 text-sm font-medium border border-purple-500 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition flex items-center gap-2"
-                title="AI Assistant Coach"
+                className={buttonClass()}
+                title="AI assistant coach"
               >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                <span className="hidden sm:inline">AI Assistant</span>
+                <Sparkle size={18} weight="fill" />
+                <span className="hidden sm:inline">AI assistant</span>
               </button>
             </div>
           </div>
-          <p className="mt-2 text-[var(--muted)]">
-            vs {game.opponent} • {formatGameDateTime(game.gameDate, game.gameTime)}
-          </p>
-          <div className="mt-2">
-            <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">
-              {team.format} Formation
-            </span>
-          </div>
-        </div>
+        </header>
         
         {/* Quarter Tabs - Desktop Only */}
-        <div className="mb-6 hidden sm:block">
-          <div className="border-b border-[var(--border)]">
-            <nav className="-mb-px flex space-x-4">
-              {[1, 2, 3, 4].map((quarter) => {
-                return (
-                  <button
-                    key={quarter}
-                    onClick={() => setCurrentQuarter(quarter)}
-                    className={`py-2 px-4 border-b-2 font-medium text-sm transition ${
-                      currentQuarter === quarter
-                        ? 'border-[var(--primary)] text-[var(--primary)]'
-                        : 'border-transparent text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--border)]'
-                    }`}
-                  >
-                    Quarter {quarter}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
+        <nav className="mb-6 hidden gap-1 border-b border-line sm:flex" aria-label="Quarter">
+          {[1, 2, 3, 4].map((quarter) => {
+            const isActive = currentQuarter === quarter;
+            return (
+              <button
+                key={quarter}
+                onClick={() => setCurrentQuarter(quarter)}
+                aria-current={isActive ? "page" : undefined}
+                className={`-mb-px whitespace-nowrap border-b-2 px-3 pt-2 pb-3 text-sm font-semibold transition ${
+                  isActive
+                    ? "border-primary text-ink"
+                    : "border-transparent text-muted hover:border-line-strong hover:text-ink"
+                }`}
+              >
+                Quarter {quarter}
+              </button>
+            );
+          })}
+        </nav>
         
         {/* Main lineup content */}
-          <div className="flex flex-col lg:grid lg:gap-8 lg:grid-cols-3 space-y-6 lg:space-y-0">
+          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:gap-8">
             {/* Available Players and Substitutes */}
-            <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
+            <div className="order-2 space-y-6 lg:order-1 lg:col-span-1">
             {/* Available Players - Not yet assigned */}
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Available Players - Q{currentQuarter}</h2>
+            <Card className="p-3 sm:p-4">
+              <CardHeader
+                title={<>Available <span className="font-normal text-subtle">· Q{currentQuarter}</span></>}
+                count={availablePlayers.length}
+                className="mb-3 px-1"
+              />
               <div
-                className="space-y-2 min-h-[150px] border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50"
+                className="min-h-[150px] rounded-xl bg-surface-2/60 p-1.5"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -1770,81 +1792,78 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   }
                 }}
               >
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {availablePlayers.length > 0 ? (
                     availablePlayers.map((player: any) => {
                       const quartersSittingOut = getPlayerQuartersSittingOut(player.id);
-                      const subsBgColor =
-                        quartersSittingOut === 0 ? 'bg-green-500 text-white' :
-                        quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
-                        quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
-                        'bg-red-500 text-white';
-
                       const playerChange = getPlayerChange(player.id, positionChanges);
 
                       return (
-                        <div key={player.id} className="relative">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <PlayerCard
-                                player={player}
-                                onDragStart={handleDragStart}
-                                onAssign={handlePositionAssignment}
-                                availablePositions={getAvailablePositions()}
-                                onSitOut={handleSitOut}
-                                quartersPlaying={quartersSittingOut}
-                                positionChange={playerChange}
-                                showChangeIndicators={showChangeIndicators}
-                              />
-                            </div>
-                            <button
-                              onClick={() => handleSitOut(player)}
-                              className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition flex items-center justify-center shrink-0"
-                              title="Move to Substitutes"
-                            >
-                              ↓
-                            </button>
+                        <div key={player.id} className="flex items-center gap-1">
+                          <div className="min-w-0 flex-1">
+                            <PlayerCard
+                              player={player}
+                              onDragStart={handleDragStart}
+                              onAssign={handlePositionAssignment}
+                              availablePositions={getAvailablePositions()}
+                              onSitOut={handleSitOut}
+                              quartersPlaying={quartersSittingOut}
+                              positionChange={playerChange}
+                              showChangeIndicators={showChangeIndicators}
+                            />
                           </div>
-                          {/* Quick absent/injured buttons and subs indicator */}
-                          <div className="absolute top-1 right-12 flex gap-1">
-                            <div
-                              className={`w-7 h-5 text-[10px] font-bold ${subsBgColor} rounded flex items-center justify-center`}
-                              title={`Sitting out ${quartersSittingOut} of 4 quarters`}
-                            >
-                              {quartersSittingOut}/4
-                            </div>
-                            <button
-                              onClick={() => handleMarkAbsentInjured(player, 'absent')}
-                              className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
-                              title="Mark as Absent"
-                            >
-                              A
-                            </button>
-                            <button
-                              onClick={() => handleMarkAbsentInjured(player, 'injured')}
-                              className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
-                              title="Mark as Injured"
-                            >
-                              I
-                            </button>
-                          </div>
+                          {/* Subs indicator and quick absent/injured/sub buttons */}
+                          <span
+                            className={cx("inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-bold tabular", sittingOutBadgeClass(quartersSittingOut))}
+                            title={`Sitting out ${quartersSittingOut} of 4 quarters`}
+                          >
+                            {quartersSittingOut}/4
+                          </span>
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Mark as absent"
+                            aria-label={`Mark ${player.name} as absent`}
+                          >
+                            <UserMinus size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Mark as injured"
+                            aria-label={`Mark ${player.name} as injured`}
+                          >
+                            <FirstAidKit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleSitOut(player)}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning transition hover:brightness-95"
+                            title="Move to substitutes"
+                            aria-label={`Move ${player.name} to substitutes`}
+                          >
+                            <ArrowDown size={18} weight="bold" />
+                          </button>
                         </div>
                       );
                     })
                   ) : (
-                    <p className="text-sm text-blue-700 text-center py-4">
+                    <p className="py-10 text-center text-sm text-muted">
                       All players assigned
                     </p>
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
 
             {/* Subs - Sitting Out Players */}
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Substitutes - Q{currentQuarter}</h2>
+            <Card className="p-3 sm:p-4">
+              <CardHeader
+                title={<>Substitutes <span className="font-normal text-subtle">· Q{currentQuarter}</span></>}
+                count={sittingOutPlayers.length}
+                className="mb-3 px-1"
+              />
               <div
-                className="space-y-2 min-h-[150px] border border-dashed border-amber-300 rounded-lg p-2 bg-amber-50"
+                className="min-h-[150px] rounded-xl bg-warning-soft/50 p-1.5 ring-1 ring-inset ring-warning/15"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -1860,186 +1879,179 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   }
                 }}
               >
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {sittingOutPlayers.length > 0 ? (
                     sittingOutPlayers.map((player: any) => {
                       const quartersSittingOut = getPlayerQuartersSittingOut(player.id);
-                      const subsBgColor =
-                        quartersSittingOut === 0 ? 'bg-green-500 text-white' :
-                        quartersSittingOut === 1 ? 'bg-blue-500 text-white' :
-                        quartersSittingOut === 2 ? 'bg-yellow-500 text-white' :
-                        'bg-red-500 text-white';
-
                       const playerChange = getPlayerChange(player.id, positionChanges);
 
                       return (
-                        <div key={player.id} className="relative">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <PlayerCard
-                                player={player}
-                                onDragStart={handleDragStart}
-                                onAssign={handlePositionAssignment}
-                                availablePositions={getAvailablePositions()}
-                                onSitOut={handleSitOut}
-                                quartersPlaying={quartersSittingOut}
-                                positionChange={playerChange}
-                                showChangeIndicators={showChangeIndicators}
-                                isSittingOut={true}
-                              />
-                            </div>
-                            <button
-                              onClick={() => handleUnsitPlayer(player.id)}
-                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition flex items-center justify-center shrink-0"
-                              title="Move back to Available"
-                            >
-                              ↑
-                            </button>
+                        <div key={player.id} className="flex items-center gap-1">
+                          <div className="min-w-0 flex-1">
+                            <PlayerCard
+                              player={player}
+                              onDragStart={handleDragStart}
+                              onAssign={handlePositionAssignment}
+                              availablePositions={getAvailablePositions()}
+                              onSitOut={handleSitOut}
+                              quartersPlaying={quartersSittingOut}
+                              positionChange={playerChange}
+                              showChangeIndicators={showChangeIndicators}
+                              isSittingOut={true}
+                            />
                           </div>
-                          {/* Quick absent/injured buttons and subs indicator */}
-                          <div className="absolute top-1 right-12 flex gap-1">
-                            <div
-                              className={`w-7 h-5 text-[10px] font-bold ${subsBgColor} rounded flex items-center justify-center`}
-                              title={`Sitting out ${quartersSittingOut} of 4 quarters`}
-                            >
-                              {quartersSittingOut}/4
-                            </div>
-                            <button
-                              onClick={() => handleMarkAbsentInjured(player, 'absent')}
-                              className="w-5 h-5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition flex items-center justify-center"
-                              title="Mark as Absent"
-                            >
-                              A
-                            </button>
-                            <button
-                              onClick={() => handleMarkAbsentInjured(player, 'injured')}
-                              className="w-5 h-5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center justify-center"
-                              title="Mark as Injured"
-                            >
-                              I
-                            </button>
-                          </div>
+                          {/* Subs indicator and quick absent/injured/available buttons */}
+                          <span
+                            className={cx("inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-bold tabular", sittingOutBadgeClass(quartersSittingOut))}
+                            title={`Sitting out ${quartersSittingOut} of 4 quarters`}
+                          >
+                            {quartersSittingOut}/4
+                          </span>
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Mark as absent"
+                            aria-label={`Mark ${player.name} as absent`}
+                          >
+                            <UserMinus size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Mark as injured"
+                            aria-label={`Mark ${player.name} as injured`}
+                          >
+                            <FirstAidKit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleUnsitPlayer(player.id)}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface text-muted ring-1 ring-line transition hover:bg-surface-2 hover:text-ink"
+                            title="Move back to available"
+                            aria-label={`Move ${player.name} back to available`}
+                          >
+                            <ArrowUp size={18} weight="bold" />
+                          </button>
                         </div>
                       );
                     })
                   ) : (
-                    <p className="text-sm text-amber-700 text-center py-4">
+                    <p className="py-10 text-center text-sm text-warning">
                       No substitutes for this quarter
                     </p>
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
             
             {/* Absent/Injured Players */}
             {absentInjuredPlayersForQuarter.length > 0 && (
-              <div>
-                <h2 className="text-lg font-semibold mb-4">Absent/Injured - Q{currentQuarter}</h2>
-                <div className="space-y-2 border border-dashed border-red-300 rounded-lg p-2 bg-red-50">
-                  <div className="space-y-2">
-                    {absentInjuredPlayersForQuarter.map((player: any) => {
-                      const reason = currentAbsentInjured.get(player.id);
-                      return (
-                        <div key={player.id} className="flex items-center gap-2 p-2 border border-red-200 rounded bg-white">
-                          {getImageUrl(player.profilePicture) ? (
-                            <img
-                              src={getImageUrl(player.profilePicture)!}
-                              alt={player.name}
-                              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-xs font-semibold text-red-600">
-                              {player.name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{player.name}</div>
-                            <div className="text-xs text-red-600 capitalize">{reason}</div>
+              <Card className="p-3 sm:p-4">
+                <CardHeader
+                  title={<>Absent or injured <span className="font-normal text-subtle">· Q{currentQuarter}</span></>}
+                  count={absentInjuredPlayersForQuarter.length}
+                  className="mb-3 px-1"
+                />
+                <div className="space-y-1.5 rounded-xl bg-danger-soft/60 p-1.5 ring-1 ring-inset ring-danger/10">
+                  {absentInjuredPlayersForQuarter.map((player: any) => {
+                    const reason = currentAbsentInjured.get(player.id);
+                    return (
+                      <div key={player.id} className="flex items-center gap-2.5 rounded-xl bg-surface p-2 ring-1 ring-line/70">
+                        <PlayerAvatar player={{ ...player, jerseyNumber: null }} size="sm" className="opacity-70" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-muted">{player.name}</div>
+                          <div className="flex items-center gap-1 text-xs font-medium text-danger">
+                            {reason === 'injured' ? <FirstAidKit size={12} /> : <UserMinus size={12} />}
+                            <span className="capitalize">{reason}</span>
                           </div>
-                          <button
-                            onClick={() => handleClearAbsentInjured(player.id)}
-                            className="text-xs text-red-600 hover:text-red-800 px-2 py-1 rounded border border-red-200 hover:bg-red-100 transition"
-                          >
-                            Return to Subs
-                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleClearAbsentInjured(player.id)}
+                        >
+                          Return to subs
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
+              </Card>
             )}
           </div>
           
           {/* Formation Field */}
-          <div className="lg:col-span-2 order-1 lg:order-2">
+          <div className="order-1 lg:order-2 lg:col-span-2">
             {/* Formation Selector */}
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Field Formation</h2>
-              <div className="flex items-center gap-2">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">
+                Formation <span className="font-normal text-subtle sm:hidden">· Q{currentQuarter}</span>
+              </h2>
+              <div className="flex items-center gap-1 rounded-xl bg-surface p-1 shadow-card ring-1 ring-line/70">
                 <button
                   onClick={handlePrevFormation}
-                  className="p-1 rounded border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)] transition"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                   aria-label="Previous formation"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
+                  <CaretLeft size={18} weight="bold" />
                 </button>
-                <span className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium border border-[var(--border)] rounded bg-[var(--surface)]">
+                <span className="min-w-16 px-1 text-center font-display text-lg font-bold tabular">
                   {currentFormationKey}
                 </span>
                 <button
                   onClick={handleNextFormation}
-                  className="p-1 rounded border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)] transition"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                   aria-label="Next formation"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  <CaretRight size={18} weight="bold" />
                 </button>
               </div>
             </div>
 
-            {/* 📍 Position Change Legend */}
+            {/* Position Change Legend */}
             {showChangeIndicators && positionChanges.length > 0 && currentQuarter > 1 && (
-              <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                      <span className="text-orange-700 font-medium">Position Changes from Q{previousQuarter}</span>
-                    </div>
-                    <span className="text-orange-600">
-                      {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setShowChangeIndicators(false)}
-                    className="text-orange-600 hover:text-orange-800 text-sm"
-                    title="Hide change indicators"
-                  >
-                    ✕
-                  </button>
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-warning-soft py-1.5 pr-1.5 pl-3 text-sm text-warning">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+                  <span className="flex items-center gap-2 font-semibold">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-warning"></span>
+                    Changes from Q{previousQuarter}
+                  </span>
+                  <span className="tabular">
+                    {positionChanges.length} change{positionChanges.length !== 1 ? 's' : ''}
+                  </span>
                 </div>
+                <button
+                  onClick={() => setShowChangeIndicators(false)}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition hover:bg-warning/10"
+                  title="Hide change indicators"
+                  aria-label="Hide change indicators"
+                >
+                  <X size={16} weight="bold" />
+                </button>
               </div>
             )}
 
-            <div className="relative bg-green-700 rounded-lg h-[28rem] sm:h-[32rem] w-full">
+            <div className="relative h-[28rem] w-full rounded-2xl bg-pitch shadow-card sm:h-[32rem]">
+              {/* Mowing stripes (clipped separately so position menus can overflow the field) */}
+              <div className="pointer-events-none absolute inset-0 flex flex-col overflow-hidden rounded-2xl" aria-hidden>
+                {Array.from({ length: 10 }, (_, i) => (
+                  <div key={i} className={`flex-1 ${i % 2 ? 'bg-pitch-dark' : 'bg-pitch'}`} />
+                ))}
+              </div>
+
               {/* Field markings */}
-              <div className="absolute inset-2 border-2 border-white rounded">
+              <div className="pointer-events-none absolute inset-3 rounded-md border-2 border-white/60">
                 {/* Center line */}
-                <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white"></div>
+                <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white/60"></div>
                 {/* Center circle */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-16 sm:h-16 border-2 border-white rounded-full"></div>
+                <div className="absolute top-1/2 left-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/60 sm:h-16 sm:w-16"></div>
                 {/* Top penalty area */}
-                <div className="absolute top-0 left-1/3 w-1/3 h-8 sm:h-12 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-1/3 h-8 w-1/3 border-x-2 border-b-2 border-white/60 sm:h-12"></div>
                 {/* Top goal area */}
-                <div className="absolute top-0 left-[40%] w-1/5 h-4 sm:h-6 border-b-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute top-0 left-[40%] h-4 w-1/5 border-x-2 border-b-2 border-white/60 sm:h-6"></div>
                 {/* Bottom penalty area */}
-                <div className="absolute bottom-0 left-1/3 w-1/3 h-8 sm:h-12 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-1/3 h-8 w-1/3 border-x-2 border-t-2 border-white/60 sm:h-12"></div>
                 {/* Bottom goal area */}
-                <div className="absolute bottom-0 left-[40%] w-1/5 h-4 sm:h-6 border-t-2 border-l-2 border-r-2 border-white"></div>
+                <div className="absolute bottom-0 left-[40%] h-4 w-1/5 border-x-2 border-t-2 border-white/60 sm:h-6"></div>
               </div>
               
               {/* Position slots */}
@@ -2079,58 +2091,63 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
           </div>
-      </div>
       
-      {/* Mobile Bottom Navigation - Fixed to bottom with enhanced iPhone compatibility */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] shadow-[0_-8px_32px_rgba(0,0,0,0.12)] z-30">
-        <div className="grid grid-cols-4 text-center">
-          {[1, 2, 3, 4].map((quarter) => (
-            <button
-              key={quarter}
-              onClick={() => setCurrentQuarter(quarter)}
-              className={`py-6 px-2 text-base font-bold transition min-h-[68px] flex items-center justify-center ${
-                currentQuarter === quarter
-                  ? 'text-[var(--primary)] bg-[var(--bg)] shadow-inner'
-                  : 'text-gray-700 hover:text-black hover:bg-[var(--bg)] active:bg-gray-100'
-              }`}
-            >
-              Q{quarter}
-            </button>
-          ))}
+      {/* Mobile quarter bar, fixed to the bottom above the iPhone home indicator */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-8px_rgb(16_27_45/0.15)] sm:hidden"
+        aria-label="Quarter"
+      >
+        <div className="grid grid-cols-4">
+          {[1, 2, 3, 4].map((quarter) => {
+            const isActive = currentQuarter === quarter;
+            return (
+              <button
+                key={quarter}
+                onClick={() => setCurrentQuarter(quarter)}
+                aria-current={isActive ? "page" : undefined}
+                className={`relative flex h-16 flex-col items-center justify-center transition ${
+                  isActive ? 'text-primary' : 'text-muted active:bg-surface-2'
+                }`}
+              >
+                {isActive && <span className="absolute inset-x-5 top-0 h-[3px] rounded-b-full bg-primary" aria-hidden />}
+                <span className="font-display text-xl font-bold leading-none tabular">Q{quarter}</span>
+                <span className={`mt-1 text-[10px] font-semibold uppercase tracking-wider ${isActive ? 'text-primary' : 'text-subtle'}`}>
+                  Quarter
+                </span>
+              </button>
+            );
+          })}
         </div>
-        {/* Extra padding for iPhone home indicator and safe area */}
-        <div className="h-2 bg-white"></div>
-      </div>
+      </nav>
       
       {/* Mobile padding bottom to account for fixed navigation with iPhone safe area */}
       <div className="sm:hidden h-24"></div>
       
       {/* Overview Modal Overlay */}
       {showOverview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-surface shadow-overlay">
+            <div className="p-5 sm:p-6">
               {/* Modal Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">AYSO Fair Play Compliance</h2>
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-display text-2xl font-bold tracking-tight">Fair play summary</h2>
+                  <p className="mt-1 text-sm text-muted">
+                    Players marked absent or injured in any quarter are exempt from AYSO minimum playing time.
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowOverview(false)}
-                  className="p-2 hover:bg-gray-100 rounded-full"
+                  className="-mt-1 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                   aria-label="Close"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X size={20} weight="bold" />
                 </button>
               </div>
               
               {/* Summary Content */}
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600 mb-4">
-                  Players marked as Absent/Injured in any quarter are exempt from AYSO minimum playing time requirements.
-                </p>
-
-                <div className="space-y-2">
+              <div className="space-y-6">
+                <div className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
                   {players
                     .map((player: any) => {
                       let quarterCount = 0;
@@ -2159,11 +2176,22 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                       const isCompliant = quarterCount >= 2 && sitOutCount <= 1;
 
                       return (
-                        <div key={player.id} className={`text-sm flex justify-between p-3 rounded-lg ${!isCompliant ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                          <span className="font-medium">{player.name}</span>
-                          <span className="text-right">
-                            <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
-                            {!isCompliant && <span className="text-red-600 font-bold"> ⚠️ Non-compliant</span>}
+                        <div key={player.id} className={cx("flex items-center justify-between gap-3 px-4 py-3 text-sm", !isCompliant && "bg-danger-soft")}>
+                          <span className="min-w-0 truncate font-medium">{player.name}</span>
+                          <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                            <span className="text-muted tabular">
+                              Playing <span className="font-semibold text-ink">{quarterCount}/4</span>
+                              <span className="mx-1.5 text-line-strong">·</span>
+                              Sitting <span className="font-semibold text-ink">{sitOutCount}/4</span>
+                            </span>
+                            {isCompliant ? (
+                              <Badge tone="success">OK</Badge>
+                            ) : (
+                              <Badge tone="danger">
+                                <Warning size={12} weight="bold" />
+                                Non-compliant
+                              </Badge>
+                            )}
                           </span>
                         </div>
                       );
@@ -2179,9 +2207,9 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   }
                   return absentInjuredCount > 0;
                 }) && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Exempt Players</h3>
-                    <div className="space-y-2">
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold text-muted">Exempt players</h3>
+                    <div className="divide-y divide-line overflow-hidden rounded-xl bg-surface-2">
                       {players
                         .map((player: any) => {
                           let quarterCount = 0;
@@ -2206,11 +2234,11 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         })
                         .filter(({ absentInjuredCount }) => absentInjuredCount > 0)
                         .map(({ player, quarterCount, sitOutCount, absentInjuredCount }) => (
-                          <div key={player.id} className="text-sm flex justify-between p-3 rounded-lg bg-gray-100 text-gray-600 border border-gray-300">
-                            <span className="font-medium">{player.name}</span>
-                            <span className="text-right">
-                              <div>Playing: {quarterCount}/4 | Sitting: {sitOutCount}/4</div>
-                              <div className="text-xs">Absent/Injured: {absentInjuredCount}/4</div>
+                          <div key={player.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-muted">
+                            <span className="min-w-0 truncate font-medium text-ink">{player.name}</span>
+                            <span className="shrink-0 text-right tabular">
+                              <div>Playing {quarterCount}/4 · Sitting {sitOutCount}/4</div>
+                              <div className="text-xs">Absent or injured {absentInjuredCount}/4</div>
                             </span>
                           </div>
                         ))}
@@ -2218,14 +2246,14 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   </div>
                 )}
                 
-                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="text-sm font-semibold text-blue-800 mb-2">AYSO Fair Play Rules</h3>
-                  <ul className="text-xs text-blue-700 space-y-1">
-                    <li>• Each player must play at least 2 quarters</li>
-                    <li>• No player should sit out more than 1 quarter</li>
-                    <li>• Absent or injured players are excluded from these requirements</li>
+                <Alert tone="primary">
+                  <h3 className="mb-1.5 font-semibold">AYSO fair play rules</h3>
+                  <ul className="list-disc space-y-1 pl-4 text-xs">
+                    <li>Each player must play at least 2 quarters</li>
+                    <li>No player should sit out more than 1 quarter</li>
+                    <li>Absent or injured players are excluded from these requirements</li>
                   </ul>
-                </div>
+                </Alert>
               </div>
             </div>
           </div>
@@ -2234,26 +2262,25 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
       {/* Share Modal */}
       {showShareModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Share Lineup</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl bg-surface p-5 shadow-overlay sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-2xl font-bold tracking-tight">Share lineup</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Send this link to your team so they can see the lineup.
+                </p>
+              </div>
               <button
                 onClick={() => setShowShareModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                className="-mt-1 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                 aria-label="Close"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X size={20} weight="bold" />
               </button>
             </div>
 
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Share this link with your team to view the lineup. The link expires in 24 hours.
-              </p>
-
               {shareUrl && (
                 <>
                   <div className="flex items-center gap-2">
@@ -2261,21 +2288,25 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                       type="text"
                       value={shareUrl}
                       readOnly
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
+                      className={cx(inputClass, "min-w-0 flex-1")}
                       onClick={(e) => e.currentTarget.select()}
                     />
-                    <button
-                      onClick={handleCopyShareLink}
-                      className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-600)] transition text-sm font-medium"
-                    >
+                    <Button onClick={handleCopyShareLink}>
+                      <Copy size={18} />
                       Copy
-                    </button>
+                    </Button>
                   </div>
 
-                  <div className="text-xs text-gray-500">
-                    <p>🔗 This link will expire in 24 hours</p>
-                    <p>👀 Anyone with this link can view (but not edit) the lineup</p>
-                  </div>
+                  <ul className="space-y-1.5 text-xs text-muted">
+                    <li className="flex items-center gap-2">
+                      <LinkIcon size={14} className="shrink-0 text-subtle" />
+                      This link expires in 24 hours
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Eye size={14} className="shrink-0 text-subtle" />
+                      Anyone with the link can view the lineup, but not edit it
+                    </li>
+                  </ul>
                 </>
               )}
             </div>
@@ -2285,65 +2316,65 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
       {/* Absent/Injured Confirmation Modal */}
       {showAbsentInjuredModal && absentInjuredModalData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">
-                Mark as {absentInjuredModalData.reason === 'absent' ? 'Absent' : 'Injured'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl bg-surface p-5 shadow-overlay sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <h2 className="font-display text-2xl font-bold tracking-tight">
+                Mark as {absentInjuredModalData.reason === 'absent' ? 'absent' : 'injured'}
               </h2>
               <button
                 onClick={() => {
                   setShowAbsentInjuredModal(false);
                   setAbsentInjuredModalData(null);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                className="-mt-1 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                 aria-label="Close"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X size={20} weight="bold" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <p className="text-sm text-gray-700">
-                You're marking <span className="font-semibold">{absentInjuredModalData.player.name}</span> as {absentInjuredModalData.reason} in Quarter 1.
+            <div className="space-y-2 text-sm">
+              <p className="text-ink">
+                You're marking <span className="font-semibold">{absentInjuredModalData.player.name}</span> as {absentInjuredModalData.reason} in quarter 1.
               </p>
-              <p className="text-sm text-gray-600">
-                Would you like to apply this status to all 4 quarters?
+              <p className="text-muted">
+                Apply this to all 4 quarters?
               </p>
+            </div>
 
-              <div className="flex flex-col gap-2 mt-6">
-                <button
-                  onClick={() => {
-                    applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, true);
-                    setShowAbsentInjuredModal(false);
-                    setAbsentInjuredModalData(null);
-                  }}
-                  className="w-full px-4 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-600)] transition font-medium"
-                >
-                  Yes, apply to all 4 quarters
-                </button>
-                <button
-                  onClick={() => {
-                    applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, false);
-                    setShowAbsentInjuredModal(false);
-                    setAbsentInjuredModalData(null);
-                  }}
-                  className="w-full px-4 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition font-medium"
-                >
-                  No, just Quarter 1
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAbsentInjuredModal(false);
-                    setAbsentInjuredModalData(null);
-                  }}
-                  className="w-full px-4 py-3 text-gray-600 hover:text-gray-800 transition"
-                >
-                  Cancel
-                </button>
-              </div>
+            <div className="mt-6 flex flex-col gap-2">
+              <Button
+                size="lg"
+                onClick={() => {
+                  applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, true);
+                  setShowAbsentInjuredModal(false);
+                  setAbsentInjuredModalData(null);
+                }}
+              >
+                Yes, all 4 quarters
+              </Button>
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={() => {
+                  applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, false);
+                  setShowAbsentInjuredModal(false);
+                  setAbsentInjuredModalData(null);
+                }}
+              >
+                No, just quarter 1
+              </Button>
+              <Button
+                size="lg"
+                variant="ghost"
+                onClick={() => {
+                  setShowAbsentInjuredModal(false);
+                  setAbsentInjuredModalData(null);
+                }}
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         </div>
@@ -2357,6 +2388,6 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
         teamId={team.id}
         onAcceptLineup={handleAcceptAILineup}
       />
-    </div>
+    </Page>
   );
 }

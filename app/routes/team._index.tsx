@@ -4,8 +4,20 @@ import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { db, games, players, assignments } from "~/db";
 import { eq, and, gte, count } from "drizzle-orm";
-import { getImageUrl } from "~/utils/image";
-import { formatGameDate, formatGameDateTime, formatGameTime, relativeGameDay, todayISO } from "~/utils/dates";
+import { formatGameDate, formatGameTime, relativeGameDay, todayISO } from "~/utils/dates";
+import { Card, CardHeader, DateTile, EmptyState, HomeAwayBadge, Page, PlayerAvatar, buttonClass } from "~/components/ui";
+import {
+  CalendarBlank,
+  CalendarPlus,
+  CaretRight,
+  Clock,
+  MapPin,
+  PencilSimple,
+  Plus,
+  Printer,
+  SoccerBall,
+  UsersThree,
+} from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -76,185 +88,216 @@ export default function TeamOverview({ loaderData }: Route.ComponentProps) {
   const { team, today, upcomingGames, plannedQuarters, roster, totalGames } = loaderData;
   const base = `/dashboard/team/${team.id}`;
   const [nextGame, ...laterGames] = upcomingGames;
+  const plannedCount = plannedQuarters.length;
 
   return (
-    <div className="py-6">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px] space-y-6">
-        {/* Next game */}
-        {nextGame ? (
-          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm overflow-hidden">
-            <div className="p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-semibold uppercase tracking-wide text-[var(--primary)]">Next game</span>
-                <span className="text-[var(--muted)]">•</span>
-                <span className="font-medium">{relativeGameDay(nextGame.gameDate, today)}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl sm:text-3xl font-bold">vs {nextGame.opponent}</h1>
-                {nextGame.homeAway && (
-                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold capitalize ${
-                    nextGame.homeAway === 'home'
-                      ? 'border border-green-200 bg-green-50 text-green-700'
-                      : 'border border-blue-200 bg-blue-50 text-blue-700'
-                  }`}>
-                    {nextGame.homeAway}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 text-[var(--muted)]">
-                {formatGameDateTime(nextGame.gameDate, nextGame.gameTime)}
-                {nextGame.field && ` • Field ${nextGame.field}`}
-              </div>
+    <Page className="space-y-6">
+      {/* Next game */}
+      {nextGame ? (
+        <Card className="relative overflow-hidden">
+          <PitchArt className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[42%] [mask-image:linear-gradient(to_right,transparent,black_40%)] md:block" />
+          <div className="relative p-5 sm:p-7 md:max-w-[58%]">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-primary">Next game</span>
+              <span className="text-line-strong">/</span>
+              <span className="font-medium text-ink">{relativeGameDay(nextGame.gameDate, today)}</span>
+            </div>
 
-              {/* Lineup progress */}
-              <div className="mt-4 flex items-center gap-3">
-                <div className="flex gap-1" aria-hidden>
-                  {[1, 2, 3, 4].map((q) => (
-                    <span
-                      key={q}
-                      className={`h-2 w-8 rounded-full ${plannedQuarters.includes(q) ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
-                    />
-                  ))}
-                </div>
-                <span className="text-sm text-[var(--muted)]">
-                  {plannedQuarters.length === 4
-                    ? 'Lineup planned for all 4 quarters'
-                    : plannedQuarters.length === 0
-                      ? 'Lineup not started'
-                      : `Lineup planned for ${plannedQuarters.length} of 4 quarters`}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">vs {nextGame.opponent}</h1>
+              <HomeAwayBadge homeAway={nextGame.homeAway} />
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted">
+              <span className="flex items-center gap-1.5">
+                <CalendarBlank size={16} />
+                {formatGameDate(nextGame.gameDate)}
+              </span>
+              {nextGame.gameTime && (
+                <span className="flex items-center gap-1.5">
+                  <Clock size={16} />
+                  {formatGameTime(nextGame.gameTime)}
+                </span>
+              )}
+              {nextGame.field && (
+                <span className="flex items-center gap-1.5">
+                  <MapPin size={16} />
+                  {nextGame.field}
+                </span>
+              )}
+            </div>
+
+            {/* Lineup progress, one segment per quarter */}
+            <div className="mt-6">
+              <div className="flex items-baseline justify-between gap-4 text-sm">
+                <span className="font-medium">Lineup</span>
+                <span className="text-muted tabular">
+                  {plannedCount === 4 ? "Ready" : plannedCount === 0 ? "Not started" : `${plannedCount} of 4 quarters`}
                 </span>
               </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  to={`${base}/games/${nextGame.id}/lineup`}
-                  className="inline-flex items-center justify-center px-5 py-2.5 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
-                >
-                  {plannedQuarters.length === 0 ? 'Plan lineup' : 'Open lineup'}
-                </Link>
-                <a
-                  href={`${base}/games/${nextGame.id}/game-card`}
-                  target="_blank"
-                  rel="noopener"
-                  className="inline-flex items-center justify-center px-4 py-2.5 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-                >
-                  Game card
-                </a>
-                <Link
-                  to={`${base}/games/${nextGame.id}/edit`}
-                  className="inline-flex items-center justify-center px-4 py-2.5 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-                >
-                  Edit game
-                </Link>
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {[1, 2, 3, 4].map((q) => {
+                  const done = plannedQuarters.includes(q);
+                  return (
+                    <div key={q}>
+                      <div className={`h-1.5 rounded-full ${done ? "bg-success" : "bg-surface-2 ring-1 ring-inset ring-line"}`} />
+                      <div className={`mt-1 text-xs font-medium tabular ${done ? "text-success" : "text-subtle"}`}>Q{q}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </section>
-        ) : (
-          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-8 text-center">
-            <h1 className="text-xl font-semibold">No upcoming games</h1>
-            <p className="mt-2 text-[var(--muted)]">
-              {totalGames > 0 ? 'Every scheduled game is in the past.' : 'Schedule a game to start planning lineups.'}
-            </p>
-            <Link
-              to={`${base}/games/new`}
-              className="mt-5 inline-flex items-center justify-center px-5 py-2.5 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
-            >
-              Schedule game
-            </Link>
-          </section>
-        )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Later games */}
-          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-5 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Coming up</h2>
-              <div className="flex items-center gap-4 text-sm font-medium">
-                <Link to={`${base}/games/new`} className="text-[var(--primary)] hover:underline">
-                  Schedule game
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Link to={`${base}/games/${nextGame.id}/lineup`} className={buttonClass({ size: "lg" })}>
+                <SoccerBall size={20} weight="bold" />
+                {plannedCount === 0 ? "Plan lineup" : "Open lineup"}
+              </Link>
+              <a
+                href={`${base}/games/${nextGame.id}/game-card`}
+                target="_blank"
+                rel="noopener"
+                className={buttonClass({ variant: "secondary", size: "lg" })}
+              >
+                <Printer size={20} />
+                Game card
+              </a>
+              <Link to={`${base}/games/${nextGame.id}/edit`} className={buttonClass({ variant: "ghost", size: "lg" })}>
+                <PencilSimple size={20} />
+                Edit
+              </Link>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <EmptyState
+            icon={<CalendarPlus size={24} />}
+            title="No upcoming games"
+            action={
+              <Link to={`${base}/games/new`} className={buttonClass({ size: "lg" })}>
+                <Plus size={18} weight="bold" />
+                Schedule game
+              </Link>
+            }
+          >
+            {totalGames > 0 ? "Every scheduled game is in the past." : "Schedule a game to start planning lineups."}
+          </EmptyState>
+        </Card>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Later games */}
+        <Card className="p-5 sm:p-6 lg:col-span-2">
+          <CardHeader
+            title="Coming up"
+            actions={
+              <>
+                <Link to={`${base}/games/new`} className={buttonClass({ variant: "ghost", size: "sm" })}>
+                  <Plus size={16} weight="bold" />
+                  Schedule
                 </Link>
                 {totalGames > 0 && (
-                  <Link to={`${base}/games`} className="text-[var(--primary)] hover:underline">
+                  <Link to={`${base}/games`} className={buttonClass({ variant: "ghost", size: "sm" })}>
                     All games
                   </Link>
                 )}
-              </div>
-            </div>
-            {laterGames.length > 0 ? (
-              <ul className="divide-y divide-[var(--border)]">
-                {laterGames.map((game) => (
-                  <li key={game.id}>
-                    <Link
-                      to={`${base}/games/${game.id}/lineup`}
-                      className="flex items-center justify-between gap-4 py-3 group"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium truncate group-hover:text-[var(--primary)]">vs {game.opponent}</div>
-                        <div className="text-sm text-[var(--muted)]">
-                          {formatGameDate(game.gameDate)}
-                          {game.gameTime && ` • ${formatGameTime(game.gameTime)}`}
-                        </div>
+              </>
+            }
+          />
+          {laterGames.length > 0 ? (
+            <ul className="mt-3 -mx-2">
+              {laterGames.map((game) => (
+                <li key={game.id}>
+                  <Link
+                    to={`${base}/games/${game.id}/lineup`}
+                    className="group flex items-center gap-4 rounded-xl px-2 py-2.5 transition hover:bg-surface-2"
+                  >
+                    <DateTile iso={game.gameDate} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold">vs {game.opponent}</div>
+                      <div className="text-sm text-muted">
+                        {[formatGameTime(game.gameTime), game.field].filter(Boolean).join(" · ") || "Time TBD"}
                       </div>
-                      <span className="shrink-0 text-sm text-[var(--muted)] group-hover:text-[var(--primary)]">
-                        Lineup →
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-[var(--muted)]">
-                {nextGame ? 'Nothing else on the schedule yet.' : 'No games scheduled.'}
-              </p>
-            )}
-          </section>
+                    </div>
+                    <CaretRight size={16} className="text-subtle transition group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">{nextGame ? "Nothing else on the schedule yet." : "No games scheduled."}</p>
+          )}
+        </Card>
 
-          {/* Roster */}
-          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-5 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">
-                Roster <span className="text-[var(--muted)] font-normal">({roster.length})</span>
-              </h2>
-              <div className="flex items-center gap-4 text-sm font-medium">
-                <Link to={`${base}/roster/new-player`} className="text-[var(--primary)] hover:underline">
+        {/* Roster */}
+        <Card className="p-5 sm:p-6 lg:col-span-3">
+          <CardHeader
+            title="Roster"
+            count={roster.length}
+            actions={
+              <>
+                <Link to={`${base}/roster/new-player`} className={buttonClass({ variant: "ghost", size: "sm" })}>
+                  <Plus size={16} weight="bold" />
                   Add player
                 </Link>
                 {roster.length > 0 && (
-                  <Link to={`${base}/roster`} className="text-[var(--primary)] hover:underline">
+                  <Link to={`${base}/roster`} className={buttonClass({ variant: "ghost", size: "sm" })}>
                     Manage
                   </Link>
                 )}
-              </div>
+              </>
+            }
+          />
+          {roster.length > 0 ? (
+            <div className="mt-3 -mx-2 grid grid-cols-2 sm:grid-cols-3">
+              {roster.map((player) => (
+                <Link
+                  key={player.id}
+                  to={`${base}/roster/player/${player.id}/edit`}
+                  className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-sm transition hover:bg-surface-2"
+                >
+                  <PlayerAvatar player={player} size="sm" />
+                  <span className="truncate font-medium">{player.name}</span>
+                </Link>
+              ))}
             </div>
-            {roster.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {roster.map((player) => (
-                  <Link
-                    key={player.id}
-                    to={`${base}/roster/player/${player.id}/edit`}
-                    className="flex items-center gap-2 p-2 rounded text-sm hover:bg-[var(--bg)] transition"
-                  >
-                    {getImageUrl(player.profilePicture) ? (
-                      <img
-                        src={getImageUrl(player.profilePicture)!}
-                        alt=""
-                        className="w-7 h-7 rounded-full object-cover border border-[var(--border)]"
-                      />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-                        {player.jerseyNumber ?? player.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <span className="truncate">{player.name}</span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--muted)]">No players yet. Add them one at a time or import a roster.</p>
-            )}
-          </section>
-        </div>
+          ) : (
+            <EmptyState
+              className="py-8"
+              icon={<UsersThree size={24} />}
+              title="No players yet"
+              action={
+                <Link to={`${base}/roster`} className={buttonClass({ variant: "secondary" })}>
+                  Add or import players
+                </Link>
+              }
+            >
+              Add them one at a time, or import a roster from a photo or file.
+            </EmptyState>
+          )}
+        </Card>
       </div>
-    </div>
+    </Page>
+  );
+}
+
+// Half-pitch line drawing that fades into the card
+function PitchArt({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 400 300" preserveAspectRatio="xMaxYMid slice" aria-hidden>
+      <rect width="400" height="300" fill="var(--color-pitch)" />
+      {[0, 1, 2, 3, 4].map((i) => (
+        <rect key={i} x={i * 80} width="40" height="300" fill="var(--color-pitch-dark)" />
+      ))}
+      <g fill="none" stroke="white" strokeOpacity="0.55" strokeWidth="3">
+        <line x1="80" y1="0" x2="80" y2="300" />
+        <circle cx="80" cy="150" r="58" />
+        <rect x="290" y="70" width="110" height="160" />
+        <rect x="350" y="110" width="50" height="80" />
+        <path d="M290 112 A 40 40 0 0 0 290 188" />
+      </g>
+      <circle cx="80" cy="150" r="4" fill="white" fillOpacity="0.55" />
+    </svg>
   );
 }

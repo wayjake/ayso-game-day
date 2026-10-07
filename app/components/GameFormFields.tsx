@@ -1,4 +1,6 @@
+import { AirplaneTilt, House } from "@phosphor-icons/react";
 import { GameDatePicker, GameTimePicker } from "~/components/GameDateTimePickers";
+import { hintClass, inputClass, labelClass } from "~/components/ui";
 
 // The fields shared by the new-game and edit-game forms
 
@@ -47,13 +49,24 @@ export function readGameForm(
   };
 }
 
+const Required = () => (
+  <span className="text-danger" aria-hidden="true">
+    *
+  </span>
+);
+
+const Optional = () => <span className="font-normal text-subtle">(optional)</span>;
+
+const choiceClass =
+  "flex min-h-12 cursor-pointer items-center gap-2.5 rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm font-medium transition hover:bg-surface-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:checked]:text-primary-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/30";
+
 export function GameFormFields({ defaults = {} }: { defaults?: GameFormDefaults }) {
   return (
     <>
       {/* Opponent */}
       <div>
-        <label htmlFor="opponent" className="block text-sm font-medium mb-1">
-          Opponent Team <span className="text-red-500">*</span>
+        <label htmlFor="opponent" className={labelClass}>
+          Opponent <Required />
         </label>
         <input
           id="opponent"
@@ -61,92 +74,94 @@ export function GameFormFields({ defaults = {} }: { defaults?: GameFormDefaults 
           type="text"
           required
           defaultValue={defaults.opponent ?? ""}
-          className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-          placeholder="e.g., Eagles, Lions, Sharks"
+          className={inputClass}
+          placeholder="e.g. Eagles, Lions, Sharks"
         />
       </div>
-      
+
       {/* Game date and time */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-4">
         <div>
-          <label htmlFor="gameDate" className="block text-sm font-medium mb-1">
-            Game Date <span className="text-red-500">*</span>
+          <label htmlFor="gameDate" className={labelClass}>
+            Game date <Required />
           </label>
           <GameDatePicker id="gameDate" name="gameDate" required defaultValue={defaults.gameDate ?? ""} />
         </div>
-        
+
         <div>
-          <label htmlFor="gameTime" className="block text-sm font-medium mb-1">
-            Game Time (Optional)
+          <label htmlFor="gameTime" className={labelClass}>
+            Game time <Optional />
           </label>
           <GameTimePicker id="gameTime" name="gameTime" defaultValue={defaults.gameTime ?? ""} />
         </div>
       </div>
-      
+
       {/* Home/Away */}
-      <div>
-        <label className="block text-sm font-medium mb-3">
-          Home or Away Game <span className="text-red-500">*</span>
-        </label>
+      <fieldset>
+        <legend className={labelClass}>
+          Home or away <Required />
+        </legend>
         <div className="grid grid-cols-2 gap-3">
-          <label className="flex items-center gap-2 p-3 border border-[var(--border)] rounded hover:bg-[var(--bg)] cursor-pointer transition">
+          <label className={choiceClass}>
             <input
               type="radio"
               name="homeAway"
               value="home"
               required
               defaultChecked={defaults.homeAway === "home"}
-              className="border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
+              className="h-4 w-4 accent-primary"
             />
-            <span className="text-sm font-medium">🏠 Home Game</span>
+            <House size={18} />
+            Home
           </label>
-          <label className="flex items-center gap-2 p-3 border border-[var(--border)] rounded hover:bg-[var(--bg)] cursor-pointer transition">
+          <label className={choiceClass}>
             <input
               type="radio"
               name="homeAway"
               value="away"
               required
               defaultChecked={defaults.homeAway === "away"}
-              className="border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
+              className="h-4 w-4 accent-primary"
             />
-            <span className="text-sm font-medium">✈️ Away Game</span>
+            <AirplaneTilt size={18} />
+            Away
           </label>
         </div>
-      </div>
-      
+      </fieldset>
+
       {/* Field */}
       <div>
-        <label htmlFor="field" className="block text-sm font-medium mb-1">
-          Field/Location (Optional)
+        <label htmlFor="field" className={labelClass}>
+          Field or location <Optional />
         </label>
         <input
           id="field"
           name="field"
           type="text"
           defaultValue={defaults.field ?? ""}
-          className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-          placeholder="e.g., Field 1, Central Park, Away Team Field"
+          className={inputClass}
+          placeholder="e.g. Field 1, Central Park, away team's field"
         />
       </div>
-      
+
       {/* Notes */}
       <div>
-        <label htmlFor="notes" className="block text-sm font-medium mb-1">
-          Game Notes (Optional)
+        <label htmlFor="notes" className={labelClass}>
+          Notes <Optional />
         </label>
         <textarea
           id="notes"
           name="notes"
           rows={3}
           defaultValue={defaults.notesText ?? ""}
-          className="w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
-          placeholder="e.g., Bring extra water, early warm-up, tournament game"
+          className={inputClass}
+          placeholder="e.g. Bring extra water, early warm-up, tournament game"
+          aria-describedby="notes-hint"
         />
-        <p className="text-xs text-[var(--muted)] mt-1">
-          Add any special instructions or reminders for this game
+        <p id="notes-hint" className={hintClass}>
+          Special instructions or reminders for this game.
         </p>
       </div>
-      
     </>
   );
 }

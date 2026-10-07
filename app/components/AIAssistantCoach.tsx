@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFetcher } from 'react-router';
 import { useAudioRecorder } from '~/hooks/useAudioRecorder';
+import { ArrowCounterClockwise, Check, Lightbulb, Lock, Microphone, PencilSimple, Sparkle, X } from '@phosphor-icons/react';
+import { Alert, Badge, Button, cx, inputClass, labelClass } from '~/components/ui';
 
 interface AIAssistantCoachProps {
   isOpen: boolean;
@@ -186,47 +188,53 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
   const isLoading = fetcher.state !== 'idle' || isAccepting;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-surface shadow-overlay">
+        <div className="p-5 sm:p-6">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <span>🤖</span>
-              <span>AI Assistant Coach</span>
-            </h2>
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                <Sparkle size={22} weight="fill" />
+              </div>
+              <div>
+                <h2 className="font-display text-2xl font-bold tracking-tight">AI assistant coach</h2>
+                <p className="text-sm text-muted">Describe the lineup you want, or hold to record.</p>
+              </div>
+            </div>
             <button
               onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition"
+              className="-mt-1 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
               aria-label="Close"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X size={20} weight="bold" />
             </button>
           </div>
 
           {/* Error Message */}
           {fetcher.data?.error && !isLoading && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <h3 className="text-sm font-semibold text-red-800 mb-2">⚠️ Validation Error:</h3>
-              <p className="text-sm text-red-700 whitespace-pre-line">{fetcher.data.error}</p>
-            </div>
+            <Alert tone="danger" className="mb-6">
+              <h3 className="mb-1 font-semibold">The lineup didn't pass validation</h3>
+              <p className="whitespace-pre-line font-normal">{fetcher.data.error}</p>
+            </Alert>
           )}
 
           {/* AI Response Message */}
           {aiMessage && (
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h3 className="text-sm font-semibold text-blue-800 mb-2">AI Suggestion:</h3>
-              <p className="text-sm text-blue-700">{aiMessage}</p>
-            </div>
+            <Alert tone="primary" className="mb-6">
+              <h3 className="mb-1 flex items-center gap-1.5 font-semibold">
+                <Sparkle size={14} weight="fill" />
+                Suggestion
+              </h3>
+              <p className="font-normal">{aiMessage}</p>
+            </Alert>
           )}
 
           {/* Quarter Preview */}
           {suggestedQuarters && (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Proposed Lineup Changes:</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h3 className="mb-3 text-sm font-semibold text-ink">Proposed changes</h3>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {suggestedQuarters.map((quarter) => {
                   const changesOnly = quarter.changes?.filter(c => c.isChange) || [];
                   const noChanges = quarter.changes?.filter(c => !c.isChange) || [];
@@ -234,59 +242,60 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
                   return (
                     <div
                       key={quarter.number}
-                      className={`p-4 border rounded-lg ${
-                        quarter.completed
-                          ? 'bg-gray-100 border-gray-300'
-                          : 'bg-white border-gray-200'
-                      }`}
+                      className={cx(
+                        'rounded-xl p-4',
+                        quarter.completed ? 'bg-surface-2 text-muted' : 'bg-surface-2/60 ring-1 ring-inset ring-line'
+                      )}
                     >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="text-sm font-semibold">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-ink">
                           Quarter {quarter.number}
-                          {quarter.completed && ' (Locked)'}
+                          {quarter.completed && (
+                            <Badge>
+                              <Lock size={12} weight="bold" />
+                              Locked
+                            </Badge>
+                          )}
                         </div>
                         {changesOnly.length > 0 && (
-                          <div className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                          <Badge tone="primary" className="tabular">
                             {changesOnly.length} change{changesOnly.length !== 1 ? 's' : ''}
-                          </div>
+                          </Badge>
                         )}
                       </div>
 
                       {/* Show only changes, or a message if no changes */}
                       {changesOnly.length > 0 ? (
-                        <div className="space-y-1 mb-3">
+                        <div className="mb-3 divide-y divide-line overflow-hidden rounded-lg bg-surface ring-1 ring-line/70">
                           {changesOnly.map((change) => (
                             <div
                               key={change.positionNumber}
-                              className="text-xs bg-red-50 border border-red-200 rounded px-2 py-1.5 flex items-center justify-between"
+                              className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-xs"
                             >
-                              <span className="font-medium text-red-800">
+                              <span className="font-semibold text-primary-ink">
                                 {change.positionName}
                               </span>
-                              <span className="text-red-700">
+                              <span className="truncate text-ink">
                                 {change.playerName}
                               </span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-xs text-gray-500 italic mb-3">
+                        <div className="mb-3 text-xs text-muted">
                           No changes from current lineup
                         </div>
                       )}
 
                       {/* Show substitutes (players sitting out) */}
                       {quarter.substitutes && quarter.substitutes.length > 0 && (
-                        <div className="pt-2 border-t border-gray-200">
-                          <div className="text-xs font-medium text-gray-600 mb-1">Sitting out:</div>
+                        <div className="border-t border-line pt-2">
+                          <div className="mb-1.5 text-xs font-medium text-muted">Sitting out</div>
                           <div className="flex flex-wrap gap-1">
                             {quarter.substitutes.map((sub) => (
-                              <div
-                                key={sub.playerId}
-                                className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
-                              >
+                              <Badge key={sub.playerId} tone="warning">
                                 {sub.playerName}
-                              </div>
+                              </Badge>
                             ))}
                           </div>
                         </div>
@@ -302,8 +311,8 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
           {isLoading && (
             <div className="mb-6 flex items-center justify-center py-8">
               <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-sm text-gray-600">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary-soft border-t-primary"></div>
+                <p className="text-sm text-muted">
                   {isAccepting ? 'Applying changes...' : 'Thinking...'}
                 </p>
               </div>
@@ -312,39 +321,37 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
 
           {/* Recording Error */}
           {recordingError && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-700">
-                {recordingError}
-              </p>
-            </div>
+            <Alert tone="danger" className="mb-6">
+              {recordingError}
+            </Alert>
           )}
 
           {/* Input Area - Show when no results OR when suggesting changes */}
           {!isLoading && (!suggestedQuarters || isSuggestingChanges) && (
             <>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isSuggestingChanges ? 'Suggest changes to the lineup:' : 'Ask the AI Assistant Coach:'}
+                <label className={labelClass}>
+                  {isSuggestingChanges ? 'What should change?' : 'What do you need?'}
                 </label>
 
                 {/* Suggestion Pills - only show for initial request */}
                 {!isSuggestingChanges && (
-                  <div className="flex flex-wrap gap-2 mb-3">
+                  <div className="mb-3 flex flex-wrap gap-2">
                     <button
                       onClick={() => setTextInput('Create a balanced lineup')}
-                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                      className="h-9 rounded-full bg-primary-soft px-3.5 text-sm font-medium text-primary-ink transition hover:brightness-95"
                     >
                       Create a balanced lineup
                     </button>
                     <button
                       onClick={() => setTextInput('Rotate players fairly')}
-                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                      className="h-9 rounded-full bg-primary-soft px-3.5 text-sm font-medium text-primary-ink transition hover:brightness-95"
                     >
                       Rotate players fairly
                     </button>
                     <button
                       onClick={() => setTextInput('Maximize playing time for everyone')}
-                      className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 transition"
+                      className="h-9 rounded-full bg-primary-soft px-3.5 text-sm font-medium text-primary-ink transition hover:brightness-95"
                     >
                       Maximize playing time
                     </button>
@@ -356,50 +363,40 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   placeholder={isSuggestingChanges ? "E.g., 'Move Adam to defense' or 'Swap Charlie and Brody'..." : "Or type your own request..."}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={cx(inputClass, 'resize-none')}
                   rows={3}
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {/* Text Submit Button */}
-                  <button
-                    onClick={handleTextSubmit}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm font-medium"
-                  >
+                  <Button onClick={handleTextSubmit}>
+                    <Sparkle size={18} weight="fill" />
                     Submit
-                  </button>
+                  </Button>
 
                   {/* Voice Recording Button */}
-                  <button
+                  <Button
+                    variant={isRecording ? 'danger' : 'secondary'}
                     onMouseDown={handleRecordButtonDown}
                     onMouseUp={handleRecordButtonUp}
                     onMouseLeave={handleRecordButtonUp}
                     onTouchStart={handleRecordButtonDown}
                     onTouchEnd={handleRecordButtonUp}
-                    className={`px-4 py-2 rounded-lg transition text-sm font-medium flex items-center gap-2 ${
-                      isRecording
-                        ? 'bg-red-600 text-white animate-pulse'
-                        : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                    }`}
+                    className={cx('select-none', isRecording && 'animate-pulse')}
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                    </svg>
-                    {isRecording ? 'Recording...' : 'Hold to Record'}
-                  </button>
+                    <Microphone size={18} weight={isRecording ? 'fill' : 'regular'} />
+                    {isRecording ? 'Recording...' : 'Hold to record'}
+                  </Button>
                 </div>
 
                 {/* Cancel button when suggesting changes */}
                 {isSuggestingChanges && (
-                  <button
-                    onClick={handleCancelSuggestChanges}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
-                  >
+                  <Button variant="ghost" onClick={handleCancelSuggestChanges}>
                     Cancel
-                  </button>
+                  </Button>
                 )}
               </div>
             </>
@@ -407,39 +404,34 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
 
           {/* Action Buttons - Show when results are available and not suggesting changes */}
           {!isLoading && suggestedQuarters && !isSuggestingChanges && (
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               {/* New Request Button */}
-              <button
-                onClick={handleNewRequest}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
-              >
-                New Request
-              </button>
+              <Button variant="ghost" onClick={handleNewRequest}>
+                <ArrowCounterClockwise size={18} />
+                New request
+              </Button>
 
               <div className="flex items-center gap-2">
                 {/* Suggest Changes Button */}
-                <button
-                  onClick={handleSuggestChanges}
-                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
-                >
-                  Suggest Changes
-                </button>
+                <Button variant="secondary" onClick={handleSuggestChanges}>
+                  <PencilSimple size={18} />
+                  Suggest changes
+                </Button>
 
                 {/* Accept Button */}
-                <button
-                  onClick={handleAccept}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                >
+                <Button onClick={handleAccept}>
+                  <Check size={18} weight="bold" />
                   Accept
-                </button>
+                </Button>
               </div>
             </div>
           )}
 
           {/* Help Text */}
-          <div className="mt-6 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-            <p className="text-xs text-gray-600">
-              💡 <strong>Tip:</strong> The AI considers AYSO fair play rules, player strengths, and past game lineups to suggest optimal rotations.
+          <div className="mt-6 flex gap-2.5 rounded-xl bg-surface-2 p-3 text-xs text-muted">
+            <Lightbulb size={16} className="mt-px shrink-0 text-subtle" />
+            <p>
+              The AI considers AYSO fair play rules, player strengths, and past lineups when it suggests rotations.
             </p>
           </div>
         </div>

@@ -1,11 +1,12 @@
 import type { Route } from "./+types/team.games.edit";
-import { Form, data, redirect } from "react-router";
+import { Form, Link, data, redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { db, games } from "~/db";
 import { eq, and, sql } from "drizzle-orm";
 import { GameFormFields, readGameForm } from "~/components/GameFormFields";
 import { gameNotesText, parseGameNotes, serializeGameNotes } from "~/utils/game-notes";
+import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 
 async function loadGame(request: Request, params: Route.LoaderArgs["params"]) {
   const user = await getUser(request);
@@ -54,7 +55,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Edit Game - AYSO Game Day" },
+    { title: "Edit game - AYSO Game Day" },
     { name: "description", content: "Edit a scheduled game" },
   ];
 }
@@ -62,53 +63,37 @@ export function meta({}: Route.MetaArgs) {
 export default function EditGame({ loaderData, actionData }: Route.ComponentProps) {
   const { team, game, notesText } = loaderData;
   const error = actionData?.error;
+  const gamesUrl = `/dashboard/team/${team.id}/games`;
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Edit Game</h1>
-          <p className="mt-2 text-[var(--muted)]">
-            {team.name} vs {game.opponent}
-          </p>
-        </div>
+    <Page width="narrow">
+      <PageHeader back={{ to: gamesUrl, label: "Games" }} title="Edit game" description={`vs ${game.opponent}`} />
 
-        {error && (
-          <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
+      {error && <Alert className="mb-6">{error}</Alert>}
 
-        <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
-          <div className="p-6 space-y-6">
-            <GameFormFields
-              defaults={{
-                opponent: game.opponent,
-                gameDate: game.gameDate,
-                gameTime: game.gameTime,
-                field: game.field,
-                homeAway: game.homeAway,
-                notesText,
-              }}
-            />
+      <Card>
+        <Form method="post" className="space-y-6 p-5 sm:p-6">
+          <GameFormFields
+            defaults={{
+              opponent: game.opponent,
+              gameDate: game.gameDate,
+              gameTime: game.gameTime,
+              field: game.field,
+              homeAway: game.homeAway,
+              notesText,
+            }}
+          />
 
-            <div className="flex gap-3 pt-4 border-t border-[var(--border)]">
-              <button
-                type="submit"
-                className="flex-1 inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
-              >
-                Save Changes
-              </button>
-              <a
-                href={`/dashboard/team/${team.id}/games`}
-                className="flex-1 inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-              >
-                Cancel
-              </a>
-            </div>
+          <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">
+            <Link to={gamesUrl} className={buttonClass({ variant: "secondary", size: "lg" })}>
+              Cancel
+            </Link>
+            <button type="submit" className={buttonClass({ size: "lg" })}>
+              Save changes
+            </button>
           </div>
         </Form>
-      </div>
-    </div>
+      </Card>
+    </Page>
   );
 }

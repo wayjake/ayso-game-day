@@ -5,6 +5,8 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, contacts } from "~/db";
 import { eq, and } from "drizzle-orm";
+import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass } from "~/components/ui";
+import { AddressBook, EnvelopeSimple, PencilSimple, Phone, Plus, Star } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -62,65 +64,62 @@ export function meta({ params }: Route.MetaArgs) {
   ];
 }
 
-function ContactCard({ contact, teamId }: { contact: any; teamId: number }) {
-  const relationshipBadgeColor = (relationship: string) => {
+function ContactRow({ contact, teamId }: { contact: any; teamId: number }) {
+  const relationshipTone = (relationship: string) => {
     switch (relationship) {
       case 'parent':
-        return 'bg-blue-100 text-blue-700 border-blue-200';
       case 'guardian':
-        return 'bg-purple-100 text-purple-700 border-purple-200';
+        return 'primary' as const;
       case 'self':
-        return 'bg-green-100 text-green-700 border-green-200';
+        return 'success' as const;
       case 'emergency':
-        return 'bg-red-100 text-red-700 border-red-200';
+        return 'danger' as const;
       default:
-        return 'bg-gray-100 text-gray-700 border-gray-200';
+        return 'neutral' as const;
     }
   };
 
   return (
-    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 hover:shadow-sm transition-shadow">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-[var(--text)]">{contact.name}</h4>
-            {contact.isPrimary && (
-              <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold bg-yellow-100 text-yellow-700 border border-yellow-200">
-                ⭐ Primary
-              </span>
-            )}
-          </div>
-          <div className="mt-1 space-y-1">
-            <p className="text-sm text-[var(--muted)]">
-              <a href={`mailto:${contact.email}`} className="hover:underline">
-                {contact.email}
-              </a>
-            </p>
-            {contact.phone && (
-              <p className="text-sm text-[var(--muted)]">
-                <a href={`tel:${contact.phone}`} className="hover:underline">
-                  {contact.phone}
-                </a>
-              </p>
-            )}
-            {contact.relationship && (
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border ${relationshipBadgeColor(contact.relationship)}`}>
-                {contact.relationship.charAt(0).toUpperCase() + contact.relationship.slice(1)}
-              </span>
-            )}
-          </div>
-          {contact.notes && (
-            <p className="text-xs text-[var(--muted)] mt-2">{contact.notes}</p>
+    <li className="flex items-start justify-between gap-3 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-semibold">{contact.name}</h3>
+          {contact.isPrimary && (
+            <Badge tone="warning">
+              <Star size={12} weight="fill" />
+              Primary
+            </Badge>
+          )}
+          {contact.relationship && (
+            <Badge tone={relationshipTone(contact.relationship)}>
+              {contact.relationship.charAt(0).toUpperCase() + contact.relationship.slice(1)}
+            </Badge>
           )}
         </div>
-        <Link
-          to={`/dashboard/team/${teamId}/contacts/${contact.id}/edit`}
-          className="inline-flex items-center justify-center px-3 py-1.5 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-        >
-          Edit
-        </Link>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+          <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1.5 hover:text-ink hover:underline">
+            <EnvelopeSimple size={16} className="shrink-0" />
+            <span className="truncate">{contact.email}</span>
+          </a>
+          {contact.phone && (
+            <a href={`tel:${contact.phone}`} className="flex items-center gap-1.5 hover:text-ink hover:underline">
+              <Phone size={16} className="shrink-0" />
+              {contact.phone}
+            </a>
+          )}
+        </div>
+        {contact.notes && (
+          <p className="mt-1.5 text-xs text-muted">{contact.notes}</p>
+        )}
       </div>
-    </div>
+      <Link
+        to={`/dashboard/team/${teamId}/contacts/${contact.id}/edit`}
+        className={buttonClass({ variant: "ghost", size: "sm" })}
+      >
+        <PencilSimple size={16} />
+        Edit
+      </Link>
+    </li>
   );
 }
 
@@ -130,83 +129,67 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
   const hasContacts = Object.keys(contactsByPlayer).length > 0;
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">{team.name} Contacts</h1>
-            <p className="mt-2 text-[var(--muted)]">
-              Manage contact information for player families
-            </p>
-          </div>
-          <Link
-            to={`/dashboard/team/${team.id}/contacts/new`}
-            className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-          >
-            Add Contact
-          </Link>
-        </div>
+    <Page>
+      <PageHeader
+        title="Contacts"
+        description="Contact information for player families."
+        actions={
+          hasContacts && (
+            <Link to={`/dashboard/team/${team.id}/contacts/new`} className={buttonClass()}>
+              <Plus size={18} weight="bold" />
+              Add contact
+            </Link>
+          )
+        }
+      />
 
-        {/* Contacts grouped by player */}
-        {hasContacts ? (
-          <div className="space-y-6">
-            {players.map((player) => {
-              const playerContacts = contactsByPlayer[player.id] || [];
-              if (playerContacts.length === 0) return null;
+      {/* Contacts grouped by player */}
+      {hasContacts ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {players.map((player) => {
+            const playerContacts = contactsByPlayer[player.id] || [];
+            if (playerContacts.length === 0) return null;
 
-              return (
-                <div key={player.id} className="bg-[var(--bg)] rounded-lg p-6 border border-[var(--border)]">
-                  <h2 className="text-xl font-semibold text-[var(--text)] mb-4">
-                    {player.name}
-                  </h2>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {playerContacts.map((contact) => (
-                      <ContactCard key={contact.id} contact={contact} teamId={team.id} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Contacts without a player */}
-            {contactsByPlayer[0] && contactsByPlayer[0].length > 0 && (
-              <div className="bg-[var(--bg)] rounded-lg p-6 border border-[var(--border)]">
-                <h2 className="text-xl font-semibold text-[var(--text)] mb-4">
-                  General Team Contacts
-                </h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {contactsByPlayer[0].map((contact) => (
-                    <ContactCard key={contact.id} contact={contact} teamId={team.id} />
+            return (
+              <Card key={player.id} className="p-5 sm:p-6">
+                <CardHeader title={player.name} count={playerContacts.length} />
+                <ul className="mt-2 divide-y divide-line">
+                  {playerContacts.map((contact) => (
+                    <ContactRow key={contact.id} contact={contact} teamId={team.id} />
                   ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
-            <div className="max-w-sm mx-auto">
-              <div className="mb-4">
-                <div className="h-12 w-12 mx-auto bg-[var(--bg)] rounded-full flex items-center justify-center">
-                  <span className="text-[var(--muted)] text-xl">📧</span>
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
-                No contacts yet
-              </h3>
-              <p className="text-[var(--muted)] mb-6">
-                Add contact information for player families to start sending team communications.
-              </p>
-              <Link
-                to={`/dashboard/team/${team.id}/contacts/new`}
-                className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Add Your First Contact
+                </ul>
+              </Card>
+            );
+          })}
+
+          {/* Contacts without a player */}
+          {contactsByPlayer[0] && contactsByPlayer[0].length > 0 && (
+            <Card className="p-5 sm:p-6">
+              <CardHeader title="General team contacts" count={contactsByPlayer[0].length} />
+              <ul className="mt-2 divide-y divide-line">
+                {contactsByPlayer[0].map((contact) => (
+                  <ContactRow key={contact.id} contact={contact} teamId={team.id} />
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <Card>
+          <EmptyState
+            icon={<AddressBook size={24} />}
+            title="No contacts yet"
+            action={
+              <Link to={`/dashboard/team/${team.id}/contacts/new`} className={buttonClass()}>
+                <Plus size={18} weight="bold" />
+                Add your first contact
               </Link>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+            }
+          >
+            Add contact information for player families to start sending team communications.
+          </EmptyState>
+        </Card>
+      )}
+    </Page>
   );
 }

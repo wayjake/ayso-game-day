@@ -4,7 +4,9 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, games } from "~/db";
 import { eq, count, desc, and, gte } from "drizzle-orm";
-import { formatGameDateTime, todayISO } from "~/utils/dates";
+import { formatGameDate, formatGameTime, todayISO } from "~/utils/dates";
+import { Badge, Card, DateTile, EmptyState, Page, PageHeader, buttonClass } from "~/components/ui";
+import { CalendarBlank, CaretRight, Plus, SoccerBall, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -65,138 +67,117 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Teams - AYSO Game Day" },
+    { title: "Your teams - AYSO Game Day" },
     { name: "description", content: "Manage your AYSO teams" },
   ];
 }
 
 export default function TeamsPage({ loaderData }: Route.ComponentProps) {
-  const { teams, user } = loaderData;
+  const { teams } = loaderData;
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Your Teams</h1>
-            <p className="mt-2 text-[var(--muted)]">
-              Pick a team to manage its games and roster
-            </p>
-          </div>
-          <Link 
-            to="/dashboard/teams/new"
-            className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-          >
-            Add New Team
-          </Link>
+    <Page>
+      <PageHeader
+        title="Your teams"
+        description="Pick a team to manage its games and roster."
+        actions={
+          teams.length > 0 && (
+            <Link to="/dashboard/teams/new" className={buttonClass()}>
+              <Plus size={18} weight="bold" />
+              New team
+            </Link>
+          )
+        }
+      />
+
+      {teams.length > 0 ? (
+        <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {teams.map((team) => (
+            <Card
+              key={team.id}
+              className="group relative flex flex-col p-5 transition hover:shadow-raised hover:ring-line-strong"
+            >
+              {/* The team name link covers the whole card; inner links sit above it */}
+              <h2 className="font-display text-2xl font-bold tracking-tight">
+                <Link
+                  to={`/dashboard/team/${team.id}`}
+                  className="flex items-center justify-between gap-3 after:absolute after:inset-0 after:rounded-2xl"
+                >
+                  <span className="min-w-0 truncate">{team.name}</span>
+                  <CaretRight
+                    size={18}
+                    weight="bold"
+                    className="shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-ink"
+                  />
+                </Link>
+              </h2>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Badge tone="primary">{team.format}</Badge>
+                {team.ageGroup && <Badge>{team.ageGroup}</Badge>}
+                {team.season && <span className="ml-1 text-sm text-muted">{team.season}</span>}
+              </div>
+
+              {/* Next game */}
+              {team.nextGame ? (
+                <Link
+                  to={`/dashboard/team/${team.id}/games/${team.nextGame.id}/lineup`}
+                  className="relative z-10 mt-5 flex items-center gap-3 rounded-xl p-3 ring-1 ring-line transition hover:bg-canvas hover:ring-line-strong"
+                >
+                  <DateTile iso={team.nextGame.gameDate} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-primary">Next game</div>
+                    <div className="truncate font-semibold">vs {team.nextGame.opponent}</div>
+                    <div className="text-sm text-muted">
+                      {[formatGameDate(team.nextGame.gameDate, { weekday: "short" }), formatGameTime(team.nextGame.gameTime)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                  <SoccerBall size={18} className="shrink-0 text-subtle" />
+                </Link>
+              ) : (
+                <div className="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-line-strong p-3 text-sm text-muted">
+                  <CalendarBlank size={18} className="shrink-0 text-subtle" />
+                  No upcoming games
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-between gap-3 text-sm text-muted">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="flex items-center gap-1.5">
+                    <UsersThree size={16} />
+                    <span className="tabular">{team.playerCount}</span> {team.playerCount === 1 ? "player" : "players"}
+                  </span>
+                  {team.region && (
+                    <span className="truncate">{/^\d+$/.test(team.region) ? `Region ${team.region}` : team.region}</span>
+                  )}
+                </div>
+                <Link
+                  to={`/dashboard/team/${team.id}/games`}
+                  className={buttonClass({ variant: "ghost", size: "sm", className: "relative z-10 -mr-2" })}
+                >
+                  Games
+                </Link>
+              </div>
+            </Card>
+          ))}
         </div>
-
-        {/* Teams grid */}
-        {teams.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {teams.map((team) => (
-              <div key={team.id} className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-[var(--text)] mb-1">
-                        {team.name}
-                      </h3>
-                      <div className="flex gap-2">
-                        <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">
-                          {team.format}
-                        </span>
-                        {team.ageGroup && (
-                          <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">
-                            {team.ageGroup}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-4 text-sm">
-                      <span className="text-[var(--muted)]">Next game</span>
-                      {team.nextGame ? (
-                        <Link
-                          to={`/dashboard/team/${team.id}/games/${team.nextGame.id}/lineup`}
-                          className="text-right font-medium text-[var(--primary)] hover:underline"
-                        >
-                          vs {team.nextGame.opponent}
-                          <span className="block text-xs font-normal text-[var(--muted)]">
-                            {formatGameDateTime(team.nextGame.gameDate, team.nextGame.gameTime)}
-                          </span>
-                        </Link>
-                      ) : (
-                        <span className="text-[var(--muted)]">None scheduled</span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[var(--muted)]">Players</span>
-                      <span className="font-medium">{team.playerCount}</span>
-                    </div>
-                    
-                    {team.season && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-[var(--muted)]">Season</span>
-                        <span className="font-medium">{team.season}</span>
-                      </div>
-                    )}
-                    
-                    {team.region && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-[var(--muted)]">Region</span>
-                        <span className="font-medium">{team.region}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-6 flex gap-2">
-                    <Link
-                      to={`/dashboard/team/${team.id}`}
-                      className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm rounded font-medium border border-[var(--primary)] bg-transparent text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition"
-                    >
-                      Open team
-                    </Link>
-                    <Link
-                      to={`/dashboard/team/${team.id}/games`}
-                      className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-                    >
-                      Games
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* Empty state */
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-12 text-center">
-            <div className="max-w-sm mx-auto">
-              <div className="mb-4">
-                <div className="h-12 w-12 mx-auto bg-[var(--bg)] rounded-full flex items-center justify-center">
-                  <span className="text-[var(--muted)] text-xl">⚽</span>
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
-                No teams yet
-              </h3>
-              <p className="text-[var(--muted)] mb-6">
-                Create your first team to start planning games and managing player rotations.
-              </p>
-              <Link
-                to="/dashboard/teams/new"
-                className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Create Your First Team
+      ) : (
+        <Card>
+          <EmptyState
+            icon={<SoccerBall size={24} />}
+            title="No teams yet"
+            action={
+              <Link to="/dashboard/teams/new" className={buttonClass({ size: "lg" })}>
+                <Plus size={18} weight="bold" />
+                Create your first team
               </Link>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+            }
+          >
+            Create a team to start planning games and fair-play rotations.
+          </EmptyState>
+        </Card>
+      )}
+    </Page>
   );
 }

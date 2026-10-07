@@ -5,6 +5,9 @@ import { sql } from "drizzle-orm";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser, getUser } from "~/utils/auth.server";
 import { acceptInvites, getInviteByCode } from "~/utils/invites.server";
+import { AppMark } from "~/components/AppMark";
+import { Alert, Card, EmptyState, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
+import { CheckCircle, SignIn, UsersThree, WarningCircle } from "@phosphor-icons/react";
 
 async function findUserByEmail(email: string) {
   const [user] = await db
@@ -83,15 +86,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Coach Invite - AYSO Game Day" },
+    { title: "Coach invite - AYSO Game Day" },
     { name: "robots", content: "noindex" },
   ];
 }
 
-const inputClass =
-  "w-full rounded border border-[var(--border)] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent";
-const primaryButton =
-  "w-full inline-flex items-center justify-center px-5 py-3 text-base rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition disabled:opacity-60";
+const primaryButton = buttonClass({ size: "lg", className: "w-full" });
 
 export default function Invite({ loaderData, actionData, params }: Route.ComponentProps) {
   const navigation = useNavigation();
@@ -101,50 +101,78 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
   let body: React.ReactNode;
 
   if (loaderData.state !== "pending") {
-    const messages = {
-      invalid: "This invite link isn't valid. Ask the coach who invited you to send a new one.",
-      expired: "This invite has expired. Ask the coach who invited you to send a new one.",
-      revoked: "This invite was cancelled. Ask the coach who invited you to send a new one.",
-      accepted: "This invite has already been accepted.",
+    const states = {
+      invalid: {
+        title: "Invite not found",
+        text: "This invite link isn't valid. Ask the coach who invited you to send a new one.",
+      },
+      expired: {
+        title: "Invite expired",
+        text: "This invite has expired. Ask the coach who invited you to send a new one.",
+      },
+      revoked: {
+        title: "Invite cancelled",
+        text: "This invite was cancelled. Ask the coach who invited you to send a new one.",
+      },
+      accepted: {
+        title: "Invite already accepted",
+        text: "This invite has already been accepted.",
+      },
     };
+    const { title, text } = states[loaderData.state];
     body = (
-      <div className="p-6 space-y-4 text-center">
-        <p>{messages[loaderData.state]}</p>
-        <a href="/dashboard" className="text-[var(--primary)] hover:underline">Go to your dashboard</a>
-      </div>
+      <>
+        <h1 className="sr-only">Coach invite</h1>
+        <EmptyState
+          className="py-10"
+          icon={loaderData.state === "accepted" ? <CheckCircle size={24} /> : <WarningCircle size={24} />}
+          title={title}
+          action={
+            <a href="/dashboard" className={buttonClass({ variant: "secondary" })}>
+              Go to your dashboard
+            </a>
+          }
+        >
+          {text}
+        </EmptyState>
+      </>
     );
   } else {
     const { email, inviterName, teamNames, currentUser, hasAccount } = loaderData;
     const emailMismatch = currentUser && currentUser.email.toLowerCase() !== email.toLowerCase();
 
     body = (
-      <div className="p-6 space-y-4">
+      <div className="space-y-6 p-6 sm:p-8">
         <div>
-          <p>
-            <strong>{inviterName}</strong> invited you to help coach:
+          <h1 className="font-display text-3xl font-bold tracking-tight">Coach invite</h1>
+          <p className="mt-2 text-muted">
+            <strong className="font-semibold text-ink">{inviterName}</strong> invited you to help coach:
           </p>
-          <ul className="mt-2 list-disc pl-5">
+          <ul className="mt-4 space-y-2">
             {teamNames.map((name) => (
-              <li key={name}>{name}</li>
+              <li key={name} className="flex items-center gap-3 rounded-xl bg-surface-2 px-3 py-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                  <UsersThree size={18} weight="fill" />
+                </span>
+                <span className="min-w-0 truncate font-semibold">{name}</span>
+              </li>
             ))}
           </ul>
-          <p className="mt-3 text-sm text-[var(--muted)]">
+          <p className="mt-4 text-sm text-muted">
             You'll be able to plan lineups, manage the roster, and edit games.
           </p>
         </div>
 
-        {actionData?.error && (
-          <div className="p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">{actionData.error}</div>
-        )}
+        {actionData?.error && <Alert>{actionData.error}</Alert>}
 
         {currentUser ? (
           <Form method="post" className="space-y-3">
             <input type="hidden" name="_action" value="accept" />
             {emailMismatch && (
-              <p className="text-sm text-[var(--muted)]">
+              <Alert tone="warning">
                 This invite was sent to {email}. You're signed in as {currentUser.email}, and the teams will be
                 added to that account.
-              </p>
+              </Alert>
             )}
             <button type="submit" className={primaryButton} disabled={submitting}>
               {submitting ? "Joining…" : "Accept invite"}
@@ -152,33 +180,36 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
           </Form>
         ) : hasAccount ? (
           <div className="space-y-3">
-            <p className="text-sm text-[var(--muted)]">You already have an account for {email}.</p>
-            <a href={loginHref} className={primaryButton}>Log in to accept</a>
+            <p className="text-sm text-muted">You already have an account for {email}.</p>
+            <a href={loginHref} className={primaryButton}>
+              <SignIn size={20} />
+              Log in to accept
+            </a>
           </div>
         ) : (
-          <Form method="post" className="space-y-4 border-t border-[var(--border)] pt-4">
+          <Form method="post" className="space-y-4 border-t border-line pt-6">
             <input type="hidden" name="_action" value="signup" />
-            <p className="text-sm font-medium">Create your account</p>
+            <h2 className="text-base font-semibold">Create your account</h2>
             <div>
-              <span className="block text-sm font-medium mb-1">Email</span>
-              <div className="px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">{email}</div>
+              <span className={labelClass}>Email</span>
+              <div className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-sm text-muted">{email}</div>
             </div>
             <div>
-              <label htmlFor="name" className="block text-sm font-medium mb-1">Your name</label>
+              <label htmlFor="name" className={labelClass}>Your name</label>
               <input id="name" name="name" required autoComplete="name" className={inputClass} placeholder="Alex Morgan" />
-              <p className="text-xs text-[var(--muted)] mt-1">Printed as the assistant coach on game cards</p>
+              <p className={hintClass}>Printed as the assistant coach on game cards</p>
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-1">Password</label>
+              <label htmlFor="password" className={labelClass}>Password</label>
               <input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} placeholder="••••••••" />
-              <p className="text-xs text-[var(--muted)] mt-1">Must be at least 8 characters</p>
+              <p className={hintClass}>Must be at least 8 characters</p>
             </div>
             <button type="submit" className={primaryButton} disabled={submitting}>
               {submitting ? "Creating account…" : "Create account and join"}
             </button>
-            <p className="text-center text-sm text-[var(--muted)]">
+            <p className="text-center text-sm text-muted">
               Have an account under a different email?{" "}
-              <a href={loginHref} className="text-[var(--primary)] hover:underline">Log in</a>
+              <a href={loginHref} className="font-medium text-primary hover:underline">Log in</a>
             </p>
           </Form>
         )}
@@ -187,22 +218,11 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
-      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <nav className="container mx-auto px-4 flex items-center justify-between h-14">
-          <a href="/" className="flex items-center gap-2 font-semibold">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-[var(--accent)] text-white text-xs">AY</span>
-            <span>AYSO Game Day</span>
-          </a>
-        </nav>
-      </header>
-
-      <section className="py-16">
-        <div className="container mx-auto px-4 max-w-md">
-          <h1 className="text-3xl font-bold text-center mb-8">Coach Invite</h1>
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">{body}</div>
-        </div>
-      </section>
+    <div className="flex min-h-dvh flex-col items-center bg-canvas px-4 py-10 text-ink sm:py-16">
+      <a href="/" aria-label="AYSO Game Day home" className="mb-8">
+        <AppMark />
+      </a>
+      <Card className="w-full max-w-md">{body}</Card>
     </div>
   );
 }

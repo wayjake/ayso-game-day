@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useFetcher } from 'react-router';
 import { getAcceptString } from '~/api/roster-import/validation';
+import { Alert, Badge, Button, cx, inputClass } from '~/components/ui';
+import { CheckCircle, CircleNotch, FileText, Sparkle, UploadSimple, X } from '@phosphor-icons/react';
 
 interface RosterImportModalProps {
   isOpen: boolean;
@@ -236,35 +238,42 @@ export function RosterImportModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
         onClick={handleClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-[var(--surface)] rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col mx-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="roster-import-title"
+        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-surface shadow-overlay"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
-          <h2 className="text-xl font-semibold">Import Roster</h2>
+        <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
+          <h2 id="roster-import-title" className="text-lg font-semibold">
+            Import roster
+          </h2>
           <button
+            type="button"
             onClick={handleClose}
-            className="p-1 rounded hover:bg-[var(--bg)] transition"
+            aria-label="Close"
+            className="-mr-2 inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <div className="space-y-4">
-              <p className="text-[var(--muted)]">
-                Upload an image, PDF, or text file containing your roster. Our AI will extract player names, jersey numbers, and positions.
+              <p className="text-sm text-muted">
+                Upload a photo, PDF, or text file of your roster. AI pulls out player names, jersey numbers, and positions for you to review.
               </p>
 
               {/* Drop zone */}
@@ -272,11 +281,11 @@ export function RosterImportModal({
                 onDrop={isExtracting ? undefined : handleDrop}
                 onDragOver={isExtracting ? undefined : handleDragOver}
                 onClick={isExtracting ? undefined : () => fileInputRef.current?.click()}
-                className={`
-                  border-2 border-dashed rounded-lg p-8 text-center transition
-                  ${isExtracting ? 'cursor-default opacity-60' : 'cursor-pointer'}
-                  ${file ? 'border-[var(--primary)] bg-[var(--primary)]/5' : 'border-[var(--border)] hover:border-[var(--primary)]/50'}
-                `}
+                className={cx(
+                  "rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
+                  isExtracting ? "cursor-default opacity-60" : "cursor-pointer",
+                  file ? "border-primary bg-primary-soft/60" : "border-line-strong hover:border-primary/50 hover:bg-surface-2"
+                )}
               >
                 <input
                   ref={fileInputRef}
@@ -288,189 +297,174 @@ export function RosterImportModal({
                 />
 
                 {file ? (
-                  <div className="space-y-2">
-                    <div className="text-4xl">{isExtracting ? '⏳' : '📄'}</div>
-                    <p className="font-medium">{file.name}</p>
-                    <p className="text-sm text-[var(--muted)]">
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-primary shadow-card">
+                      {isExtracting ? <CircleNotch size={24} className="animate-spin" /> : <FileText size={24} />}
+                    </div>
+                    <p className="max-w-full truncate font-semibold">{file.name}</p>
+                    <p className="text-sm text-muted tabular">
                       {isExtracting ? 'Extracting player data...' : `${(file.size / 1024).toFixed(1)} KB`}
                     </p>
                     {!isExtracting && (
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setFile(null);
                         }}
-                        className="text-sm text-red-500 hover:underline"
+                        className="mt-1 rounded px-2 py-1 text-sm font-medium text-danger hover:bg-danger-soft"
                       >
                         Remove
                       </button>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="text-4xl">📁</div>
-                    <p className="font-medium">Drop a file here or click to browse</p>
-                    <p className="text-sm text-[var(--muted)]">
-                      Supports images, PDFs, and CSV/text files
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                      <UploadSimple size={24} />
+                    </div>
+                    <p className="font-semibold">Drop a file here or click to browse</p>
+                    <p className="text-sm text-muted">
+                      Images, PDFs, and CSV or text files
                     </p>
                   </div>
                 )}
               </div>
 
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {error}
-                </div>
-              )}
+              {error && <Alert>{error}</Alert>}
             </div>
           )}
 
           {/* Step 2: Review */}
           {step === 'review' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[var(--muted)]">
-                  Review extracted players and confirm actions.
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted">
+                  Check each player and choose what to do with them.
                 </p>
-                <div className="flex gap-2 text-sm">
-                  <span className="px-2 py-1 rounded bg-green-100 text-green-700">
-                    {summary.create} new
-                  </span>
-                  <span className="px-2 py-1 rounded bg-blue-100 text-blue-700">
-                    {summary.update} update
-                  </span>
-                  <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">
-                    {summary.skip} skip
-                  </span>
+                <div className="flex gap-1.5">
+                  <Badge tone="success">{summary.create} new</Badge>
+                  <Badge tone="primary">{summary.update} update</Badge>
+                  <Badge>{summary.skip} skip</Badge>
                 </div>
               </div>
 
               {extractionNotes && (
-                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
-                  <strong>AI Notes:</strong> {extractionNotes}
-                </div>
+                <Alert tone="warning" className="flex gap-2">
+                  <Sparkle size={18} className="mt-px shrink-0" />
+                  <span>
+                    <strong className="font-semibold">AI notes:</strong> {extractionNotes}
+                  </span>
+                </Alert>
               )}
 
-              {/* Players table */}
-              <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-[var(--bg)]">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium">Player Name</th>
-                      <th className="text-left px-4 py-2 font-medium">Match</th>
-                      <th className="text-left px-4 py-2 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border)]">
-                    {players.map((player) => (
-                      <tr key={player.tempId} className="hover:bg-[var(--bg)]/50">
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={player.name}
-                            onChange={(e) => updatePlayerName(player.tempId, e.target.value)}
-                            className="w-full px-2 py-1 border border-[var(--border)] rounded bg-transparent"
-                          />
-                          {player.jerseyNumber && (
-                            <span className="ml-2 text-xs text-[var(--muted)]">
-                              #{player.jerseyNumber}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2">
-                          {player.matchType === 'exact' && (
-                            <span className="inline-flex items-center gap-1 text-green-600">
-                              <span className="w-2 h-2 rounded-full bg-green-500" />
-                              Exact: {player.existingPlayerName}
-                            </span>
-                          )}
-                          {player.matchType === 'fuzzy' && (
-                            <span className="inline-flex items-center gap-1 text-amber-600">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              Similar: {player.existingPlayerName}
-                            </span>
-                          )}
-                          {player.matchType === 'new' && (
-                            <span className="inline-flex items-center gap-1 text-blue-600">
-                              <span className="w-2 h-2 rounded-full bg-blue-500" />
-                              New player
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={player.action}
-                            onChange={(e) =>
-                              updatePlayerAction(
-                                player.tempId,
-                                e.target.value as 'create' | 'update' | 'skip'
-                              )
-                            }
-                            className="px-2 py-1 border border-[var(--border)] rounded bg-transparent"
-                          >
-                            <option value="create">Create New</option>
-                            {player.existingPlayerId && (
-                              <option value="update">Update Existing</option>
-                            )}
-                            <option value="skip">Skip</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* Players list */}
+              <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+                {players.map((player) => (
+                  <li
+                    key={player.tempId}
+                    className={cx(
+                      "grid gap-2 px-4 py-3 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-4",
+                      player.action === 'skip' && "bg-surface-2/60"
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <input
+                        type="text"
+                        value={player.name}
+                        onChange={(e) => updatePlayerName(player.tempId, e.target.value)}
+                        aria-label="Player name"
+                        className={inputClass}
+                      />
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        {player.matchType === 'exact' && (
+                          <span className="inline-flex items-center gap-1.5 font-medium text-success">
+                            <span className="h-2 w-2 rounded-full bg-success" />
+                            Matches {player.existingPlayerName}
+                          </span>
+                        )}
+                        {player.matchType === 'fuzzy' && (
+                          <span className="inline-flex items-center gap-1.5 font-medium text-warning">
+                            <span className="h-2 w-2 rounded-full bg-warning" />
+                            Similar to {player.existingPlayerName}
+                          </span>
+                        )}
+                        {player.matchType === 'new' && (
+                          <span className="inline-flex items-center gap-1.5 font-medium text-primary-ink">
+                            <span className="h-2 w-2 rounded-full bg-primary" />
+                            New player
+                          </span>
+                        )}
+                        {player.jerseyNumber && (
+                          <span className="text-muted tabular">#{player.jerseyNumber}</span>
+                        )}
+                      </div>
+                    </div>
+                    <select
+                      value={player.action}
+                      onChange={(e) =>
+                        updatePlayerAction(
+                          player.tempId,
+                          e.target.value as 'create' | 'update' | 'skip'
+                        )
+                      }
+                      aria-label={`Action for ${player.name}`}
+                      className={cx(inputClass, "sm:w-44 sm:self-start")}
+                    >
+                      <option value="create">Create new</option>
+                      {player.existingPlayerId && (
+                        <option value="update">Update existing</option>
+                      )}
+                      <option value="skip">Skip</option>
+                    </select>
+                  </li>
+                ))}
+              </ul>
 
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {error}
-                </div>
-              )}
+              {error && <Alert>{error}</Alert>}
             </div>
           )}
 
           {/* Step 3: Confirm */}
           {step === 'confirm' && (
             <div className="space-y-4">
-              <p className="text-[var(--muted)]">
-                Confirm the following changes to your roster:
+              <p className="text-sm text-muted">
+                These changes will be made to your roster:
               </p>
 
-              <div className="p-4 rounded-lg bg-[var(--bg)] space-y-2">
+              <ul className="space-y-2 rounded-xl bg-surface-2 p-4 text-sm">
                 {summary.create > 0 && (
-                  <p className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    <strong>{summary.create}</strong> new players will be created
-                  </p>
+                  <li className="flex items-center gap-2.5">
+                    <span className="h-2 w-2 rounded-full bg-success" />
+                    <span><strong className="tabular">{summary.create}</strong> new players will be created</span>
+                  </li>
                 )}
                 {summary.update > 0 && (
-                  <p className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    <strong>{summary.update}</strong> existing players will be updated
-                  </p>
+                  <li className="flex items-center gap-2.5">
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                    <span><strong className="tabular">{summary.update}</strong> existing players will be updated</span>
+                  </li>
                 )}
                 {summary.skip > 0 && (
-                  <p className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-gray-400" />
-                    <strong>{summary.skip}</strong> players will be skipped
-                  </p>
+                  <li className="flex items-center gap-2.5">
+                    <span className="h-2 w-2 rounded-full bg-subtle" />
+                    <span><strong className="tabular">{summary.skip}</strong> players will be skipped</span>
+                  </li>
                 )}
-              </div>
+              </ul>
 
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {error}
-                </div>
-              )}
+              {error && <Alert>{error}</Alert>}
             </div>
           )}
 
           {/* Step 4: Complete */}
           {step === 'complete' && importResult && (
-            <div className="text-center space-y-4 py-8">
-              <div className="text-5xl">✅</div>
-              <h3 className="text-xl font-semibold">Import Complete!</h3>
-              <div className="text-[var(--muted)] space-y-1">
+            <div className="flex flex-col items-center py-8 text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-success-soft text-success">
+                <CheckCircle size={32} weight="fill" />
+              </div>
+              <h3 className="text-lg font-semibold">Import complete</h3>
+              <div className="mt-1 space-y-0.5 text-sm text-muted tabular">
                 {importResult.created > 0 && (
                   <p>{importResult.created} players created</p>
                 )}
@@ -486,69 +480,53 @@ export function RosterImportModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)] bg-[var(--bg)]">
+        <div className="flex items-center justify-between gap-2 border-t border-line bg-surface-2/60 px-5 py-4 sm:px-6">
           {step === 'upload' && (
             <>
-              <button
-                onClick={handleClose}
-                className="px-4 py-2 rounded font-medium text-[var(--muted)] hover:text-[var(--text)] transition"
-              >
+              <Button variant="ghost" onClick={handleClose}>
                 Cancel
-              </button>
-              <button
-                onClick={handleExtract}
-                disabled={!file || isExtracting}
-                className="px-4 py-2 rounded font-medium bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                {isExtracting ? 'Extracting...' : 'Extract Players'}
-              </button>
+              </Button>
+              <Button onClick={handleExtract} disabled={!file || isExtracting}>
+                {isExtracting ? (
+                  <CircleNotch size={18} className="animate-spin" />
+                ) : (
+                  <Sparkle size={18} weight="fill" />
+                )}
+                {isExtracting ? 'Extracting...' : 'Extract players'}
+              </Button>
             </>
           )}
 
           {step === 'review' && (
             <>
-              <button
-                onClick={() => setStep('upload')}
-                className="px-4 py-2 rounded font-medium text-[var(--muted)] hover:text-[var(--text)] transition"
-              >
+              <Button variant="ghost" onClick={() => setStep('upload')}>
                 Back
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setStep('confirm')}
                 disabled={summary.create + summary.update === 0}
-                className="px-4 py-2 rounded font-medium bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
                 Continue
-              </button>
+              </Button>
             </>
           )}
 
           {step === 'confirm' && (
             <>
-              <button
-                onClick={() => setStep('review')}
-                disabled={isImporting}
-                className="px-4 py-2 rounded font-medium text-[var(--muted)] hover:text-[var(--text)] transition"
-              >
+              <Button variant="ghost" onClick={() => setStep('review')} disabled={isImporting}>
                 Back
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={isImporting}
-                className="px-4 py-2 rounded font-medium bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                {isImporting ? 'Importing...' : 'Import Players'}
-              </button>
+              </Button>
+              <Button onClick={handleImport} disabled={isImporting}>
+                {isImporting && <CircleNotch size={18} className="animate-spin" />}
+                {isImporting ? 'Importing...' : 'Import players'}
+              </Button>
             </>
           )}
 
           {step === 'complete' && (
-            <button
-              onClick={handleClose}
-              className="ml-auto px-4 py-2 rounded font-medium bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] transition"
-            >
+            <Button onClick={handleClose} className="ml-auto">
               Done
-            </button>
+            </Button>
           )}
         </div>
       </div>

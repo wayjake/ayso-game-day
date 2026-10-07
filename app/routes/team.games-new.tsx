@@ -1,11 +1,13 @@
 import type { Route } from "./+types/team.games-new";
-import { Form, data, redirect } from "react-router";
+import { Form, Link, data, redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { GameFormFields, readGameForm } from "~/components/GameFormFields";
 import { serializeGameNotes } from "~/utils/game-notes";
+import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
+import { CalendarCheck, Lightbulb } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -69,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Schedule Game - AYSO Game Day" },
+    { title: "Schedule game - AYSO Game Day" },
     { name: "description", content: "Schedule a new game for your team" },
   ];
 }
@@ -77,58 +79,48 @@ export function meta({}: Route.MetaArgs) {
 export default function NewGame({ loaderData, actionData }: Route.ComponentProps) {
   const { team } = loaderData;
   const error = actionData?.error;
-  
-  return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-2xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Schedule New Game</h1>
-          <p className="mt-2 text-[var(--muted)]">
-            Schedule a game for {team.name} ({team.format})
-          </p>
-        </div>
-        
-        {/* Error message */}
-        {error && (
-          <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-        
-        <Form method="post" className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm">
-          <div className="p-6 space-y-6">
-            <GameFormFields />
+  const gamesUrl = `/dashboard/team/${team.id}/games`;
 
-            {/* Form actions */}
-            <div className="flex gap-3 pt-4 border-t border-[var(--border)]">
-              <button
-                type="submit"
-                className="flex-1 inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Schedule Game
-              </button>
-              <a
-                href={`/dashboard/team/${team.id}/games`}
-                className="flex-1 inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
-              >
-                Cancel
-              </a>
-            </div>
+  return (
+    <Page width="narrow">
+      <PageHeader
+        back={{ to: gamesUrl, label: "Games" }}
+        title="Schedule game"
+        description={`Add a ${team.format} game. You'll plan the lineup next.`}
+      />
+
+      {error && <Alert className="mb-6">{error}</Alert>}
+
+      <Card>
+        <Form method="post" className="space-y-6 p-5 sm:p-6">
+          <GameFormFields />
+
+          {/* Form actions */}
+          <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">
+            <Link to={gamesUrl} className={buttonClass({ variant: "secondary", size: "lg" })}>
+              Cancel
+            </Link>
+            <button type="submit" className={buttonClass({ size: "lg" })}>
+              <CalendarCheck size={20} weight="bold" />
+              Schedule game
+            </button>
           </div>
         </Form>
-        
-        {/* Tips */}
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="text-sm font-medium text-blue-800 mb-2">Tips for Game Scheduling</h3>
-          <ul className="text-xs text-blue-700 space-y-1">
-            <li>• Schedule games as soon as you receive the season calendar</li>
-            <li>• Add field information to help parents with directions</li>
-            <li>• Use notes for special game requirements (tournaments, makeup games, etc.)</li>
-            <li>• You can plan lineups and rotations after scheduling the game</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+      </Card>
+
+      {/* Tips */}
+      <aside className="mt-6 rounded-2xl bg-primary-soft p-5 text-primary-ink">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Lightbulb size={18} weight="fill" />
+          Scheduling tips
+        </h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm marker:text-primary/60">
+          <li>Schedule games as soon as you get the season calendar.</li>
+          <li>Add the field so parents know where to go.</li>
+          <li>Use notes for anything unusual, like tournaments or makeup games.</li>
+          <li>You can plan lineups and rotations after scheduling the game.</li>
+        </ul>
+      </aside>
+    </Page>
   );
 }

@@ -11,6 +11,7 @@ import type { Route } from "./+types/root";
 import "./app.css";
 
 export const links: Route.LinksFunction = () => [
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -19,7 +20,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Geist:wght@400..700&display=swap",
   },
 ];
 
@@ -28,7 +29,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="theme-color" content="#FFFFFF" />
         <Meta />
         <Links />
       </head>
@@ -46,8 +48,8 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
+  let message = "Something went wrong";
+  let details = "An unexpected error occurred. Try again, or head back to your team.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
@@ -62,11 +64,14 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
+    <main className="min-h-dvh bg-canvas px-4 pt-24 pb-16">
+      <div className="mx-auto max-w-xl">
+      <p className="font-display text-7xl font-bold tracking-tight text-line-strong">{message}</p>
+      <p className="mt-3 text-lg text-muted">{details}</p>
+      <a href="/dashboard" className="mt-6 inline-flex items-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-hover">Back to your team</a>
+      </div>
       {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
+        <pre className="mx-auto mt-8 max-w-4xl overflow-x-auto rounded-lg bg-surface-2 p-4 text-xs">
           <code>{stack}</code>
         </pre>
       )}
