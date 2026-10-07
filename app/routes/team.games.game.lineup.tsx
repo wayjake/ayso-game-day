@@ -1498,11 +1498,14 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const previousSittingOut: Set<number> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<number>() : new Set<number>();
 
   // Calculate position changes between quarters
+  // Absent/injured count as off the field, so a player back from an absence
+  // shows as coming on (same rule as game day and the public page)
+  const previousAbsentInjured: Map<number, string> = previousQuarter ? absentInjured.get(previousQuarter) || new Map() : new Map();
   const positionChanges = previousQuarter ? calculatePositionChanges(
     previousLineup,
     currentLineup,
-    previousSittingOut,
-    currentSittingOut
+    new Set([...previousSittingOut, ...previousAbsentInjured.keys()]),
+    new Set([...currentSittingOut, ...currentAbsentInjured.keys()])
   ) : [];
 
   // Get absent/injured players for current quarter

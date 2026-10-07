@@ -160,24 +160,6 @@ function findSwapPairs(positionChanges: PositionChange[]) {
 }
 
 /**
- * 🎨 Gets the appropriate indicator color for a change type
- */
-export function getChangeIndicatorColor(changeType: PositionChange['changeType']): string {
-  switch (changeType) {
-    case 'new_in':
-      return 'border-blue-500 bg-blue-50'; // Player coming from bench
-    case 'sitting_out':
-      return 'border-red-500 bg-red-50'; // Player going to bench
-    case 'position_swap':
-      return 'border-purple-500 bg-purple-50'; // Players swapping positions
-    case 'new_position':
-      return 'border-orange-500 bg-orange-50'; // Player moving to new position
-    default:
-      return 'border-orange-500 bg-orange-50'; // Default orange for any change
-  }
-}
-
-/**
  * 📝 Creates a human-readable description of the position change
  */
 export function getChangeDescription(change: PositionChange): string {
