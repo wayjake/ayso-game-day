@@ -395,7 +395,7 @@ export function RosterImportModal({
                             New player
                           </span>
                         )}
-                        {player.jerseyNumber && (
+                        {player.jerseyNumber != null && (
                           <span className="text-muted tabular">#{player.jerseyNumber}</span>
                         )}
                       </div>

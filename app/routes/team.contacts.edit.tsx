@@ -304,8 +304,22 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
             </div>
           </div>
 
-          {/* Form actions */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-4 sm:px-6">
+          {/* Form actions. Save comes first in the markup so pressing Enter
+              in a field saves; flex-row-reverse still shows Delete on the left. */}
+          <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-4 sm:px-6">
+            <div className="flex gap-2">
+              <Link to={`/dashboard/team/${team.id}/contacts`} className={buttonClass({ variant: "ghost" })}>
+                Cancel
+              </Link>
+              <button
+                type="submit"
+                name="intent"
+                value="update"
+                className={buttonClass()}
+              >
+                Save changes
+              </button>
+            </div>
             <button
               type="submit"
               name="intent"
@@ -320,19 +334,6 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
               <Trash size={18} />
               Delete
             </button>
-            <div className="ml-auto flex gap-2">
-              <Link to={`/dashboard/team/${team.id}/contacts`} className={buttonClass({ variant: "ghost" })}>
-                Cancel
-              </Link>
-              <button
-                type="submit"
-                name="intent"
-                value="update"
-                className={buttonClass()}
-              >
-                Save changes
-              </button>
-            </div>
           </div>
         </Form>
       </Card>

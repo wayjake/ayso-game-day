@@ -18,6 +18,7 @@ export async function action({ request }: Route.ActionArgs) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const redirectTo = safeRedirect(formData.get("redirectTo"));
+  const remember = formData.get("remember") === "on";
 
   // Basic validation
   if (!email || !password) {
@@ -52,9 +53,10 @@ export async function action({ request }: Route.ActionArgs) {
     session.set("userRole", user.role);
     session.flash("success", "Welcome back.");
 
+    // Signed in for a month, or only until the browser closes
     return redirect(redirectTo, {
       headers: {
-        "Set-Cookie": await commitSession(session),
+        "Set-Cookie": await commitSession(session, { maxAge: remember ? 60 * 60 * 24 * 30 : undefined }),
       },
     });
   } catch (error) {
@@ -132,14 +134,9 @@ export default function Login({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div>
-            <div className="mb-1.5 flex items-baseline justify-between gap-4">
-              <label htmlFor="password" className="text-sm font-medium text-ink">
-                Password
-              </label>
-              <a href="/user/forgot-password" className="text-sm font-medium text-primary hover:underline">
-                Forgot password?
-              </a>
-            </div>
+            <label htmlFor="password" className={labelClass}>
+              Password
+            </label>
             <input
               id="password"
               name="password"
@@ -152,8 +149,8 @@ export default function Login({ loaderData }: Route.ComponentProps) {
           </div>
 
           <label htmlFor="remember" className="flex items-center gap-2.5 text-sm text-muted">
-            <input id="remember" name="remember" type="checkbox" className="h-4 w-4 rounded accent-primary" />
-            Remember me
+            <input id="remember" name="remember" type="checkbox" defaultChecked className="h-4 w-4 rounded accent-primary" />
+            Keep me signed in
           </label>
 
           <Button type="submit" size="lg" className="w-full">

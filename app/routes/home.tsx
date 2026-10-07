@@ -35,13 +35,13 @@ const faqs = [
     id: "q1",
     question: "How do sit-outs work?",
     answer:
-      "Mark required sit-outs and the engine spreads them evenly across quarters while keeping core positions covered.",
+      "Move any player to the bench for a quarter. Every player shows how many quarters they've sat, and the fair play summary flags anyone who sits more than one. The AI assistant can build a fair rotation for you.",
   },
   {
     id: "q2",
-    question: "Can I anchor players to positions?",
+    question: "Can I keep players in certain positions?",
     answer:
-      "Yes. Lock players to positions (for example GK or CB) and the generator rotates everyone around those anchors.",
+      "Yes. Set preferred positions on each player and the assistant favors them. You can also just ask it, for example \"keep Maya in goal for the first half\".",
   },
   {
     id: "q3",
@@ -55,14 +55,14 @@ const plans = [
     name: "Free",
     blurb: "Plan a single team.",
     price: "$0",
-    features: ["1 team", "10 games", "PDF export"],
+    features: ["1 team", "10 games", "Printable game cards"],
     cta: "Get started",
   },
   {
     name: "Coach",
     blurb: "Everything for one coach, all season.",
     price: "$9",
-    features: ["3 teams", "Unlimited games", "Rotation engine", "Calendar sync"],
+    features: ["3 teams", "Unlimited games", "AI lineup assistant", "Assistant coach invites"],
     cta: "Try Coach",
     featured: true,
   },
@@ -70,8 +70,8 @@ const plans = [
     name: "Club",
     blurb: "For age-group coordinators and clubs.",
     price: "$39",
-    features: ["Unlimited teams", "Bulk imports", "Role permissions", "Priority support"],
-    cta: "Contact sales",
+    features: ["Unlimited teams", "Roster import from a photo or file", "Priority support"],
+    cta: "Get started",
   },
 ];
 
@@ -236,16 +236,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                     </li>
                   ))}
                 </ul>
-                <button
-                  type="button"
+                <a
+                  href={isLoggedIn ? "/dashboard" : "/user/signup"}
                   className={buttonClass({
                     variant: plan.featured ? "primary" : "secondary",
                     size: "lg",
                     className: "mt-auto w-full",
                   })}
                 >
-                  {plan.cta}
-                </button>
+                  {isLoggedIn ? "Go to dashboard" : plan.cta}
+                </a>
               </div>
             ))}
           </div>
@@ -295,28 +295,34 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               Start with your roster and your next game time. You'll have a plan in under five minutes.
             </p>
           </div>
-          <form className="grid gap-4 rounded-2xl bg-canvas p-5 ring-1 ring-line sm:p-6">
-            <div>
-              <label htmlFor="cta-email" className={labelClass}>Email</label>
-              <input id="cta-email" type="email" className={inputClass} placeholder="coach@club.org" />
+          {isLoggedIn ? (
+            <div className="md:justify-self-end">
+              <a href="/dashboard" className={buttonClass({ size: "lg" })}>Go to dashboard</a>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+          ) : (
+            // Starts signup with these filled in; the account is created on /user/signup
+            <form method="get" action="/user/signup" className="grid gap-4 rounded-2xl bg-canvas p-5 ring-1 ring-line sm:p-6">
               <div>
-                <label htmlFor="cta-team" className={labelClass}>Team name</label>
-                <input id="cta-team" className={inputClass} placeholder="U12 Spartans" />
+                <label htmlFor="cta-email" className={labelClass}>Email</label>
+                <input id="cta-email" name="email" type="email" className={inputClass} placeholder="coach@club.org" />
               </div>
-              <div>
-                <label htmlFor="cta-format" className={labelClass}>Format</label>
-                <select id="cta-format" className={inputClass}>
-                  <option>7v7</option>
-                  <option>9v9</option>
-                  <option>11v11</option>
-                </select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="cta-team" className={labelClass}>Team name</label>
+                  <input id="cta-team" name="teamName" className={inputClass} placeholder="U12 Spartans" />
+                </div>
+                <div>
+                  <label htmlFor="cta-format" className={labelClass}>Format</label>
+                  <select id="cta-format" name="format" defaultValue="9v9" className={inputClass}>
+                    <option value="7v7">7v7</option>
+                    <option value="9v9">9v9</option>
+                    <option value="11v11">11v11</option>
+                  </select>
+                </div>
               </div>
-            </div>
-            <button className={buttonClass({ size: "lg", className: "w-full" })}>Create free account</button>
-            <p className="text-xs text-muted">By continuing you agree to our terms.</p>
-          </form>
+              <button type="submit" className={buttonClass({ size: "lg", className: "w-full" })}>Create free account</button>
+            </form>
+          )}
         </div>
       </section>
 
@@ -336,11 +342,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             </ul>
           </div>
           <div>
-            <div className="font-semibold">Support</div>
+            <div className="font-semibold">Account</div>
             <ul className="mt-3 space-y-2 text-muted">
-              <li><a className="transition hover:text-ink" href="#">Help center</a></li>
-              <li><a className="transition hover:text-ink" href="#">Status</a></li>
-              <li><a className="transition hover:text-ink" href="#">Contact</a></li>
+              <li><a className="transition hover:text-ink" href={isLoggedIn ? "/dashboard" : "/user/login"}>{isLoggedIn ? "Dashboard" : "Sign in"}</a></li>
+              {!isLoggedIn && <li><a className="transition hover:text-ink" href="/user/signup">Create account</a></li>}
             </ul>
           </div>
         </div>

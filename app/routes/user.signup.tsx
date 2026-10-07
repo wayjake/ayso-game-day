@@ -1,5 +1,5 @@
 import type { Route } from "./+types/user.signup";
-import { Form, data, redirect } from "react-router";
+import { Form, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser } from "~/utils/auth.server";
 import { Check } from "@phosphor-icons/react";
@@ -103,6 +103,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function Signup({ loaderData }: Route.ComponentProps) {
   const { error, success } = loaderData;
+  // The landing page's quick-start form passes these along
+  const [searchParams] = useSearchParams();
+  const presetFormat = searchParams.get("format");
   return (
     <>
       <div className="mb-6">
@@ -148,6 +151,7 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   name="email"
                   type="email"
                   required
+                  defaultValue={searchParams.get("email") ?? undefined}
                   className={inputClass}
                   placeholder="coach@club.org"
                 />
@@ -184,6 +188,7 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   name="teamName"
                   type="text"
                   required
+                  defaultValue={searchParams.get("teamName") ?? undefined}
                   className={inputClass}
                   placeholder="U12 Spartans"
                 />
@@ -194,7 +199,13 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
                   <label htmlFor="format" className={labelClass}>
                     Game format
                   </label>
-                  <select id="format" name="format" required className={inputClass}>
+                  <select
+                    id="format"
+                    name="format"
+                    required
+                    defaultValue={presetFormat && ["7v7", "9v9", "11v11"].includes(presetFormat) ? presetFormat : ""}
+                    className={inputClass}
+                  >
                     <option value="">Select format</option>
                     <option value="7v7">7v7</option>
                     <option value="9v9">9v9</option>

@@ -157,6 +157,7 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
   const { team, player, positions } = loaderData;
   const error = actionData?.error;
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   
   // Group positions by category
@@ -233,10 +234,14 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
             {/* Show upload error if any */}
             {uploadError && <Alert className="mb-3">{uploadError}</Alert>}
 
+            {/* Remounting on remove clears the uploader's local preview too */}
             <ImageUploader
-              currentImage={uploadedImageUrl || player.profilePicture}
+              key={removePhoto ? "removed" : "photo"}
+              currentImage={removePhoto ? null : uploadedImageUrl || player.profilePicture}
               onUploadComplete={(url) => {
+                // A fresh upload cancels a pending removal
                 setUploadedImageUrl(url);
+                setRemovePhoto(false);
                 setUploadError(null);
               }}
               onUploadError={(error) => {
@@ -246,13 +251,15 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
             />
 
             {/* Option to remove picture */}
-            {(player.profilePicture || uploadedImageUrl) && (
+            {(player.profilePicture || uploadedImageUrl || removePhoto) && (
               <label className="mt-3 inline-flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
                   name="removeCurrentPicture"
                   value="true"
+                  checked={removePhoto}
                   onChange={(e) => {
+                    setRemovePhoto(e.target.checked);
                     if (e.target.checked) {
                       setUploadedImageUrl(null);
                     }

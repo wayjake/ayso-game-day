@@ -8,6 +8,7 @@ import { isEmailConfigured } from "~/utils/email.server";
 import { db, teams, users, teamMembers, teamInvites } from "~/db";
 import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, inputClass, labelClass } from "~/components/ui";
+import { APP_TIME_ZONE } from "~/utils/dates";
 import { Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -376,7 +377,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
                     <Badge tone="warning" className="shrink-0">Invited</Badge>
                   </div>
                   <div className="text-sm text-muted">
-                    Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                    Expires {formatInviteExpiry(invite.expiresAt)}
                   </div>
                 </div>
               </div>
@@ -462,4 +463,9 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
       )}
     </Page>
   );
+}
+
+// Pinned to the app's time zone so the server and browser render the same text
+function formatInviteExpiry(iso: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: APP_TIME_ZONE }).format(new Date(iso));
 }

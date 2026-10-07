@@ -66,7 +66,7 @@ function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
           action: `/dashboard/team/${teamId}/player/remove` 
         }
       );
-      setShowConfirm(false);
+      // Keep the confirm row up so "Removing..." shows until the row disappears
     } else {
       setShowConfirm(true);
     }
