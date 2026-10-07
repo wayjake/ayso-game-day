@@ -253,9 +253,9 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
       {/* Benefits */}
       <ul className="mt-8 space-y-3 border-t border-line pt-6">
         {[
-          { title: "Start with the Free plan", detail: "1 team, 10 games, no credit card required" },
-          { title: "AYSO-compliant rotations", detail: "Fair play time tracking built in" },
-          { title: "Upgrade anytime", detail: "Switch to Coach or Club plans as you grow" },
+          { title: "Free for coaches", detail: "Every planning and game day feature, no credit card" },
+          { title: "AYSO fair play built in", detail: "Sit-out counts and a fair play summary" },
+          { title: "AI only if you want it", detail: "Pay-as-you-go credits, no subscription" },
         ].map((benefit) => (
           <li key={benefit.title} className="flex items-start gap-3">
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">

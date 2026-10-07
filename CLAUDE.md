@@ -129,6 +129,10 @@ The application uses Drizzle ORM with 8 main tables:
 9. **sitOuts** - AYSO fair-play tracking
    - Fields: id, gameId, playerId, quarter, reason, createdAt
 
+10. **passwordResets** - Single-use reset links (only a SHA-256 hash of the token is stored, 60-minute expiry)
+   - Fields: id, userId, tokenHash, expiresAt, usedAt, createdAt
+   - Emails go through Resend (`app/utils/email.server.ts`); without `RESEND_API_KEY`/`EMAIL_FROM` the link is logged and shown on the page in development only
+
 ## Authentication System
 
 ### Session Management (`app/sessions.server.ts`)
@@ -208,9 +212,12 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /user/signup - Registration
 /user/login - Login
 /user/logout - Logout
+/user/forgot-password - Request a reset link
+/user/reset-password/:token - Choose a new password (signs you in)
 /api/uploadthing - File upload handler
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)
+/dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 
 /dashboard - Protected dashboard layout
   /dashboard - Dashboard overview
@@ -523,6 +530,10 @@ export async function action({ request }: Route.ActionArgs) {
 | Position Changes | `/app/utils/position-changes.ts` |
 | Image Helpers | `/app/utils/image.ts` |
 | Main Lineup UI | `/app/routes/team.games.game.lineup.tsx` |
+| Game Day (sideline) | `/app/routes/game-day.tsx` |
+| Shared UI primitives | `/app/components/ui.tsx` (Page, PageHeader, Card, Badge, buttonClass, ...) |
+| Field + quarter tabs | `/app/components/LineupField.tsx` |
+| Per-quarter lineup plans | `/app/utils/lineup.ts` (read-only views) and `lineup.server.ts` |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |
 | Global Styles | `/app/app.css` |
