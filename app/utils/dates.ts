@@ -67,3 +67,20 @@ export function addDays(iso: string, days: number) {
 export function dayOfWeek(iso: string) {
   return isoToUTCDate(iso)!.getUTCDay();
 }
+
+// Whole days from one "YYYY-MM-DD" date to another (negative if `to` is earlier)
+export function daysBetween(from: string, to: string) {
+  const a = isoToUTCDate(from);
+  const b = isoToUTCDate(to);
+  if (!a || !b) return 0;
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+// "Today", "Tomorrow", "In 5 days" for an upcoming game date
+export function relativeGameDay(iso: string, today = todayISO()) {
+  const days = daysBetween(today, iso);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days > 1) return `In ${days} days`;
+  return formatGameDate(iso);
+}

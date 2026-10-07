@@ -30,7 +30,6 @@ export default [
       route("games/:gameId/edit", "routes/team.games.edit.tsx"),
       route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
       route("games/:gameId/game-card", "routes/team.games.game.card.ts"),
-      route("rotations", "routes/team.rotations.tsx"),
       route("player/remove", "routes/team.player.remove.tsx"),
       route("contacts", "routes/team.contacts.tsx"),
       route("contacts/new", "routes/team.contacts.new.tsx"),

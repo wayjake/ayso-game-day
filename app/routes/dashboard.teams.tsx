@@ -2,8 +2,9 @@ import type { Route } from "./+types/dashboard.teams";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
-import { db, teams, players } from "~/db";
-import { eq, count, desc } from "drizzle-orm";
+import { db, teams, players, games } from "~/db";
+import { eq, count, desc, and, gte } from "drizzle-orm";
+import { formatGameDateTime, todayISO } from "~/utils/dates";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -23,17 +24,31 @@ export async function loader({ request }: Route.LoaderArgs) {
     .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
   
-  // Get player count for each team
+  // Player count and next game for each team
+  const today = todayISO();
   const teamsWithPlayerCounts = await Promise.all(
     userTeams.map(async (team) => {
       const [playerCount] = await db
         .select({ count: count() })
         .from(players)
         .where(eq(players.teamId, team.id));
-      
+
+      const [nextGame] = await db
+        .select({
+          id: games.id,
+          opponent: games.opponent,
+          gameDate: games.gameDate,
+          gameTime: games.gameTime,
+        })
+        .from(games)
+        .where(and(eq(games.teamId, team.id), gte(games.gameDate, today)))
+        .orderBy(games.gameDate, games.gameTime)
+        .limit(1);
+
       return {
         ...team,
         playerCount: playerCount?.count || 0,
+        nextGame: nextGame ?? null,
       };
     })
   );
@@ -66,7 +81,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
           <div>
             <h1 className="text-3xl font-bold">Your Teams</h1>
             <p className="mt-2 text-[var(--muted)]">
-              Manage teams, players, and game rotations
+              Pick a team to manage its games and roster
             </p>
           </div>
           <Link 
@@ -102,6 +117,23 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
                   </div>
 
                   <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-4 text-sm">
+                      <span className="text-[var(--muted)]">Next game</span>
+                      {team.nextGame ? (
+                        <Link
+                          to={`/dashboard/team/${team.id}/games/${team.nextGame.id}/lineup`}
+                          className="text-right font-medium text-[var(--primary)] hover:underline"
+                        >
+                          vs {team.nextGame.opponent}
+                          <span className="block text-xs font-normal text-[var(--muted)]">
+                            {formatGameDateTime(team.nextGame.gameDate, team.nextGame.gameTime)}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-[var(--muted)]">None scheduled</span>
+                      )}
+                    </div>
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-[var(--muted)]">Players</span>
                       <span className="font-medium">{team.playerCount}</span>
@@ -127,7 +159,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
                       to={`/dashboard/team/${team.id}`}
                       className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm rounded font-medium border border-[var(--primary)] bg-transparent text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition"
                     >
-                      View
+                      Open team
                     </Link>
                     <Link
                       to={`/dashboard/team/${team.id}/games`}

@@ -1,28 +1,18 @@
 import type { Route } from "./+types/team._index";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { canAccessTeam } from "~/utils/team-access.server";
-import { db, teams, games, players } from "~/db";
-import { eq, and, gte } from "drizzle-orm";
+import { requireTeamAccess } from "~/utils/team-access.server";
+import { db, games, players, assignments } from "~/db";
+import { eq, and, gte, count } from "drizzle-orm";
 import { getImageUrl } from "~/utils/image";
-import { formatGameDateTime, todayISO } from "~/utils/dates";
+import { formatGameDate, formatGameDateTime, formatGameTime, relativeGameDay, todayISO } from "~/utils/dates";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const teamId = parseInt(params.teamId);
-  
-  // Get team details
-  const [team] = await db
-    .select()
-    .from(teams)
-    .where(and(eq(teams.id, teamId), canAccessTeam(user.id)))
-    .limit(1);
-  
-  if (!team) {
-    throw new Response("Team not found", { status: 404 });
-  }
-  
-  // Get upcoming games (next 3)
+  const { team } = await requireTeamAccess(teamId, user.id);
+
+  // Next few games; the first one gets the spotlight
   const today = todayISO();
   const upcomingGames = await db
     .select({
@@ -34,220 +24,235 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       homeAway: games.homeAway,
     })
     .from(games)
-    .where(and(
-      eq(games.teamId, teamId),
-      gte(games.gameDate, today)
-    ))
-    .orderBy(games.gameDate)
-    .limit(3);
-  
-  // Get recent players (for quick roster preview)
-  const recentPlayers = await db
+    .where(and(eq(games.teamId, teamId), gte(games.gameDate, today)))
+    .orderBy(games.gameDate, games.gameTime)
+    .limit(5);
+
+  // Which quarters of the next game already have players on the field
+  const nextGame = upcomingGames[0];
+  let plannedQuarters: number[] = [];
+  if (nextGame) {
+    const rows = await db
+      .selectDistinct({ quarter: assignments.quarter })
+      .from(assignments)
+      .where(and(eq(assignments.gameId, nextGame.id), eq(assignments.isSittingOut, false)));
+    plannedQuarters = rows.map((r) => r.quarter).filter((q): q is number => q !== null);
+  }
+
+  const roster = await db
     .select({
       id: players.id,
       name: players.name,
+      jerseyNumber: players.jerseyNumber,
       profilePicture: players.profilePicture,
     })
     .from(players)
     .where(eq(players.teamId, teamId))
-    .limit(8);
-  
+    .orderBy(players.name);
+
+  const [gameCount] = await db
+    .select({ count: count() })
+    .from(games)
+    .where(eq(games.teamId, teamId));
+
   return data({
     team,
+    today,
     upcomingGames,
-    recentPlayers,
+    plannedQuarters,
+    roster,
+    totalGames: gameCount?.count || 0,
   });
 }
 
-export function meta({ params }: Route.MetaArgs) {
+export function meta({ data }: Route.MetaArgs) {
   return [
-    { title: "Team Dashboard - AYSO Game Day" },
+    { title: `${data?.team.name ?? "Team"} - AYSO Game Day` },
     { name: "description", content: "Team management dashboard" },
   ];
 }
 
-export default function TeamDashboard({ loaderData }: Route.ComponentProps) {
-  const { team, upcomingGames, recentPlayers } = loaderData;
+export default function TeamOverview({ loaderData }: Route.ComponentProps) {
+  const { team, today, upcomingGames, plannedQuarters, roster, totalGames } = loaderData;
+  const base = `/dashboard/team/${team.id}`;
+  const [nextGame, ...laterGames] = upcomingGames;
 
   return (
-    <div className="py-4">
-      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
-        {/* Team header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold">{team.name}</h1>
-            <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--primary)] text-[var(--primary)] bg-[var(--bg)]">
-              {team.format}
-            </span>
-            {team.ageGroup && (
-              <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold border border-[var(--border)] bg-[var(--bg)] text-[var(--muted)]">
-                {team.ageGroup}
-              </span>
-            )}
-          </div>
-          <p className="text-[var(--muted)]">
-            Team dashboard for {team.season || 'current season'}
-          </p>
-        </div>
-
-        {/* Team actions - moved to top */}
-        <div className="mb-8 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold mb-4">Team Actions</h2>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-            <Link
-              to={`/dashboard/team/${team.id}/games/new`}
-              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
-            >
-              <div className="text-xl">➕</div>
-              <div>
-                <div className="font-medium text-sm">Schedule Game</div>
-                <div className="text-xs text-[var(--muted)]">Add a new game to the schedule</div>
+    <div className="py-6">
+      <div className="container mx-auto px-4 sm:px-6 max-w-[1600px] space-y-6">
+        {/* Next game */}
+        {nextGame ? (
+          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm overflow-hidden">
+            <div className="p-5 sm:p-6">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-semibold uppercase tracking-wide text-[var(--primary)]">Next game</span>
+                <span className="text-[var(--muted)]">•</span>
+                <span className="font-medium">{relativeGameDay(nextGame.gameDate, today)}</span>
               </div>
-            </Link>
-
-            <Link
-              to={`/dashboard/team/${team.id}/roster`}
-              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
-            >
-              <div className="text-xl">👥</div>
-              <div>
-                <div className="font-medium text-sm">Manage Roster</div>
-                <div className="text-xs text-[var(--muted)]">Add and edit players</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-bold">vs {nextGame.opponent}</h1>
+                {nextGame.homeAway && (
+                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold capitalize ${
+                    nextGame.homeAway === 'home'
+                      ? 'border border-green-200 bg-green-50 text-green-700'
+                      : 'border border-blue-200 bg-blue-50 text-blue-700'
+                  }`}>
+                    {nextGame.homeAway}
+                  </span>
+                )}
               </div>
-            </Link>
-
-            <Link
-              to={`/dashboard/team/${team.id}/contacts`}
-              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
-            >
-              <div className="text-xl">📧</div>
-              <div>
-                <div className="font-medium text-sm">Manage Contacts</div>
-                <div className="text-xs text-[var(--muted)]">Player family contact info</div>
+              <div className="mt-1 text-[var(--muted)]">
+                {formatGameDateTime(nextGame.gameDate, nextGame.gameTime)}
+                {nextGame.field && ` • Field ${nextGame.field}`}
               </div>
-            </Link>
 
-            <Link
-              to={`/dashboard/team/${team.id}/rotations`}
-              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
-            >
-              <div className="text-xl">🔄</div>
-              <div>
-                <div className="font-medium text-sm">Plan Rotations</div>
-                <div className="text-xs text-[var(--muted)]">Create fair play rotations</div>
+              {/* Lineup progress */}
+              <div className="mt-4 flex items-center gap-3">
+                <div className="flex gap-1" aria-hidden>
+                  {[1, 2, 3, 4].map((q) => (
+                    <span
+                      key={q}
+                      className={`h-2 w-8 rounded-full ${plannedQuarters.includes(q) ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm text-[var(--muted)]">
+                  {plannedQuarters.length === 4
+                    ? 'Lineup planned for all 4 quarters'
+                    : plannedQuarters.length === 0
+                      ? 'Lineup not started'
+                      : `Lineup planned for ${plannedQuarters.length} of 4 quarters`}
+                </span>
               </div>
-            </Link>
 
-            <Link
-              to={`/dashboard/team/${team.id}/settings`}
-              className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--bg)] transition group"
-            >
-              <div className="text-xl">⚙️</div>
-              <div>
-                <div className="font-medium text-sm">Team Settings</div>
-                <div className="text-xs text-[var(--muted)]">Team details and coaches</div>
-              </div>
-            </Link>
-          </div>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Upcoming games */}
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Upcoming Games</h2>
-              <Link
-                to={`/dashboard/team/${team.id}/games`}
-                className="text-[var(--primary)] hover:underline text-sm font-medium"
-              >
-                View All
-              </Link>
-            </div>
-            {upcomingGames.length > 0 ? (
-              <div className="space-y-3">
-                {upcomingGames.map((game: any) => (
-                  <div key={game.id} className="p-3 border border-[var(--border)] rounded">
-                    <div className="font-medium">vs {game.opponent}</div>
-                    <div className="text-sm text-[var(--muted)]">
-                      {formatGameDateTime(game.gameDate, game.gameTime)}
-                    </div>
-                    {game.field && <div className="text-sm text-[var(--muted)]">Field: {game.field}</div>}
-                    <div className="mt-2">
-                      <Link
-                        to={`/dashboard/team/${team.id}/games/${game.id}/lineup`}
-                        className="text-[var(--primary)] hover:underline text-sm font-medium"
-                      >
-                        Plan Lineup
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <p className="text-[var(--muted)] mb-4">No upcoming games scheduled.</p>
+              <div className="mt-5 flex flex-wrap gap-2">
                 <Link
-                  to={`/dashboard/team/${team.id}/games/new`}
-                  className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
+                  to={`${base}/games/${nextGame.id}/lineup`}
+                  className="inline-flex items-center justify-center px-5 py-2.5 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
                 >
-                  Schedule Game
+                  {plannedQuarters.length === 0 ? 'Plan lineup' : 'Open lineup'}
+                </Link>
+                <a
+                  href={`${base}/games/${nextGame.id}/game-card`}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
+                >
+                  Game card
+                </a>
+                <Link
+                  to={`${base}/games/${nextGame.id}/edit`}
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded font-medium border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--bg)] transition"
+                >
+                  Edit game
                 </Link>
               </div>
-            )}
-          </div>
-
-          {/* Team roster preview */}
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Team Roster</h2>
-              <Link
-                to={`/dashboard/team/${team.id}/roster`}
-                className="text-[var(--primary)] hover:underline text-sm font-medium"
-              >
-                Manage Roster
-              </Link>
             </div>
-            {recentPlayers.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2">
-                {recentPlayers.map((player: any) => (
-                  <div key={player.id} className="flex items-center gap-2 p-2 border border-[var(--border)] rounded text-sm">
+          </section>
+        ) : (
+          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-8 text-center">
+            <h1 className="text-xl font-semibold">No upcoming games</h1>
+            <p className="mt-2 text-[var(--muted)]">
+              {totalGames > 0 ? 'Every scheduled game is in the past.' : 'Schedule a game to start planning lineups.'}
+            </p>
+            <Link
+              to={`${base}/games/new`}
+              className="mt-5 inline-flex items-center justify-center px-5 py-2.5 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
+            >
+              Schedule game
+            </Link>
+          </section>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Later games */}
+          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Coming up</h2>
+              <div className="flex items-center gap-4 text-sm font-medium">
+                <Link to={`${base}/games/new`} className="text-[var(--primary)] hover:underline">
+                  Schedule game
+                </Link>
+                {totalGames > 0 && (
+                  <Link to={`${base}/games`} className="text-[var(--primary)] hover:underline">
+                    All games
+                  </Link>
+                )}
+              </div>
+            </div>
+            {laterGames.length > 0 ? (
+              <ul className="divide-y divide-[var(--border)]">
+                {laterGames.map((game) => (
+                  <li key={game.id}>
+                    <Link
+                      to={`${base}/games/${game.id}/lineup`}
+                      className="flex items-center justify-between gap-4 py-3 group"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium truncate group-hover:text-[var(--primary)]">vs {game.opponent}</div>
+                        <div className="text-sm text-[var(--muted)]">
+                          {formatGameDate(game.gameDate)}
+                          {game.gameTime && ` • ${formatGameTime(game.gameTime)}`}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-sm text-[var(--muted)] group-hover:text-[var(--primary)]">
+                        Lineup →
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-[var(--muted)]">
+                {nextGame ? 'Nothing else on the schedule yet.' : 'No games scheduled.'}
+              </p>
+            )}
+          </section>
+
+          {/* Roster */}
+          <section className="bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">
+                Roster <span className="text-[var(--muted)] font-normal">({roster.length})</span>
+              </h2>
+              <div className="flex items-center gap-4 text-sm font-medium">
+                <Link to={`${base}/roster/new-player`} className="text-[var(--primary)] hover:underline">
+                  Add player
+                </Link>
+                {roster.length > 0 && (
+                  <Link to={`${base}/roster`} className="text-[var(--primary)] hover:underline">
+                    Manage
+                  </Link>
+                )}
+              </div>
+            </div>
+            {roster.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {roster.map((player) => (
+                  <Link
+                    key={player.id}
+                    to={`${base}/roster/player/${player.id}/edit`}
+                    className="flex items-center gap-2 p-2 rounded text-sm hover:bg-[var(--bg)] transition"
+                  >
                     {getImageUrl(player.profilePicture) ? (
                       <img
                         src={getImageUrl(player.profilePicture)!}
-                        alt={player.name}
-                        className="w-6 h-6 rounded-full object-cover border border-[var(--border)]"
+                        alt=""
+                        className="w-7 h-7 rounded-full object-cover border border-[var(--border)]"
                       />
                     ) : (
-                      <div className="w-6 h-6 rounded-full bg-[var(--bg)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
-                        {player.name.charAt(0).toUpperCase()}
+                      <div className="w-7 h-7 rounded-full bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold text-[var(--muted)]">
+                        {player.jerseyNumber ?? player.name.charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <span className="flex-1">{player.name}</span>
-                  </div>
+                    <span className="truncate">{player.name}</span>
+                  </Link>
                 ))}
-                {recentPlayers.length === 8 && (
-                  <div className="col-span-2 text-center pt-2">
-                    <Link
-                      to={`/dashboard/team/${team.id}/roster`}
-                      className="text-[var(--primary)] hover:underline text-sm"
-                    >
-                      View all players →
-                    </Link>
-                  </div>
-                )}
               </div>
             ) : (
-              <div className="text-center py-6">
-                <p className="text-[var(--muted)] mb-4">No players added yet.</p>
-                <Link
-                  to={`/dashboard/team/${team.id}/roster/new-player`}
-                  className="inline-flex items-center justify-center px-4 py-2 rounded font-medium border border-transparent bg-[var(--primary)] text-white hover:bg-[var(--primary-600)] shadow-sm transition"
-                >
-                  Add Players
-                </Link>
-              </div>
+              <p className="text-sm text-[var(--muted)]">No players yet. Add them one at a time or import a roster.</p>
             )}
-          </div>
+          </section>
         </div>
       </div>
     </div>

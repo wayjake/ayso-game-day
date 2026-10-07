@@ -65,7 +65,7 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold">{team.name} Games</h1>
+            <h1 className="text-3xl font-bold">Games</h1>
             <p className="mt-2 text-[var(--muted)]">
               Manage your {team.format} team's game schedule
             </p>
