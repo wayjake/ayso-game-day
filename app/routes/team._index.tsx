@@ -13,6 +13,7 @@ import {
   Clock,
   MapPin,
   PencilSimple,
+  Play,
   Plus,
   Printer,
   SoccerBall,
@@ -89,6 +90,7 @@ export default function TeamOverview({ loaderData }: Route.ComponentProps) {
   const base = `/dashboard/team/${team.id}`;
   const [nextGame, ...laterGames] = upcomingGames;
   const plannedCount = plannedQuarters.length;
+  const isGameDay = nextGame ? relativeGameDay(nextGame.gameDate, today) === "Today" : false;
 
   return (
     <Page className="space-y-6">
@@ -149,15 +151,31 @@ export default function TeamOverview({ loaderData }: Route.ComponentProps) {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
-              <Link to={`${base}/games/${nextGame.id}/lineup`} className={buttonClass({ size: "lg" })}>
+              {/* On the day, the sideline view leads; before that, planning does */}
+              {isGameDay && plannedCount > 0 && (
+                <Link to={`${base}/games/${nextGame.id}/game-day`} className={buttonClass({ size: "lg" })}>
+                  <Play size={20} weight="fill" />
+                  Game day
+                </Link>
+              )}
+              <Link
+                to={`${base}/games/${nextGame.id}/lineup`}
+                className={buttonClass({ variant: isGameDay && plannedCount > 0 ? "secondary" : "primary", size: "lg" })}
+              >
                 <SoccerBall size={20} weight="bold" />
                 {plannedCount === 0 ? "Plan lineup" : "Open lineup"}
               </Link>
+              {!isGameDay && plannedCount > 0 && (
+                <Link to={`${base}/games/${nextGame.id}/game-day`} className={buttonClass({ variant: "secondary", size: "lg" })}>
+                  <Play size={20} weight="fill" className="text-primary" />
+                  Game day
+                </Link>
+              )}
               <a
                 href={`${base}/games/${nextGame.id}/game-card`}
                 target="_blank"
                 rel="noopener"
-                className={buttonClass({ variant: "secondary", size: "lg" })}
+                className={buttonClass({ variant: "ghost", size: "lg" })}
               >
                 <Printer size={20} />
                 Game card

@@ -7,7 +7,17 @@ import { eq, and } from "drizzle-orm";
 import { formatGameDate, formatGameTime, relativeGameDay, todayISO } from "~/utils/dates";
 import { gameNotesText } from "~/utils/game-notes";
 import { Badge, Card, CardHeader, DateTile, EmptyState, HomeAwayBadge, Page, PageHeader, buttonClass } from "~/components/ui";
-import { CalendarPlus, Clock, MapPin, Note, PencilSimple, Plus, Printer, SoccerBall } from "@phosphor-icons/react";
+import {
+  CalendarPlus,
+  Clock,
+  MapPin,
+  Note,
+  PencilSimple,
+  Play,
+  Plus,
+  Printer,
+  SoccerBall,
+} from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -172,7 +182,16 @@ function UpcomingGameRow({ game, base, today }: { game: GameRow; base: string; t
 
       {/* Lineup is the main job; the rest are secondary. On phones they sit under the game, lineup full width. */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:pl-16 md:shrink-0 md:pl-0">
-        <Link to={`${base}/games/${game.id}/lineup`} className={buttonClass({ className: "col-span-2" })}>
+        {soon === "Today" && (
+          <Link to={`${base}/games/${game.id}/game-day`} className={buttonClass({ className: "col-span-2" })}>
+            <Play size={18} weight="fill" />
+            Game day
+          </Link>
+        )}
+        <Link
+          to={`${base}/games/${game.id}/lineup`}
+          className={buttonClass({ variant: soon === "Today" ? "secondary" : "primary", className: "col-span-2" })}
+        >
           <SoccerBall size={18} weight="bold" />
           Plan lineup
         </Link>

@@ -1,20 +1,17 @@
 import type { Route } from "./+types/team.games.game.lineup";
-import { data, useFetcher } from "react-router";
+import { data, Link, useFetcher } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
-import { getImageUrl } from "~/utils/image";
 import { getDefaultFormationIndex, getFormationsByFormat } from "~/utils/formations";
 import {
   calculatePositionChanges,
-  hasPositionChange,
-  hasPlayerChange,
   getPlayerChange,
-  getChangeIndicatorColor,
   getChangeDescription,
   type PositionChange
 } from "~/utils/position-changes";
+import { Pitch, QuarterBar, QuarterTabs } from "~/components/LineupField";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AIAssistantCoach } from "~/components/AIAssistantCoach";
 import { formatGameDateTime } from "~/utils/dates";
@@ -29,9 +26,11 @@ import {
   ChartBar,
   Chair,
   Copy,
+  DotsThree,
   Eye,
   FirstAidKit,
   Link as LinkIcon,
+  Play,
   Printer,
   Question,
   ShareNetwork,
@@ -996,6 +995,85 @@ function PositionSlot({
   );
 }
 
+// Less frequent lineup actions, tucked behind one button
+function LineupMenu({
+  gameCardHref,
+  onShare,
+  onSummary,
+  onClear,
+}: {
+  gameCardHref: string;
+  onShare: () => void;
+  onSummary: () => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  const item = "flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition";
+  const run = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={buttonClass({ variant: "secondary", size: "icon" })}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More lineup actions"
+        title="More"
+      >
+        <DotsThree size={22} weight="bold" />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-60 rounded-xl bg-surface p-1.5 shadow-overlay ring-1 ring-line">
+          <button role="menuitem" onClick={run(onShare)} className={cx(item, "text-ink hover:bg-surface-2")}>
+            <ShareNetwork size={18} className="text-muted" />
+            Share with parents
+          </button>
+          <a
+            role="menuitem"
+            href={gameCardHref}
+            target="_blank"
+            rel="noopener"
+            onClick={() => setOpen(false)}
+            className={cx(item, "text-ink hover:bg-surface-2")}
+          >
+            <Printer size={18} className="text-muted" />
+            Print game card
+          </a>
+          <button role="menuitem" onClick={run(onSummary)} className={cx(item, "text-ink hover:bg-surface-2")}>
+            <ChartBar size={18} className="text-muted" />
+            Fair play summary
+          </button>
+          <div className="mx-2 my-1.5 border-t border-line" />
+          <button role="menuitem" onClick={run(onClear)} className={cx(item, "text-danger hover:bg-danger-soft")}>
+            <Trash size={18} />
+            Clear lineup
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const { team, game, players, positions, assignments, quarterFormations: savedQuarterFormations, absentInjuredPlayers, activeShareLink } = loaderData;
   const fetcher = useFetcher();
@@ -1012,7 +1090,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [showChangeIndicators, setShowChangeIndicators] = useState(true);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showAbsentInjuredModal, setShowAbsentInjuredModal] = useState(false);
-  const [absentInjuredModalData, setAbsentInjuredModalData] = useState<{player: any, reason: 'absent' | 'injured'} | null>(null);
+  const [absentInjuredModalData, setAbsentInjuredModalData] = useState<{ player: any } | null>(null);
+  const [unavailableReason, setUnavailableReason] = useState<'absent' | 'injured'>('absent');
   const instructionsRef = useRef<HTMLDivElement>(null);
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -1299,24 +1378,22 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     );
   };
   
-  // Helper functions for absent/injured management
-  const handleMarkAbsentInjured = (player: any, reason: 'absent' | 'injured') => {
+  // Helper functions for absent/injured management.
+  // One button opens a sheet that asks why (absent/injured) and for how long.
+  const handleMarkUnavailable = (player: any) => {
     if (typeof currentQuarter !== 'number') return;
+    setUnavailableReason('absent');
+    setAbsentInjuredModalData({ player });
+    setShowAbsentInjuredModal(true);
+  };
 
-    // If marking in Q1, show modal to ask about all quarters
-    if (currentQuarter === 1) {
-      setAbsentInjuredModalData({ player, reason });
-      setShowAbsentInjuredModal(true);
-      return;
-    }
-
-    // For other quarters, proceed immediately
-    applyAbsentInjured(player, reason, currentQuarter);
+  const closeUnavailableSheet = () => {
+    setShowAbsentInjuredModal(false);
+    setAbsentInjuredModalData(null);
   };
 
   // Apply absent/injured status to specific quarter(s)
-  const applyAbsentInjured = (player: any, reason: 'absent' | 'injured', quarter: number, applyToAllQuarters: boolean = false) => {
-    const quartersToApply = applyToAllQuarters ? [1, 2, 3, 4] : [quarter];
+  const applyAbsentInjured = (player: any, reason: 'absent' | 'injured', quartersToApply: number[]) => {
 
     // Optimistic update - update local state immediately
     const newAbsentInjured = new Map(absentInjured);
@@ -1621,13 +1698,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   <button
                     ref={instructionsButtonRef}
                     onClick={() => setShowInstructions(!showInstructions)}
-                    onMouseEnter={() => setShowInstructions(true)}
-                    onMouseLeave={(e) => {
-                      // Only close if not hovering over the tooltip
-                      if (!instructionsRef.current?.contains(e.relatedTarget as Node)) {
-                        setShowInstructions(false);
-                      }
-                    }}
+                    aria-expanded={showInstructions}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full text-subtle transition hover:bg-surface-2 hover:text-ink"
                     aria-label="How to plan your lineup"
                   >
@@ -1639,8 +1710,6 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     <div
                       ref={instructionsRef}
                       className="absolute top-full left-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl bg-surface p-4 shadow-overlay ring-1 ring-line"
-                      onMouseEnter={() => setShowInstructions(true)}
-                      onMouseLeave={() => setShowInstructions(false)}
                     >
                       <div className="mb-2 flex items-start justify-between gap-3">
                         <h3 className="text-sm font-semibold text-ink">How to plan your lineup</h3>
@@ -1659,6 +1728,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         <li>Each player should play at least 2 quarters (AYSO fair play)</li>
                         <li>No player should sit out more than 1 quarter</li>
                         <li>Changes save as you make them</li>
+                        <li>On the day, open <strong className="font-semibold text-ink">Game day</strong> for a sideline view of each quarter's changes</li>
                       </ul>
                     </div>
                   )}
@@ -1672,68 +1742,16 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Position Changes Toggle */}
-              {currentQuarter > 1 && (
-                <button
-                  onClick={() => setShowChangeIndicators(!showChangeIndicators)}
-                  className={
-                    showChangeIndicators
-                      ? "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-soft px-4 text-sm font-semibold whitespace-nowrap text-primary-ink ring-1 ring-primary/25 transition active:translate-y-px"
-                      : buttonClass({ variant: "secondary" })
-                  }
-                  aria-pressed={showChangeIndicators}
-                  title="Toggle position change indicators"
-                >
-                  <ArrowsLeftRight size={18} weight={showChangeIndicators ? "bold" : "regular"} />
-                  <span className="hidden lg:inline">Changes</span>
-                </button>
-              )}
-
-              {/* Share Button */}
-              <button
-                onClick={handleShare}
+            {/* Game day and the assistant up front; everything else in the menu */}
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/dashboard/team/${team.id}/games/${game.id}/game-day`}
                 className={buttonClass({ variant: "secondary" })}
-                title="Share lineup"
+                title="Sideline view for during the game"
               >
-                <ShareNetwork size={18} />
-                <span className="hidden sm:inline">Share</span>
-              </button>
-
-              {/* Game Card Button: official AYSO lineup card PDF */}
-              <a
-                href={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
-                target="_blank"
-                rel="noopener"
-                className={buttonClass({ variant: "secondary" })}
-                title="Print the official AYSO lineup card"
-              >
-                <Printer size={18} />
-                <span className="hidden sm:inline">Game card</span>
-              </a>
-
-              {/* Summary Button */}
-              <button
-                onClick={() => setShowOverview(true)}
-                className={buttonClass({ variant: "secondary" })}
-                title="View fair play summary"
-              >
-                <ChartBar size={18} />
-                <span className="hidden sm:inline">Summary</span>
-              </button>
-
-              {/* Clear Lineup Button */}
-              <button
-                onClick={handleClearLineup}
-                className={buttonClass({ variant: "danger-soft" })}
-                title="Clear all assignments"
-              >
-                <Trash size={18} />
-                <span className="hidden sm:inline">Clear</span>
-              </button>
-
-              {/* AI Assistant Coach Button */}
+                <Play size={18} weight="fill" className="text-primary" />
+                Game day
+              </Link>
               <button
                 onClick={() => setShowAIAssistant(true)}
                 className={buttonClass()}
@@ -1742,31 +1760,18 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <Sparkle size={18} weight="fill" />
                 <span className="hidden sm:inline">AI assistant</span>
               </button>
+              <LineupMenu
+                gameCardHref={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
+                onShare={handleShare}
+                onSummary={() => setShowOverview(true)}
+                onClear={handleClearLineup}
+              />
             </div>
           </div>
         </header>
         
-        {/* Quarter Tabs - Desktop Only */}
-        <nav className="mb-6 hidden gap-1 border-b border-line sm:flex" aria-label="Quarter">
-          {[1, 2, 3, 4].map((quarter) => {
-            const isActive = currentQuarter === quarter;
-            return (
-              <button
-                key={quarter}
-                onClick={() => setCurrentQuarter(quarter)}
-                aria-current={isActive ? "page" : undefined}
-                className={`-mb-px whitespace-nowrap border-b-2 px-3 pt-2 pb-3 text-sm font-semibold transition ${
-                  isActive
-                    ? "border-primary text-ink"
-                    : "border-transparent text-muted hover:border-line-strong hover:text-ink"
-                }`}
-              >
-                Quarter {quarter}
-              </button>
-            );
-          })}
-        </nav>
-        
+        <QuarterTabs current={currentQuarter} onChange={setCurrentQuarter} className="mb-6" />
+
         {/* Main lineup content */}
           <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:gap-8">
             {/* Available Players and Substitutes */}
@@ -1820,28 +1825,20 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                             {quartersSittingOut}/4
                           </span>
                           <button
-                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
-                            title="Mark as absent"
-                            aria-label={`Mark ${player.name} as absent`}
+                            onClick={() => handleMarkUnavailable(player)}
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Can't play: absent or injured"
+                            aria-label={`Mark ${player.name} absent or injured`}
                           >
-                            <UserMinus size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
-                            title="Mark as injured"
-                            aria-label={`Mark ${player.name} as injured`}
-                          >
-                            <FirstAidKit size={18} />
+                            <UserMinus size={20} />
                           </button>
                           <button
                             onClick={() => handleSitOut(player)}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning transition hover:brightness-95"
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning transition hover:brightness-95"
                             title="Move to substitutes"
                             aria-label={`Move ${player.name} to substitutes`}
                           >
-                            <ArrowDown size={18} weight="bold" />
+                            <ArrowDown size={20} weight="bold" />
                           </button>
                         </div>
                       );
@@ -1908,28 +1905,20 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                             {quartersSittingOut}/4
                           </span>
                           <button
-                            onClick={() => handleMarkAbsentInjured(player, 'absent')}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
-                            title="Mark as absent"
-                            aria-label={`Mark ${player.name} as absent`}
+                            onClick={() => handleMarkUnavailable(player)}
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
+                            title="Can't play: absent or injured"
+                            aria-label={`Mark ${player.name} absent or injured`}
                           >
-                            <UserMinus size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleMarkAbsentInjured(player, 'injured')}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger"
-                            title="Mark as injured"
-                            aria-label={`Mark ${player.name} as injured`}
-                          >
-                            <FirstAidKit size={18} />
+                            <UserMinus size={20} />
                           </button>
                           <button
                             onClick={() => handleUnsitPlayer(player.id)}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface text-muted ring-1 ring-line transition hover:bg-surface-2 hover:text-ink"
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface text-muted ring-1 ring-line transition hover:bg-surface-2 hover:text-ink"
                             title="Move back to available"
                             aria-label={`Move ${player.name} back to available`}
                           >
-                            <ArrowUp size={18} weight="bold" />
+                            <ArrowUp size={20} weight="bold" />
                           </button>
                         </div>
                       );
@@ -1966,7 +1955,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         </div>
                         <Button
                           variant="secondary"
-                          size="sm"
+                          className="h-11"
                           onClick={() => handleClearAbsentInjured(player.id)}
                         >
                           Return to subs
@@ -1986,6 +1975,23 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               <h2 className="text-base font-semibold">
                 Formation <span className="font-normal text-subtle sm:hidden">· Q{currentQuarter}</span>
               </h2>
+              <div className="flex items-center gap-2">
+              {currentQuarter > 1 && (
+                <button
+                  onClick={() => setShowChangeIndicators(!showChangeIndicators)}
+                  className={cx(
+                    "inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition",
+                    showChangeIndicators
+                      ? "bg-warning-soft text-warning ring-1 ring-warning/30"
+                      : "bg-surface text-muted shadow-card ring-1 ring-line/70 hover:text-ink"
+                  )}
+                  aria-pressed={showChangeIndicators}
+                  title="Show what changed since last quarter"
+                >
+                  <ArrowsLeftRight size={18} weight={showChangeIndicators ? "bold" : "regular"} />
+                  <span className="hidden sm:inline">Changes</span>
+                </button>
+              )}
               <div className="flex items-center gap-1 rounded-xl bg-surface p-1 shadow-card ring-1 ring-line/70">
                 <button
                   onClick={handlePrevFormation}
@@ -2004,6 +2010,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 >
                   <CaretRight size={18} weight="bold" />
                 </button>
+              </div>
               </div>
             </div>
 
@@ -2030,30 +2037,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
               </div>
             )}
 
-            <div className="relative h-[28rem] w-full rounded-2xl bg-pitch shadow-card sm:h-[32rem]">
-              {/* Mowing stripes (clipped separately so position menus can overflow the field) */}
-              <div className="pointer-events-none absolute inset-0 flex flex-col overflow-hidden rounded-2xl" aria-hidden>
-                {Array.from({ length: 10 }, (_, i) => (
-                  <div key={i} className={`flex-1 ${i % 2 ? 'bg-pitch-dark' : 'bg-pitch'}`} />
-                ))}
-              </div>
-
-              {/* Field markings */}
-              <div className="pointer-events-none absolute inset-3 rounded-md border-2 border-white/60">
-                {/* Center line */}
-                <div className="absolute top-1/2 left-0 right-0 border-t-2 border-white/60"></div>
-                {/* Center circle */}
-                <div className="absolute top-1/2 left-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/60 sm:h-16 sm:w-16"></div>
-                {/* Top penalty area */}
-                <div className="absolute top-0 left-1/3 h-8 w-1/3 border-x-2 border-b-2 border-white/60 sm:h-12"></div>
-                {/* Top goal area */}
-                <div className="absolute top-0 left-[40%] h-4 w-1/5 border-x-2 border-b-2 border-white/60 sm:h-6"></div>
-                {/* Bottom penalty area */}
-                <div className="absolute bottom-0 left-1/3 h-8 w-1/3 border-x-2 border-t-2 border-white/60 sm:h-12"></div>
-                {/* Bottom goal area */}
-                <div className="absolute bottom-0 left-[40%] h-4 w-1/5 border-x-2 border-t-2 border-white/60 sm:h-6"></div>
-              </div>
-              
+            <Pitch className="h-[28rem] sm:h-[32rem]">
               {/* Position slots */}
               {formationPositions.map((position: any) => {
                 const positionChangesForThisPosition = positionChanges.filter(change =>
@@ -2088,41 +2072,13 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   />
                 );
               })}
-            </div>
+            </Pitch>
           </div>
           </div>
       
-      {/* Mobile quarter bar, fixed to the bottom above the iPhone home indicator */}
-      <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-8px_rgb(16_27_45/0.15)] sm:hidden"
-        aria-label="Quarter"
-      >
-        <div className="grid grid-cols-4">
-          {[1, 2, 3, 4].map((quarter) => {
-            const isActive = currentQuarter === quarter;
-            return (
-              <button
-                key={quarter}
-                onClick={() => setCurrentQuarter(quarter)}
-                aria-current={isActive ? "page" : undefined}
-                className={`relative flex h-16 flex-col items-center justify-center transition ${
-                  isActive ? 'text-primary' : 'text-muted active:bg-surface-2'
-                }`}
-              >
-                {isActive && <span className="absolute inset-x-5 top-0 h-[3px] rounded-b-full bg-primary" aria-hidden />}
-                <span className="font-display text-xl font-bold leading-none tabular">Q{quarter}</span>
-                <span className={`mt-1 text-[10px] font-semibold uppercase tracking-wider ${isActive ? 'text-primary' : 'text-subtle'}`}>
-                  Quarter
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-      
-      {/* Mobile padding bottom to account for fixed navigation with iPhone safe area */}
-      <div className="sm:hidden h-24"></div>
-      
+      {/* Phone quarter bar, fixed to the bottom above the iPhone home indicator */}
+      <QuarterBar current={currentQuarter} onChange={setCurrentQuarter} />
+
       {/* Overview Modal Overlay */}
       {showOverview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
@@ -2314,65 +2270,76 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
         </div>
       )}
 
-      {/* Absent/Injured Confirmation Modal */}
+      {/* Can't play sheet: why, and for which quarters */}
       {showAbsentInjuredModal && absentInjuredModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-2xl bg-surface p-5 shadow-overlay sm:p-6">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+          onClick={closeUnavailableSheet}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unavailable-title"
+            className="w-full max-w-md rounded-t-2xl bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-overlay sm:rounded-2xl sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-4 flex items-start justify-between gap-4">
-              <h2 className="font-display text-2xl font-bold tracking-tight">
-                Mark as {absentInjuredModalData.reason === 'absent' ? 'absent' : 'injured'}
+              <h2 id="unavailable-title" className="font-display text-2xl font-bold tracking-tight">
+                {absentInjuredModalData.player.name} can't play
               </h2>
               <button
-                onClick={() => {
-                  setShowAbsentInjuredModal(false);
-                  setAbsentInjuredModalData(null);
-                }}
-                className="-mt-1 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
+                onClick={closeUnavailableSheet}
+                className="-mt-1 -mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
                 aria-label="Close"
               >
                 <X size={20} weight="bold" />
               </button>
             </div>
 
-            <div className="space-y-2 text-sm">
-              <p className="text-ink">
-                You're marking <span className="font-semibold">{absentInjuredModalData.player.name}</span> as {absentInjuredModalData.reason} in quarter 1.
-              </p>
-              <p className="text-muted">
-                Apply this to all 4 quarters?
-              </p>
+            {/* Reason */}
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1" role="radiogroup" aria-label="Reason">
+              {(['absent', 'injured'] as const).map((reason) => (
+                <button
+                  key={reason}
+                  role="radio"
+                  aria-checked={unavailableReason === reason}
+                  onClick={() => setUnavailableReason(reason)}
+                  className={cx(
+                    "inline-flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition",
+                    unavailableReason === reason ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"
+                  )}
+                >
+                  {reason === 'absent' ? <UserMinus size={18} /> : <FirstAidKit size={18} />}
+                  {reason === 'absent' ? 'Absent' : 'Injured'}
+                </button>
+              ))}
             </div>
 
-            <div className="mt-6 flex flex-col gap-2">
+            {/* How long */}
+            <div className="mt-5 flex flex-col gap-2">
+              {currentQuarter < 4 && (
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    const rest = [1, 2, 3, 4].filter((q) => q >= currentQuarter);
+                    applyAbsentInjured(absentInjuredModalData.player, unavailableReason, rest);
+                    closeUnavailableSheet();
+                  }}
+                >
+                  {currentQuarter === 1 ? 'Whole game' : `Q${currentQuarter} to the end`}
+                </Button>
+              )}
               <Button
                 size="lg"
+                variant={currentQuarter < 4 ? "secondary" : "primary"}
                 onClick={() => {
-                  applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, true);
-                  setShowAbsentInjuredModal(false);
-                  setAbsentInjuredModalData(null);
+                  applyAbsentInjured(absentInjuredModalData.player, unavailableReason, [currentQuarter]);
+                  closeUnavailableSheet();
                 }}
               >
-                Yes, all 4 quarters
+                Just Q{currentQuarter}
               </Button>
-              <Button
-                size="lg"
-                variant="secondary"
-                onClick={() => {
-                  applyAbsentInjured(absentInjuredModalData.player, absentInjuredModalData.reason, 1, false);
-                  setShowAbsentInjuredModal(false);
-                  setAbsentInjuredModalData(null);
-                }}
-              >
-                No, just quarter 1
-              </Button>
-              <Button
-                size="lg"
-                variant="ghost"
-                onClick={() => {
-                  setShowAbsentInjuredModal(false);
-                  setAbsentInjuredModalData(null);
-                }}
-              >
+              <Button size="lg" variant="ghost" onClick={closeUnavailableSheet}>
                 Cancel
               </Button>
             </div>

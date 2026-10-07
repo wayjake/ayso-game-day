@@ -11,6 +11,8 @@ export default [
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("invite/:code", "routes/invite.tsx"),
+  // Sideline view: full screen, outside the dashboard chrome
+  route("dashboard/team/:teamId/games/:gameId/game-day", "routes/game-day.tsx"),
   route("user", "routes/user.tsx", [
     route("signup", "routes/user.signup.tsx"),
     route("login", "routes/user.login.tsx"),
