@@ -64,6 +64,13 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+/* viewport-fit=cover lets the lineup's bottom bar reach the home indicator;
+   keep everything else clear of the notch in landscape */
+body {
+	padding-left: env(safe-area-inset-left);
+	padding-right: env(safe-area-inset-right);
+}
+
 h1,
 h2,
 h3 {
