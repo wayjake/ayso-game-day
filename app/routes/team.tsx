@@ -54,7 +54,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
 
-          <nav className="-mb-px mt-2 flex gap-1 overflow-x-auto" aria-label="Team">
+          {/* Equal columns with the icon over the label on phones, so all four always fit */}
+          <nav className="-mb-px mt-2 grid grid-cols-4 sm:flex sm:gap-1" aria-label="Team">
             {tabs.map(({ label, to, end, icon: Icon }) => (
               <NavLink
                 key={label}
@@ -62,7 +63,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 end={end}
                 prefetch="intent"
                 className={({ isActive }) =>
-                  `flex items-center gap-2 whitespace-nowrap border-b-2 px-3 pt-2 pb-3 text-sm font-semibold transition ${
+                  `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-1 pt-2 pb-2.5 text-xs font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
                     isActive
                       ? "border-primary text-ink"
                       : "border-transparent text-muted hover:border-line-strong hover:text-ink"

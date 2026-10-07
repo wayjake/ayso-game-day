@@ -72,17 +72,20 @@ export function calculatePositionChanges(
     if (prevPlayer && !processedPlayers.has(prevPlayer.playerId)) {
       const playerNewPosition = findPlayerPosition(prevPlayer.playerId, currentQuarter);
 
-      if (playerNewPosition === null && currentSittingOut.has(prevPlayer.playerId)) {
-        // Player went to bench
-        changes.push({
-          playerId: prevPlayer.playerId,
-          playerName: prevPlayer.name,
-          changeType: 'sitting_out',
-          fromPosition: position,
-        });
+      if (playerNewPosition === null) {
+        if (currentSittingOut.has(prevPlayer.playerId)) {
+          // Player went to bench
+          changes.push({
+            playerId: prevPlayer.playerId,
+            playerName: prevPlayer.name,
+            changeType: 'sitting_out',
+            fromPosition: position,
+          });
+        }
+        processedPlayers.add(prevPlayer.playerId);
       }
-
-      processedPlayers.add(prevPlayer.playerId);
+      // A player who moved elsewhere is recorded when the loop reaches their
+      // new position. Marking them processed here dropped one side of swaps.
     }
   }
 
