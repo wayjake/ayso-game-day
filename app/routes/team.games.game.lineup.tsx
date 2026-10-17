@@ -4,14 +4,14 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, games, players, assignments, positions, sitOuts, shareLinks } from "~/db";
 import { eq, and, or, sql } from "drizzle-orm";
-import { getDefaultFormationIndex, getFormationsByFormat } from "~/utils/formations";
+import { getDefaultFormationIndex, getFormationsByFormat, type FormationSet } from "~/utils/formations";
 import {
   calculatePositionChanges,
   getPlayerChange,
   getChangeDescription,
   type PositionChange
 } from "~/utils/position-changes";
-import { Pitch, QuarterBar, QuarterTabs } from "~/components/LineupField";
+import { FormationThumbnail, Pitch, QuarterBar, QuarterTabs } from "~/components/LineupField";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AIAssistantCoach } from "~/components/AIAssistantCoach";
 import { formatGameDateTime } from "~/utils/dates";
@@ -21,8 +21,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowsLeftRight,
-  CaretLeft,
-  CaretRight,
+  CaretDown,
   ChartBar,
   Chair,
   Copy,
@@ -995,6 +994,81 @@ function PositionSlot({
   );
 }
 
+// Formation dropdown that shows each formation's shape before you pick it
+function FormationPicker({
+  formations,
+  currentKey,
+  onSelect,
+}: {
+  formations: FormationSet;
+  currentKey: string;
+  onSelect: (index: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="inline-flex h-11 items-center gap-2 rounded-xl bg-surface pr-3 pl-4 shadow-card ring-1 ring-line/70 transition hover:ring-line-strong"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Formation ${currentKey}, choose another`}
+      >
+        <span className="font-display text-lg font-bold tabular">{currentKey}</span>
+        <CaretDown size={16} weight="bold" className={cx("text-muted transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Formation"
+          className="absolute right-0 top-full z-40 mt-2 grid max-h-[70vh] w-[22rem] max-w-[calc(100vw-2rem)] grid-cols-3 gap-1.5 overflow-y-auto rounded-xl bg-surface p-1.5 shadow-overlay ring-1 ring-line"
+        >
+          {Object.entries(formations).map(([key, formation], index) => {
+            const selected = key === currentKey;
+            return (
+              <button
+                key={key}
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  setOpen(false);
+                  if (!selected) onSelect(index);
+                }}
+                className={cx(
+                  "flex flex-col gap-1.5 rounded-lg p-1.5 text-left transition",
+                  selected ? "bg-primary-soft ring-2 ring-primary" : "hover:bg-surface-2"
+                )}
+              >
+                <FormationThumbnail positions={formation.positions} />
+                <span className="px-0.5">
+                  <span className="block font-display text-sm font-bold tabular">{key}</span>
+                  <span className="block truncate text-xs text-muted">{formation.name.replace(key, '').trim()}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Less frequent lineup actions, tucked behind one button
 function LineupMenu({
   gameCardHref,
@@ -1118,32 +1192,9 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   const totalQuarters = 4; // Standard for AYSO games
   
-  const handlePrevFormation = () => {
+  const handleSelectFormation = (newIndex: number) => {
     if (typeof currentQuarter !== 'number') return;
-    
-    const newIndex = currentFormationIndex === 0 ? formationKeys.length - 1 : currentFormationIndex - 1;
-    
-    // Optimistic update - update local state immediately
-    const newQuarterFormations = new Map(quarterFormations);
-    newQuarterFormations.set(currentQuarter, newIndex);
-    setQuarterFormations(newQuarterFormations);
-    
-    // Make server request
-    fetcher.submit(
-      {
-        _action: "saveFormation",
-        quarter: currentQuarter.toString(),
-        formationIndex: newIndex.toString(),
-      },
-      { method: "post" }
-    );
-  };
-  
-  const handleNextFormation = () => {
-    if (typeof currentQuarter !== 'number') return;
-    
-    const newIndex = (currentFormationIndex + 1) % formationKeys.length;
-    
+
     // Optimistic update - update local state immediately
     const newQuarterFormations = new Map(quarterFormations);
     newQuarterFormations.set(currentQuarter, newIndex);
@@ -1995,25 +2046,11 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                   <span className="hidden sm:inline">Changes</span>
                 </button>
               )}
-              <div className="flex items-center gap-1 rounded-xl bg-surface p-1 shadow-card ring-1 ring-line/70">
-                <button
-                  onClick={handlePrevFormation}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
-                  aria-label="Previous formation"
-                >
-                  <CaretLeft size={18} weight="bold" />
-                </button>
-                <span className="min-w-16 px-1 text-center font-display text-lg font-bold tabular">
-                  {currentFormationKey}
-                </span>
-                <button
-                  onClick={handleNextFormation}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink"
-                  aria-label="Next formation"
-                >
-                  <CaretRight size={18} weight="bold" />
-                </button>
-              </div>
+              <FormationPicker
+                formations={formationOptions}
+                currentKey={currentFormationKey}
+                onSelect={handleSelectFormation}
+              />
               </div>
             </div>
 

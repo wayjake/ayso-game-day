@@ -115,6 +115,29 @@ export function FieldPlayer({
   );
 }
 
+// Small diagram of a formation's shape, for choosing between formations
+export function FormationThumbnail({ positions, className }: { positions: FormationPosition[]; className?: string }) {
+  return (
+    <div className={cx("relative aspect-[3/4] w-full overflow-hidden rounded-md bg-pitch", className)} aria-hidden>
+      <div className="absolute inset-1 rounded-sm border border-white/40">
+        <div className="absolute inset-x-0 top-1/2 border-t border-white/40" />
+        <div className="absolute top-0 left-1/4 h-[11%] w-1/2 border-x border-b border-white/40" />
+        <div className="absolute bottom-0 left-1/4 h-[11%] w-1/2 border-x border-t border-white/40" />
+      </div>
+      {positions.map((position) => (
+        <span
+          key={position.number}
+          className={cx(
+            "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full",
+            position.abbreviation === "GK" ? "bg-warning" : "bg-white"
+          )}
+          style={{ left: `${position.x}%`, top: `${position.y}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 // A whole read-only field for one quarter
 export function LineupField({
   positions,
