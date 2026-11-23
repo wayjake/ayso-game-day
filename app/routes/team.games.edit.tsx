@@ -6,6 +6,8 @@ import { db, games } from "~/db";
 import { eq, and, sql } from "drizzle-orm";
 import { GameFormFields, readGameForm } from "~/components/GameFormFields";
 import { gameNotesText, parseGameNotes, serializeGameNotes } from "~/utils/game-notes";
+import { notifyFamilies } from "~/utils/schedule.server";
+import { formatGameDateTime } from "~/utils/dates";
 import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 
 async function loadGame(request: Request, params: Route.LoaderArgs["params"]) {
@@ -50,6 +52,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     })
     .where(eq(games.id, game.id));
 
+  const moved =
+    game.gameDate !== parsed.values.gameDate ||
+    game.gameTime !== parsed.values.gameTime ||
+    game.field !== parsed.values.field;
+  if (moved && game.status !== "cancelled") {
+    await notifyFamilies(team.id, {
+      title: `Game changed: vs ${parsed.values.opponent}`,
+      body: `Now ${formatGameDateTime(parsed.values.gameDate, parsed.values.gameTime)}${parsed.values.field ? ` at ${parsed.values.field}` : ""}.`,
+      tag: `game-${game.id}`,
+    });
+  }
+
   return redirect(`/dashboard/team/${team.id}/games`);
 }
 
@@ -67,7 +81,7 @@ export default function EditGame({ loaderData, actionData }: Route.ComponentProp
 
   return (
     <Page width="narrow">
-      <PageHeader back={{ to: gamesUrl, label: "Games" }} title="Edit game" description={`vs ${game.opponent}`} />
+      <PageHeader back={{ to: gamesUrl, label: "Schedule" }} title="Edit game" description={`vs ${game.opponent}`} />
 
       {error && <Alert className="mb-6">{error}</Alert>}
 

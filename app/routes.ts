@@ -8,9 +8,18 @@ export default [
   route("api/uploadthing", "routes/api.uploadthing.ts"),
   route("api/ai-lineup", "api/ai-lineup/route.ts"),
   route("api/roster-import", "api/roster-import/route.ts"),
+  route("api/push", "routes/api.push.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("invite/:code", "routes/invite.tsx"),
+  route("join/:code", "routes/join.tsx"),
+  // Family app: parents' schedule, RSVPs and messages
+  route("family", "routes/family.tsx", [
+    index("routes/family._index.tsx"),
+    route("messages", "routes/family.messages.tsx"),
+    route("messages/:conversationId", "routes/family.messages.thread.tsx"),
+    route("settings", "routes/family.settings.tsx"),
+  ]),
   // Sideline view: full screen, outside the dashboard chrome
   route("dashboard/team/:teamId/games/:gameId/game-day", "routes/game-day.tsx"),
   route("user", "routes/user.tsx", [
@@ -19,6 +28,8 @@ export default [
     route("logout", "routes/user.logout.tsx"),
     route("forgot-password", "routes/user.forgot-password.tsx"),
     route("reset-password/:token", "routes/user.reset-password.tsx"),
+    route("magic-link", "routes/user.magic-link.tsx"),
+    route("magic-link/:token", "routes/user.magic-link.token.tsx"),
   ]),
   route("dashboard", "routes/dashboard.tsx", [
     route("", "routes/dashboard._index.tsx"),
@@ -39,6 +50,12 @@ export default [
       route("contacts/new", "routes/team.contacts.new.tsx"),
       route("contacts/:contactId/edit", "routes/team.contacts.edit.tsx"),
       route("settings", "routes/team.settings.tsx"),
+      route("families", "routes/team.families.tsx"),
+      route("practices/new", "routes/team.practices-new.tsx"),
+      route("practices/:practiceId/edit", "routes/team.practices.edit.tsx"),
+      route("rsvps/:eventType/:eventId", "routes/team.rsvps.tsx"),
+      route("messages", "routes/team.messages.tsx"),
+      route("messages/:conversationId", "routes/team.messages.thread.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

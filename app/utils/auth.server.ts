@@ -23,7 +23,7 @@ export async function createUser(
     region,
   }: {
     name?: string;
-    role?: 'coach' | 'admin' | 'assistant-coach';
+    role?: 'coach' | 'admin' | 'assistant-coach' | 'parent';
     // Leave the team fields out to create an account with no team (e.g. an invited coach)
     teamName?: string;
     gameFormat?: '7v7' | '9v9' | '11v11';

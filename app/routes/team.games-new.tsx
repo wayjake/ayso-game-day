@@ -6,6 +6,8 @@ import { db, teams, games } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { GameFormFields, readGameForm } from "~/components/GameFormFields";
 import { serializeGameNotes } from "~/utils/game-notes";
+import { notifyFamilies } from "~/utils/schedule.server";
+import { formatGameDateTime } from "~/utils/dates";
 import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 import { CalendarCheck, Lightbulb } from "@phosphor-icons/react";
 
@@ -57,6 +59,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       ...parsed.values,
       notes: serializeGameNotes({ text: parsed.notesText }),
     }).returning();
+
+    await notifyFamilies(teamId, {
+      title: `Game added: vs ${newGame.opponent}`,
+      body: `${formatGameDateTime(newGame.gameDate, newGame.gameTime)}${newGame.field ? ` at ${newGame.field}` : ""}. Tap to RSVP.`,
+      tag: `game-${newGame.id}`,
+    });
     
     // Redirect to lineup planning page for the new game
     return redirect(`/dashboard/team/${teamId}/games/${newGame.id}/lineup`);
@@ -84,7 +92,7 @@ export default function NewGame({ loaderData, actionData }: Route.ComponentProps
   return (
     <Page width="narrow">
       <PageHeader
-        back={{ to: gamesUrl, label: "Games" }}
+        back={{ to: gamesUrl, label: "Schedule" }}
         title="Schedule game"
         description={`Add a ${team.format} game. You'll plan the lineup next.`}
       />

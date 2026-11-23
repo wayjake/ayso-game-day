@@ -133,6 +133,17 @@ The application uses Drizzle ORM with 8 main tables:
    - Fields: id, userId, tokenHash, expiresAt, usedAt, createdAt
    - Emails go through Resend (`app/utils/email.server.ts`); without `RESEND_API_KEY`/`EMAIL_FROM` the link is logged and shown on the page in development only
 
+### Families (parent accounts, practices, RSVPs, messaging, push)
+11. **guardians** - Links a parent account to a player (userId, playerId, teamId). Being a parent comes only from these rows, never from `users.role` or `team_members`, so parents never get coach access. A coach can also be a parent.
+12. **parentInvites** - One invite per family email per team (`/join/:code`). Accepting links every player on the team whose contacts use that email, so siblings come together.
+13. **practices** - One row per practice; a weekly series is rows sharing `seriesId`.
+14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
+15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus `direct` threads between one parent and all of the team's coaches. Unread = message ids above `lastReadMessageId`.
+16. **pushSubscriptions** - Web Push endpoints, one per browser.
+17. **loginLinks** - Email sign-in links for families (`/user/magic-link`). Keyed by email, not user: any email on a player's contacts (or already linked to a player) can ask for one, and using it creates a parent account if needed and links every player whose contacts list that email. Hashed token, single use, 20 minutes. Opening the link shows a button and only the POST signs in, so mail scanners can't burn it. Needs Resend in production; there's no fallback.
+
+Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
+
 ## Authentication System
 
 ### Session Management (`app/sessions.server.ts`)
@@ -214,10 +225,18 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /user/logout - Logout
 /user/forgot-password - Request a reset link
 /user/reset-password/:token - Choose a new password (signs you in)
+/user/magic-link - Families: email me a sign-in link (no password)
+/user/magic-link/:token - Confirm and sign in (creates the parent account on first use)
 /api/uploadthing - File upload handler
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)
 /dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
+/join/:code - Parent invite: sign up or log in, linked to their kids
+/api/push - JSON: subscribe, unsubscribe, test push
+/family - Family app (parents): schedule with RSVPs
+  /family/messages - Team chat + private thread with the coaches
+  /family/messages/:conversationId - Thread
+  /family/settings - Notifications, linked players, name
 
 /dashboard - Protected dashboard layout
   /dashboard - Dashboard overview
@@ -233,6 +252,12 @@ export default function Component({ loaderData }: Route.ComponentProps) {
     /dashboard/team/:teamId/games/:gameId/lineup - Lineup planner ⭐
     /dashboard/team/:teamId/rotations - Rotation overview
     /dashboard/team/:teamId/player/remove - Remove player
+    /dashboard/team/:teamId/families - Invite parents, see who has joined
+    /dashboard/team/:teamId/practices/new - One practice or a weekly series
+    /dashboard/team/:teamId/practices/:practiceId/edit - Edit, cancel, delete (one or rest of series)
+    /dashboard/team/:teamId/rsvps/:eventType/:eventId - Who's coming; answer for a family; remind non-responders
+    /dashboard/team/:teamId/messages - Team chat and family threads
+    /dashboard/team/:teamId/messages/:conversationId - Thread
 ```
 
 ## Key Features & Implementation Patterns
@@ -414,6 +439,11 @@ TURSO_PROD_URL=your-prod-url         # Production database (Turso)
 TURSO_PROD_TOKEN=your-prod-token     # Production database auth
 OPENAI_API_KEY=your-key              # For AI assistant
 ANTHROPIC_API_KEY=your-key           # For advanced AI features
+VAPID_PUBLIC_KEY=...                 # Web Push. Generate with `npx web-push generate-vapid-keys`
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:you@example.com
+APP_URL=https://your-domain          # Origin used in invite links
+RESEND_API_KEY / EMAIL_FROM          # Without them, invites fall back to copyable links
 ```
 
 ## Testing & Quality Assurance
@@ -534,6 +564,9 @@ export async function action({ request }: Route.ActionArgs) {
 | Shared UI primitives | `/app/components/ui.tsx` (Page, PageHeader, Card, Badge, buttonClass, ...) |
 | Field + quarter tabs | `/app/components/LineupField.tsx` |
 | Per-quarter lineup plans | `/app/utils/lineup.ts` (read-only views) and `lineup.server.ts` |
+| Family app (parents) | `/app/routes/family*.tsx` |
+| Chat thread UI | `/app/components/MessageThread.tsx` |
+| Roster CSV import MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default) |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |
 | Global Styles | `/app/app.css` |

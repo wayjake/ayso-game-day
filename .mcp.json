@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ayso-roster-import": {
+      "command": "npx",
+      "args": ["tsx", "mcp/roster-import.ts", "--target=prod"]
+    }
+  }
+}

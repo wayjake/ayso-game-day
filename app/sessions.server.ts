@@ -3,7 +3,7 @@ import { createCookieSessionStorage } from "react-router";
 type SessionData = {
   userId: number;
   userEmail: string;
-  userRole: 'coach' | 'admin' | 'assistant-coach';
+  userRole: 'coach' | 'admin' | 'assistant-coach' | 'parent';
 };
 
 type SessionFlashData = {

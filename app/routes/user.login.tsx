@@ -2,7 +2,8 @@ import type { Route } from "./+types/user.login";
 import { Form, Link, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
 import { authenticateUser, safeRedirect } from "~/utils/auth.server";
-import { Alert, Button, Card, inputClass, labelClass } from "~/components/ui";
+import { Alert, Button, Card, buttonClass, inputClass, labelClass } from "~/components/ui";
+import { EnvelopeSimple } from "@phosphor-icons/react";
 
 export function meta({ }: Route.MetaArgs) {
   return [
@@ -162,6 +163,15 @@ export default function Login({ loaderData }: Route.ComponentProps) {
             Sign in
           </Button>
         </Form>
+
+        {/* Parents usually don't have a password: their coach invited them by email */}
+        <div className="border-t border-line p-6 sm:px-8">
+          <p className="mb-3 text-center text-sm text-muted">Parent or guardian? No password needed.</p>
+          <Link to="/user/magic-link" className={buttonClass({ variant: "secondary", size: "lg", className: "w-full" })}>
+            <EnvelopeSimple size={20} />
+            Email me a sign-in link
+          </Link>
+        </div>
       </Card>
 
       <p className="mt-6 text-center text-sm text-muted">

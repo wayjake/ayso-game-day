@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // Users table
@@ -7,7 +7,7 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
   name: text('name'), // Printed on game cards
-  role: text('role', { enum: ['coach', 'admin', 'assistant-coach'] }).notNull().default('coach'),
+  role: text('role', { enum: ['coach', 'admin', 'assistant-coach', 'parent'] }).notNull().default('coach'),
   teamName: text('team_name'),
   gameFormat: text('game_format', { enum: ['7v7', '9v9', '11v11'] }),
   region: text('region'),
@@ -243,6 +243,136 @@ export const teamInvites = sqliteTable('team_invites', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+// ---------------------------------------------------------------------------
+// Families: parent accounts, practices, RSVPs, messaging and push
+
+// Links a parent account to a player. Being a parent comes from having rows
+// here, never from users.role or team_members (which would grant coach access).
+// One user can coach some teams and be a parent on others.
+export const guardians = sqliteTable('guardians', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  playerId: integer('player_id').notNull().references(() => players.id),
+  teamId: integer('team_id').notNull().references(() => teams.id), // Denormalized from players for team-wide queries
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('guardians_user_player_idx').on(t.userId, t.playerId),
+  index('guardians_team_idx').on(t.teamId),
+]);
+
+// One invite per family email per team. Accepting links the account to every
+// player on the team that has a contact with this email (siblings included).
+export const parentInvites = sqliteTable('parent_invites', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  email: text('email').notNull(), // Lowercased
+  shareCode: text('share_code').notNull().unique(),
+  invitedBy: integer('invited_by').notNull().references(() => users.id),
+  expiresAt: text('expires_at').notNull(),
+  status: text('status', { enum: ['pending', 'accepted', 'revoked'] }).notNull().default('pending'),
+  acceptedBy: integer('accepted_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Email sign-in links for families. Keyed by email rather than user, since
+// using the link creates the parent's account if there isn't one yet. Only a
+// SHA-256 hash of the token is stored. Single use, short-lived.
+export const loginLinks = sqliteTable('login_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull(), // Lowercased
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  usedAt: text('used_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('login_links_email_idx').on(t.email)]);
+
+// Practices. A weekly series is just rows sharing a seriesId, so any single
+// date can be moved or cancelled without touching the rest.
+export const practices = sqliteTable('practices', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  seriesId: text('series_id'),
+  practiceDate: text('practice_date').notNull(), // YYYY-MM-DD, like games.gameDate
+  startTime: text('start_time'), // HH:MM, 24h
+  endTime: text('end_time'),
+  location: text('location'),
+  notes: text('notes'),
+  status: text('status', { enum: ['scheduled', 'cancelled'] }).notNull().default('scheduled'),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('practices_team_date_idx').on(t.teamId, t.practiceDate),
+]);
+
+// Whether a player is coming to a game or practice. Set by a parent, or by a
+// coach on their behalf. One row per player per event.
+export const rsvps = sqliteTable('rsvps', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  playerId: integer('player_id').notNull().references(() => players.id),
+  eventType: text('event_type', { enum: ['game', 'practice'] }).notNull(),
+  eventId: integer('event_id').notNull(),
+  status: text('status', { enum: ['yes', 'no', 'maybe'] }).notNull(),
+  note: text('note'),
+  respondedBy: integer('responded_by').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('rsvps_event_player_idx').on(t.eventType, t.eventId, t.playerId),
+  index('rsvps_team_idx').on(t.teamId),
+]);
+
+// A team chat (every coach and parent on the team) or a private thread between
+// one parent and the team's coaching staff.
+export const conversations = sqliteTable('conversations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  kind: text('kind', { enum: ['team', 'direct'] }).notNull(),
+  parentUserId: integer('parent_user_id').references(() => users.id), // Set for 'direct' only
+  lastMessageAt: text('last_message_at'),
+  lastMessagePreview: text('last_message_preview'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('conversations_team_chat_idx').on(t.teamId).where(sql`kind = 'team'`),
+  uniqueIndex('conversations_direct_idx').on(t.teamId, t.parentUserId).where(sql`kind = 'direct'`),
+]);
+
+export const messages = sqliteTable('messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
+  senderId: integer('sender_id').notNull().references(() => users.id),
+  body: text('body').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('messages_conversation_idx').on(t.conversationId, t.id),
+]);
+
+// Read position per person per conversation. Message ids only go up, so
+// "unread" is any message with a higher id than lastReadMessageId.
+export const conversationReads = sqliteTable('conversation_reads', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  lastReadMessageId: integer('last_read_message_id').notNull().default(0),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('conversation_reads_idx').on(t.conversationId, t.userId),
+]);
+
+// Web Push subscriptions, one per browser/device a person turned notifications on in.
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  userAgent: text('user_agent'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('push_subscriptions_user_idx').on(t.userId),
+]);
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -277,4 +407,11 @@ export type NewThreadNote = typeof threadNotes.$inferInsert;
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type NewTeamMember = typeof teamMembers.$inferInsert;
 export type TeamInvite = typeof teamInvites.$inferSelect;
-export type NewTeamInvite = typeof teamInvites.$inferInsert;
+export type NewTeamInvite = typeof teamInvites.$inferInsert;export type Guardian = typeof guardians.$inferSelect;
+export type ParentInvite = typeof parentInvites.$inferSelect;
+export type Practice = typeof practices.$inferSelect;
+export type NewPractice = typeof practices.$inferInsert;
+export type Rsvp = typeof rsvps.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
