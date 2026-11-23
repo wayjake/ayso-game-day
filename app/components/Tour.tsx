@@ -122,43 +122,110 @@ export function HelpButton({ className }: { className?: string }) {
 
 // ---------------------------------------------------------------------------
 
-function useTargetRect(target: string | undefined, key: string) {
-  const [rect, setRect] = useState<DOMRect | null>(null);
+type Box = { top: number; left: number; width: number; height: number };
+
+// How the spotlight and the card glide from one step to the next
+const EASE = "cubic-bezier(0.2, 0.9, 0.3, 1)";
+const MOVE_MS = 320;
+const LEAVE_MS = 160;
+const PAD = 8;
+const GAP = 12;
+const CARD_WIDTH = 380;
+const DIM = "rgb(16 27 45 / 0.55)";
+
+function reducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function useViewport() {
+  const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  useEffect(() => {
+    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
+
+/**
+ * Where the step's element is on screen. The previous box stays until the
+ * next one is found, so the spotlight glides between steps instead of
+ * blinking out. Scrolls the element into view only when it isn't already, and
+ * follows it every frame until it stops moving. `moving` is true while
+ * gliding; once settled, the spotlight tracks scrolling directly (no easing
+ * lag behind the page).
+ */
+function useTarget(target: string | undefined, key: string, hold: boolean, coveredBottom: () => number) {
+  const [box, setBox] = useState<Box | null>(null);
+  const [moving, setMoving] = useState(false);
+  const covered = useRef(coveredBottom);
+  covered.current = coveredBottom;
 
   useLayoutEffect(() => {
-    setRect(null);
-    if (!target) return;
+    // On the way to the step's page: leave the spotlight where it is until the page renders
+    if (hold) return;
+    setMoving(true);
     let el: Element | null = null;
     let tries = 0;
+    let timer = 0;
     let frame = 0;
+    let stable = 0;
+    let last = "";
+    let settled = false;
 
-    const measure = () => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setRect(r.width > 0 && r.height > 0 ? r : null);
+    const read = (): Box | null => {
+      const r = el?.getBoundingClientRect();
+      return r && r.width > 0 && r.height > 0 ? { top: r.top, left: r.left, width: r.width, height: r.height } : null;
     };
-    // Wait for the page to render after a navigation
+    const settle = () => {
+      timer = window.setTimeout(() => {
+        settled = true;
+        setMoving(false);
+      }, MOVE_MS);
+    };
+    // Follow it while a smooth scroll or late layout moves it, then stop
+    const track = () => {
+      const b = read();
+      setBox(b);
+      const k = b ? [b.top, b.left, b.width, b.height].map(Math.round).join() : "";
+      stable = k === last ? stable + 1 : 0;
+      last = k;
+      if (stable < 5) frame = requestAnimationFrame(track);
+      else settle();
+    };
     const find = () => {
-      el = document.querySelector(`[data-tour="${target}"]`);
-      if (el) {
-        el.scrollIntoView({ block: "center", behavior: "smooth" });
-        setTimeout(measure, 350);
-      } else if (tries++ < 25) {
-        frame = window.setTimeout(find, 100);
+      el = target ? document.querySelector(`[data-tour="${target}"]`) : null;
+      if (!el) {
+        // Still rendering after a navigation? Otherwise it's a centered step
+        if (target && tries++ < 20) timer = window.setTimeout(find, 100);
+        else {
+          setBox(null);
+          settle();
+        }
+        return;
       }
+      const r = el.getBoundingClientRect();
+      if (r.top < GAP || r.bottom > window.innerHeight - covered.current() - GAP) {
+        el.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+      }
+      track();
     };
     find();
 
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      clearTimeout(frame);
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
+    const follow = () => {
+      if (settled) setBox(read());
     };
-  }, [target, key]);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
+    };
+  }, [target, key, hold]);
 
-  return rect;
+  return { box, moving };
 }
 
 function TourRunner({
@@ -179,99 +246,150 @@ function TourRunner({
   const location = useLocation();
   const cardRef = useRef<HTMLDivElement>(null);
   const last = index === tour.steps.length - 1;
+  const { w, h } = useViewport();
+  const phone = w < 640;
+  const [cardHeight, setCardHeight] = useState(0);
+  const [leaving, setLeaving] = useState(false);
 
   const path = step.path?.(teamId);
+  const navigating = Boolean(path && location.pathname !== path);
   useEffect(() => {
     if (path && location.pathname !== path) navigate(path);
   }, [path, location.pathname, navigate]);
 
-  const rect = useTargetRect(path && location.pathname !== path ? undefined : step.target, `${tour.id}-${index}-${location.pathname}`);
+  const { box, moving } = useTarget(step.target, `${tour.id}-${index}-${location.pathname}`, navigating, () =>
+    phone ? (cardRef.current?.offsetHeight ?? 0) + GAP : 0
+  );
+
+  useLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setCardHeight(el.offsetHeight));
+    observer.observe(el);
+    setCardHeight(el.offsetHeight);
+    return () => observer.disconnect();
+  }, []);
+
+  // Fade out, then hand back
+  const left = useRef(false);
+  const leave = useCallback(() => {
+    if (left.current) return; // A double tap on Done
+    left.current = true;
+    setLeaving(true);
+    window.setTimeout(onDone, reducedMotion() ? 0 : LEAVE_MS);
+  }, [onDone]);
 
   useEffect(() => {
-    cardRef.current?.focus();
+    cardRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDone();
-      if (e.key === "ArrowRight") last ? onDone() : onIndex(index + 1);
+      if (e.key === "Escape") leave();
+      if (e.key === "ArrowRight") last ? leave() : onIndex(index + 1);
       if (e.key === "ArrowLeft" && index > 0) onIndex(index - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [index, last, onDone, onIndex]);
+  }, [index, last, leave, onIndex]);
 
-  // Desktop placement: below the element if there's room, otherwise above
-  const pad = 8;
-  const cardStyle: React.CSSProperties = {};
-  if (rect && typeof window !== "undefined" && window.innerWidth >= 640) {
-    const width = 360;
-    const left = Math.min(Math.max(16, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 16);
-    const below = rect.bottom + pad + 220 < window.innerHeight;
-    Object.assign(cardStyle, { width, left, ...(below ? { top: rect.bottom + pad + 8 } : { bottom: window.innerHeight - rect.top + pad + 8 }) });
+  const glide = moving && !reducedMotion();
+  const transition = (props: string[]) => (glide ? props.map((p) => `${p} ${MOVE_MS}ms ${EASE}`).join(", ") : "none");
+
+  // The spotlight never unmounts: with nothing to point at it shrinks to a
+  // point in the middle, so the dim closes in and opens out like an iris.
+  const hole = box
+    ? { top: box.top - PAD, left: box.left - PAD, width: box.width + PAD * 2, height: box.height + PAD * 2 }
+    : { top: h / 2, left: w / 2, width: 0, height: 0 };
+
+  // Bigger screens: the card sits below the element if it fits, else above;
+  // centered when there's no element. Phones: a sheet along the bottom.
+  let card: { x: number; y: number } | null = null;
+  if (!phone) {
+    if (box) {
+      const x = Math.min(Math.max(16, box.left + box.width / 2 - CARD_WIDTH / 2), w - CARD_WIDTH - 16);
+      const below = box.top + box.height + PAD + GAP;
+      const y = below + cardHeight + 16 < h ? below : Math.max(16, box.top - PAD - GAP - cardHeight);
+      card = { x, y };
+    } else {
+      card = { x: (w - CARD_WIDTH) / 2, y: Math.max(16, (h - cardHeight) / 2) };
+    }
   }
-  const placed = Object.keys(cardStyle).length > 0;
 
   return (
-    <div className="fixed inset-0 z-50" role="presentation">
-      {/* Dim everything except the highlighted element */}
-      {rect ? (
-        <div
-          aria-hidden
-          className="pointer-events-none fixed rounded-xl ring-2 ring-primary transition-all duration-300"
-          style={{
-            top: rect.top - pad,
-            left: rect.left - pad,
-            width: rect.width + pad * 2,
-            height: rect.height + pad * 2,
-            boxShadow: "0 0 0 9999px rgb(16 27 45 / 0.55)",
-          }}
-        />
-      ) : (
-        <div aria-hidden className="fixed inset-0 bg-ink/55" />
-      )}
+    <div
+      className="fixed inset-0 z-50"
+      role="presentation"
+      style={{ opacity: leaving ? 0 : 1, transition: `opacity ${LEAVE_MS}ms ease-out` }}
+    >
+      <div
+        aria-hidden
+        className="tour-fade pointer-events-none fixed top-0 left-0 rounded-xl"
+        style={{
+          transform: `translate(${hole.left}px, ${hole.top}px)`,
+          width: hole.width,
+          height: hole.height,
+          // Same two shadows either way so they can animate: the ring, then the dim around it
+          boxShadow: `0 0 0 2px ${box ? "var(--color-primary)" : "transparent"}, 0 0 0 9999px ${DIM}`,
+          transition: transition(["transform", "width", "height", "box-shadow"]),
+        }}
+      />
 
       <div
-        ref={cardRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="tour-title"
-        style={cardStyle}
-        className={cx(
-          "fixed rounded-2xl bg-surface p-5 shadow-2xl ring-1 ring-line outline-none",
-          placed
-            ? ""
-            : rect
-              ? "inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:left-1/2 sm:w-[380px] sm:-translate-x-1/2"
-              : "inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2"
-        )}
+        className={cx("fixed", phone ? "inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))]" : "top-0 left-0")}
+        style={
+          card
+            ? { width: CARD_WIDTH, transform: `translate(${card.x}px, ${card.y}px)`, transition: transition(["transform"]) }
+            : undefined
+        }
       >
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted">
-            {tour.title} · {index + 1} of {tour.steps.length}
-          </span>
-          <button type="button" onClick={onDone} className="-mr-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Skip tour">
-            <X size={16} weight="bold" />
-          </button>
-        </div>
-        <h2 id="tour-title" className="text-lg font-semibold leading-snug">{step.title}</h2>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{step.body}</p>
-
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <div className="flex gap-1" aria-hidden>
-            {tour.steps.map((_, i) => (
-              <span key={i} className={cx("h-1.5 rounded-full transition-all", i === index ? "w-5 bg-primary" : "w-1.5 bg-line-strong")} />
-            ))}
+        <div
+          ref={cardRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tour-title"
+          className="tour-pop rounded-2xl bg-surface p-5 shadow-2xl ring-1 ring-line outline-none"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold tracking-wider text-muted uppercase">
+              {tour.title} · {index + 1} of {tour.steps.length}
+            </span>
+            <button
+              type="button"
+              onClick={leave}
+              className="-mr-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+              aria-label="Skip tour"
+            >
+              <X size={16} weight="bold" />
+            </button>
           </div>
-          <div className="flex gap-2">
-            {index > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => onIndex(index - 1)}>
-                <ArrowLeft size={16} weight="bold" />
-                Back
+          {/* Keyed by step so the words fade in fresh while the card glides */}
+          <div key={index} className="tour-step">
+            <h2 id="tour-title" className="text-lg leading-snug font-semibold">
+              {step.title}
+            </h2>
+            <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{step.body}</p>
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <div className="flex gap-1" aria-hidden>
+              {tour.steps.map((_, i) => (
+                <span
+                  key={i}
+                  className={cx("h-1.5 rounded-full transition-all duration-300", i === index ? "w-5 bg-primary" : "w-1.5 bg-line-strong")}
+                />
+              ))}
+            </div>
+            <div className="flex gap-2">
+              {index > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => onIndex(index - 1)}>
+                  <ArrowLeft size={16} weight="bold" />
+                  Back
+                </Button>
+              )}
+              <Button size="sm" onClick={() => (last ? leave() : onIndex(index + 1))}>
+                {last ? "Done" : "Next"}
+                {!last && <ArrowRight size={16} weight="bold" />}
               </Button>
-            )}
-            <Button size="sm" onClick={() => (last ? onDone() : onIndex(index + 1))}>
-              {last ? "Done" : "Next"}
-              {!last && <ArrowRight size={16} weight="bold" />}
-            </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -325,14 +443,14 @@ function HelpSheet({
 
   return (
     <div className="fixed inset-0 z-50">
-      <button type="button" aria-label="Close help" onClick={onClose} className="fixed inset-0 bg-ink/40" />
+      <button type="button" aria-label="Close help" onClick={onClose} className="help-backdrop fixed inset-0 bg-ink/40" />
       <div
         ref={ref}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="help-title"
-        className="fixed inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl bg-surface shadow-2xl outline-none sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-[400px] sm:rounded-none sm:rounded-l-2xl"
+        className="help-panel fixed inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl bg-surface shadow-2xl outline-none sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-[400px] sm:rounded-none sm:rounded-l-2xl"
       >
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 id="help-title" className="text-lg font-semibold">Help</h2>
