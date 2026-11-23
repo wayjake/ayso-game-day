@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { Check, PaperPlaneRight } from "@phosphor-icons/react";
 import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
@@ -38,7 +38,7 @@ export function MessageThread({
   widthClass = "max-w-3xl",
   showEmailDetails = false,
   acknowledged,
-  composerNote,
+  composerExtra,
 }: {
   messages: ThreadMessageView[];
   meId: number;
@@ -47,7 +47,7 @@ export function MessageThread({
   widthClass?: string; // Match the page column so the composer lines up with the thread
   showEmailDetails?: boolean; // Coaches: who a message was emailed to, and full emails
   acknowledged?: number[]; // Parents: announcement messages already answered "Got it" (enables the button)
-  composerNote?: string | null; // Shown above the composer, e.g. "Also emailed to …"
+  composerExtra?: ReactNode; // Inside the form above the composer, e.g. the "Also send by email" checkbox
 }) {
   const fetcher = useFetcher<{ error?: string }>();
   const ackFetcher = useFetcher();
@@ -203,7 +203,7 @@ export function MessageThread({
         <input type="hidden" name="_action" value="send" />
         <div className={cx("mx-auto w-full px-4 sm:px-6", widthClass)}>
           {fetcher.data?.error && <p className="mb-2 text-sm text-danger">{fetcher.data.error}</p>}
-          {composerNote && !fetcher.data?.error && <p className="mb-2 text-xs text-muted">{composerNote}</p>}
+          {composerExtra}
           <div className="flex items-end gap-2">
             <label htmlFor="message-body" className="sr-only">Message</label>
             <textarea

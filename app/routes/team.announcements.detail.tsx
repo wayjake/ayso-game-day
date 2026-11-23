@@ -14,6 +14,7 @@ import {
 import { getConversationAccess, getThread, markRead, postMessage, setNeedsReply } from "~/utils/messages.server";
 import { formatMessageDateTime, formatMessageTime } from "~/utils/dates";
 import { FamilyNotes } from "~/components/FamilyNotes";
+import { EmailToggle } from "~/components/EmailToggle";
 import { Alert, Badge, Button, Card, Page, PageHeader, cx, inputClass } from "~/components/ui";
 import {
   ArrowSquareOut,
@@ -68,7 +69,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       return data({ error: "Thread not found" }, { status: 404 });
     }
     if (intent === "reply") {
-      const message = await postMessage(found.conversation, user, String(formData.get("body") ?? ""));
+      const message = await postMessage(found.conversation, user, String(formData.get("body") ?? ""), {
+        email: formData.get("alsoEmail") === "1",
+      });
       if (!message) return data({ error: "Write a message first" }, { status: 400 });
       return data(message.emailError ? { error: `Saved, but the email didn't send: ${message.emailError}` } : { ok: true });
     }
@@ -416,28 +419,31 @@ function FamilyPanel({ teamId, me, panel, opensTracked, onClose }: { teamId: num
           {/* Reply + done */}
           <div className="border-t border-line px-4 py-3">
             {reply.data?.error && <p className="mb-2 text-sm text-danger">{reply.data.error}</p>}
-            <reply.Form method="post" className="flex items-end gap-2">
+            <reply.Form method="post">
               <input type="hidden" name="_action" value="reply" />
               <input type="hidden" name="conversationId" value={r.conversationId ?? ""} />
-              <label htmlFor="panel-reply" className="sr-only">Reply</label>
-              <textarea
-                id="panel-reply"
-                name="body"
-                rows={2}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={2000}
-                placeholder={r.onApp ? "Reply in the app" : "Reply by email"}
-                className={cx(inputClass, "resize-y text-[16px] sm:text-sm")}
-              />
-              <Button type="submit" size="icon" disabled={!draft.trim() || sending || !r.conversationId} aria-label="Send reply">
-                <PaperPlaneRight size={18} weight="fill" />
-              </Button>
+              <EmailToggle email={r.familyEmail} pushReady={r.pushReady} conversationId={r.conversationId ?? 0} />
+              <div className="flex items-end gap-2">
+                <label htmlFor="panel-reply" className="sr-only">Reply</label>
+                <textarea
+                  id="panel-reply"
+                  name="body"
+                  rows={2}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  maxLength={2000}
+                  placeholder="Reply to this family"
+                  className={cx(inputClass, "resize-y text-[16px] sm:text-sm")}
+                />
+                <Button type="submit" size="icon" disabled={!draft.trim() || sending || !r.conversationId} aria-label="Send reply">
+                  <PaperPlaneRight size={18} weight="fill" />
+                </Button>
+              </div>
             </reply.Form>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-1 text-xs text-muted">
-                {r.onApp ? <CheckCircle size={14} /> : <EnvelopeSimple size={14} />}
-                {r.onApp ? "They'll get a notification" : `Goes to ${r.familyEmail} by email`}
+                {r.pushReady ? <CheckCircle size={14} /> : <EnvelopeSimple size={14} />}
+                {r.pushReady ? "They'll get a notification" : r.onApp ? "On the app, notifications off" : "Not on the app yet"}
               </p>
               <div className="flex items-center gap-1">
                 {r.conversationId && (

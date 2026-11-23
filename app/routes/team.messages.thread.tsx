@@ -5,7 +5,8 @@ import { db, guardians, players, users } from "~/db";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "~/utils/auth.server";
 import {
-  familyEmailTarget,
+  type FamilyDelivery,
+  familyDelivery,
   familyLabels,
   getConversationAccess,
   getThread,
@@ -16,6 +17,7 @@ import {
 import { familyNotesView, handleNoteAction } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
 import { FamilyNotes } from "~/components/FamilyNotes";
+import { EmailToggle } from "~/components/EmailToggle";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil } from "@phosphor-icons/react";
 
@@ -36,7 +38,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let title = "Team chat";
   let subtitle = "Every coach and family on the app";
   let familyEmail: string | null = null;
-  let emailTarget: string | null = null;
+  let delivery: FamilyDelivery = { email: null, pushReady: false };
 
   if (conversation.kind === "direct") {
     const parent = conversation.parentUserId
@@ -54,9 +56,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ).map((k) => k.name.split(" ")[0])
       : [];
     const kidNames = (kids.length ? kids : label?.kids ?? []).join(" & ") || "Family";
-    emailTarget = await familyEmailTarget(conversation);
+    delivery = await familyDelivery(conversation);
     title = parent?.name || label?.names[0] || parent?.email || familyEmail || "Family";
-    subtitle = `${kidNames} · ${emailTarget && !kids.length ? "by email, not on the app yet" : "private with the coaches"}`;
+    subtitle = `${kidNames} · ${kids.length ? "private with the coaches" : "by email, not on the app yet"}`;
   }
 
   return data({
@@ -68,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     conversationId: conversation.id,
     needsReply: conversation.needsReply,
     familyEmail,
-    emailTarget,
+    delivery,
     notes: familyEmail ? await familyNotesView(conversation.teamId, familyEmail) : [],
   });
 }
@@ -86,7 +88,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ ok: true });
   }
   if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
-  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""));
+  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
+    email: formData.get("alsoEmail") === "1",
+  });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   if (message.emailError) return data({ error: `Sent in the app, but the email didn't go out: ${message.emailError}` });
   return data({ ok: true });
@@ -97,7 +101,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
-  const { me, title, subtitle, kind, messages, needsReply, familyEmail, emailTarget, notes } = loaderData;
+  const { me, title, subtitle, kind, messages, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
   const [showNotes, setShowNotes] = useState(false);
   const done = useFetcher();
   const pending = done.formData?.get("_action");
@@ -153,10 +157,14 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
         messages={messages}
         meId={me}
         emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
-        placeholder={kind === "team" ? "Message every family" : emailTarget ? "Reply by email" : "Message this family"}
+        placeholder={kind === "team" ? "Message every family" : "Message this family"}
         widthClass="max-w-2xl"
         showEmailDetails
-        composerNote={emailTarget ? `Your reply is also emailed to ${emailTarget}.` : null}
+        composerExtra={
+          delivery.email ? (
+            <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />
+          ) : null
+        }
       />
     </div>
   );

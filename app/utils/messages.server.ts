@@ -10,10 +10,11 @@ import {
   inboundEmails,
   messages,
   players,
+  pushSubscriptions,
   teams,
   users,
 } from "~/db";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
@@ -461,34 +462,46 @@ export async function setNeedsReply(conversationId: number, needsReply: boolean)
 // ---------------------------------------------------------------------------
 // Coach replies by email
 //
-// A coach's message in a direct thread is also emailed when the family isn't
-// on the app, or when they last wrote by email (they're clearly reading mail).
+// A coach's message in a direct thread is emailed to the family too, unless
+// the coach unchecks "Also send by email". That's only allowed when the
+// parent holding the thread gets push notifications on some device; without
+// them the email is the only way they'd know there's a message.
 
 type Sender = { id: number; name: string | null; email: string; sendingEmail?: string | null };
 
-// Where a direct thread's email goes, or null when the app reaches them
-export async function familyEmailTarget(conversation: typeof conversations.$inferSelect) {
-  if (conversation.kind !== "direct") return null;
+/** Which of these users have at least one device subscribed to push */
+export async function usersWithPush(userIds: number[]) {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Set<number>();
+  const rows = await db
+    .selectDistinct({ userId: pushSubscriptions.userId })
+    .from(pushSubscriptions)
+    .where(inArray(pushSubscriptions.userId, ids));
+  return new Set(rows.map((r) => r.userId));
+}
+
+export type FamilyDelivery = {
+  /** Where the email copy goes; null for the team chat or a thread with no address */
+  email: string | null;
+  /** On the app with notifications on, so the email copy is optional */
+  pushReady: boolean;
+};
+
+// How a coach's message in this thread reaches the family. Only the parent
+// holding the thread is notified of it (each parent has their own thread), so
+// it's their push that counts.
+export async function familyDelivery(conversation: typeof conversations.$inferSelect): Promise<FamilyDelivery> {
+  if (conversation.kind !== "direct") return { email: null, pushReady: false };
   let email = conversation.familyEmail;
   if (!email && conversation.parentUserId) {
     const [parent] = await db.select({ email: users.email }).from(users).where(eq(users.id, conversation.parentUserId)).limit(1);
     email = parent ? lower(parent.email) : null;
   }
-  if (!email) return null;
-
-  const onApp = conversation.parentUserId ? await isGuardianOnTeam(conversation.parentUserId, conversation.teamId) : false;
-  if (!onApp) return email;
-
-  const [lastFromFamily] = await db
-    .select({ source: messages.source })
-    .from(messages)
-    .where(and(
-      eq(messages.conversationId, conversation.id),
-      or(isNull(messages.senderId), eq(messages.senderId, conversation.parentUserId!))
-    ))
-    .orderBy(desc(messages.id))
-    .limit(1);
-  return lastFromFamily?.source === "email" ? email : null;
+  const parentId = conversation.parentUserId;
+  const pushReady = Boolean(
+    parentId && (await isGuardianOnTeam(parentId, conversation.teamId)) && (await usersWithPush([parentId])).has(parentId)
+  );
+  return { email, pushReady };
 }
 
 // Message-IDs to thread a new email under: the family's latest email to us,
@@ -522,12 +535,12 @@ async function emailCoachMessage(
   to: string
 ) {
   const [coach] = await db
-    .select({ name: users.name, email: users.email, sendingEmail: users.sendingEmail })
+    .select({ id: users.id, name: users.name, email: users.email, sendingEmail: users.sendingEmail })
     .from(users)
     .where(eq(users.id, sender.id))
     .limit(1);
-  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
-  const from = coachFromAddress(coach ?? { name: sender.name, email: sender.email, sendingEmail: null });
+  const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
+  const from = coachFromAddress(coach ?? { id: sender.id, name: sender.name, email: sender.email, sendingEmail: null }, team);
   const thread = await threadingHeaders(conversation.id);
   const deliverTo = familyDeliveryAddress(to, coach?.email ?? sender.email);
   const teamName = team?.name ?? "your team";
@@ -557,14 +570,17 @@ async function emailCoachMessage(
 export async function postMessage(
   conversation: typeof conversations.$inferSelect,
   sender: Sender,
-  body: string
+  body: string,
+  /** Coach messages to a family: false skips the email copy, honored only when they have push */
+  options: { email?: boolean } = {}
 ) {
   const text = body.trim().slice(0, MAX_MESSAGE_LENGTH);
   if (!text) return null;
 
   const coachIds = await getCoachUserIds(conversation.teamId);
   const senderIsCoach = coachIds.includes(sender.id);
-  const emailTo = senderIsCoach ? await familyEmailTarget(conversation) : null;
+  const delivery = senderIsCoach ? await familyDelivery(conversation) : null;
+  const emailTo = delivery?.email && (options.email !== false || !delivery.pushReady) ? delivery.email : null;
 
   const [message] = await db
     .insert(messages)

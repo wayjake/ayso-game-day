@@ -14,7 +14,7 @@ import {
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { getCoachUserIds } from "~/utils/family.server";
 import { listFamilies, type Family } from "~/utils/parent-invites.server";
-import { getOrCreateFamilyConversation, markRead, preview } from "~/utils/messages.server";
+import { getOrCreateFamilyConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
 import { sendPush } from "~/utils/push.server";
 import { coachFromAddress, escapeHtml, familyDeliveryAddress, sendEmail, textToHtml } from "~/utils/email.server";
 
@@ -102,7 +102,7 @@ async function deliver({
   coach: Pick<User, "id" | "name" | "email" | "sendingEmail">;
   reminder: boolean;
 }) {
-  const from = coachFromAddress(coach);
+  const from = coachFromAddress(coach, { id: recipient.teamId, name: teamName });
   const coachName = coach.name?.trim() || "Your coach";
   const { text, html } = announcementEmail({
     teamName,
@@ -162,7 +162,7 @@ export async function sendAnnouncement({
   const families = (await listFamilies(null, teamId)).filter((f) => wanted.has(f.email));
   if (families.length === 0) return null;
 
-  const from = coachFromAddress(coach);
+  const from = coachFromAddress(coach, { id: teamId, name: teamName });
   const [announcement] = await db
     .insert(announcements)
     .values({ teamId, sentBy: coach.id, subject, body, ask, fromEmail: from.address })
@@ -254,7 +254,7 @@ export async function sendTestAnnouncement({
     ackUrl: `${appOrigin(request)}/ack/test-preview`,
     reminder: false,
   });
-  return sendEmail({ from: coachFromAddress(coach).header, to: coach.email, subject: `[Test] ${subject}`, text, html });
+  return sendEmail({ from: coachFromAddress(coach, { id: teamId, name: team?.name ?? "Team" }).header, to: coach.email, subject: `[Test] ${subject}`, text, html });
 }
 
 // Families who haven't done what the announcement asked for
@@ -354,6 +354,8 @@ export type RecipientView = {
   sentToEmail: string;
   conversationId: number | null;
   onApp: boolean;
+  /** Gets a push for messages in their thread, so a coach's reply needn't be emailed */
+  pushReady: boolean;
   state: RecipientState;
   needsYou: boolean;
   needsYouReason: string | null;
@@ -423,6 +425,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
     if (!latestReply.has(m.conversationId)) latestReply.set(m.conversationId, m.body);
   }
 
+  const withPush = await usersWithPush(rows.flatMap((x) => (x.currentParent ? [x.currentParent] : [])));
   const now = Date.now();
   const recipients: RecipientView[] = rows.map(({ r, needsReply, currentParent, lastRead }) => {
     const seenInApp = Boolean(currentParent && r.messageId && lastRead != null && lastRead >= r.messageId);
@@ -452,6 +455,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
       sentToEmail: r.sentToEmail,
       conversationId: r.conversationId,
       onApp: Boolean(currentParent),
+      pushReady: Boolean(currentParent && withPush.has(currentParent)),
       state,
       needsYou: needsYouReason !== null,
       needsYouReason,
