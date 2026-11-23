@@ -54,6 +54,7 @@ export default [
       route("contacts/:contactId/edit", "routes/team.contacts.edit.tsx"),
       route("settings", "routes/team.settings.tsx"),
       route("families", "routes/team.families.tsx"),
+      route("families/edit", "routes/team.families.edit.tsx"),
       route("practices/new", "routes/team.practices-new.tsx"),
       route("practices/:practiceId/edit", "routes/team.practices.edit.tsx"),
       route("rsvps/:eventType/:eventId", "routes/team.rsvps.tsx"),
