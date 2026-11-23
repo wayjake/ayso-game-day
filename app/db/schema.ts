@@ -285,6 +285,9 @@ export const loginLinks = sqliteTable('login_links', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   email: text('email').notNull(), // Lowercased
   tokenHash: text('token_hash').notNull().unique(),
+  // The 6-digit code in the same email, for typing into the installed app (links open in Safari instead)
+  codeHash: text('code_hash'),
+  codeAttempts: integer('code_attempts').notNull().default(0),
   expiresAt: text('expires_at').notNull(),
   usedAt: text('used_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),

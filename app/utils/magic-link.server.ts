@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
+import { redirect } from "react-router";
+import { commitSession, getSession } from "~/sessions.server";
+import { isParent } from "~/utils/family.server";
 import { db, contacts, guardians, loginLinks, players, users } from "~/db";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { createUser } from "~/utils/auth.server";
 import { escapeHtml, isEmailConfigured, sendEmail } from "~/utils/email.server";
 import { normalizeEmail } from "~/utils/invites.server";
@@ -10,13 +13,33 @@ import { linkFamily } from "~/utils/parent-invites.server";
 // list (or already linked to a player) can ask for a link. Using it signs them
 // in, creating a parent account if needed, and links every player whose
 // contacts list that email, on every team.
+//
+// The same email carries a 6-digit code. Links always open in the phone's
+// browser, never the Home Screen app, so a family whose installed app got
+// signed out types the code into the app instead.
 
 const LINK_TTL_MINUTES = 20;
 // One email per address per minute, so the form can't be used to flood an inbox
 const RESEND_AFTER_SECONDS = 60;
+// Wrong codes allowed per email before the link and code stop working
+const MAX_CODE_ATTEMPTS = 5;
 
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+// Salted with the email so one code's hash says nothing about another's
+function hashCode(email: string, code: string) {
+  return hashToken(`${email}:${code}`);
+}
+
+/** Digits only, so "123 456" and "123-456" work too. */
+export function normalizeCode(raw: string) {
+  return raw.replace(/\D/g, "");
+}
+
+function formatCode(code: string) {
+  return `${code.slice(0, 3)} ${code.slice(3)}`;
 }
 
 function magicLinkUrl(request: Request, token: string) {
@@ -64,11 +87,12 @@ async function contactName(email: string) {
 
 // Sends a sign-in link if this email belongs to a family. Callers show the
 // same message either way, so the form can't be used to look up who's on a
-// roster. Returns `devLink` only when email isn't configured outside
-// production, so local testing still works.
+// roster. Returns `devLink`/`devCode` only when email isn't configured
+// outside production, so local testing still works.
 export async function requestMagicLink(request: Request, rawEmail: string) {
   const email = normalizeEmail(rawEmail);
-  if (!(await isEligible(email))) return { devLink: null };
+  const none = { devLink: null, devCode: null };
+  if (!(await isEligible(email))) return none;
 
   const now = Date.now();
   const [recent] = await db
@@ -83,7 +107,8 @@ export async function requestMagicLink(request: Request, rawEmail: string) {
       )
     )
     .limit(1);
-  if (recent) return { devLink: null };
+  // The code in the email they already have still works
+  if (recent) return none;
 
   // Only the newest link works
   await db
@@ -92,9 +117,11 @@ export async function requestMagicLink(request: Request, rawEmail: string) {
     .where(and(eq(loginLinks.email, email), isNull(loginLinks.usedAt)));
 
   const token = crypto.randomBytes(32).toString("base64url");
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   await db.insert(loginLinks).values({
     email,
     tokenHash: hashToken(token),
+    codeHash: hashCode(email, code),
     expiresAt: new Date(now + LINK_TTL_MINUTES * 60_000).toISOString(),
   });
 
@@ -103,20 +130,23 @@ export async function requestMagicLink(request: Request, rawEmail: string) {
   if (!isEmailConfigured()) {
     if (process.env.NODE_ENV === "production") {
       console.error("Sign-in link requested but email is not configured");
-      return { devLink: null };
+      return none;
     }
-    console.log(`Sign-in link for ${email}: ${url}`);
-    return { devLink: url };
+    console.log(`Sign-in link for ${email}: ${url} (code ${code})`);
+    return { devLink: url, devCode: code };
   }
 
   await sendEmail({
     to: email,
-    subject: "Your AYSO Game Day sign-in link",
+    // The code in the subject shows on a lock-screen preview, so it can be typed without opening Mail
+    subject: `${formatCode(code)} is your AYSO Game Day sign-in code`,
     text: [
       `Sign in to AYSO Game Day to see the schedule, RSVP and message the coaches:`,
       url,
       ``,
-      `This link works once and expires in ${LINK_TTL_MINUTES} minutes.`,
+      `Using the Game Day app on your Home Screen? Enter this code there instead: ${formatCode(code)}`,
+      ``,
+      `The link and code work once and expire in ${LINK_TTL_MINUTES} minutes.`,
       `If you didn't ask for it, you can ignore this email.`,
     ].join("\n"),
     html: `
@@ -126,12 +156,14 @@ export async function requestMagicLink(request: Request, rawEmail: string) {
           <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Sign in</a>
         </p>
         <p style="color: #536175; font-size: 13px;">Or paste this link into your browser:<br>${escapeHtml(url)}</p>
-        <p style="color: #536175; font-size: 13px;">This link works once and expires in ${LINK_TTL_MINUTES} minutes. If you didn't ask for it, ignore this email.</p>
+        <p style="margin: 24px 0 4px;">Using the Game Day app on your Home Screen? Enter this code there instead:</p>
+        <p style="margin: 0 0 24px; font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: ui-monospace, Menlo, monospace;">${formatCode(code)}</p>
+        <p style="color: #536175; font-size: 13px;">The link and code work once and expire in ${LINK_TTL_MINUTES} minutes. If you didn't ask for them, ignore this email.</p>
       </div>
     `,
   });
 
-  return { devLink: null };
+  return none;
 }
 
 // The pending link for a token, or null if it's unknown, used or expired
@@ -155,7 +187,69 @@ export async function findValidMagicLink(token: string) {
 export async function completeMagicLink(token: string) {
   const link = await findValidMagicLink(token);
   if (!link) return null;
+  return signInWithLink(link);
+}
 
+type SignedInUser = NonNullable<Awaited<ReturnType<typeof signInWithLink>>>;
+
+// Sets the session for a link or code sign-in and sends them on. Parents stay
+// signed in for a month, since they open this from a phone's Home Screen, and
+// ?install=1 has the family app start with how to put it there (phones only;
+// the installed app itself never shows it).
+export async function signInFamilyRedirect(request: Request, user: SignedInUser) {
+  const session = await getSession(request.headers.get("Cookie"));
+  session.set("userId", user.id);
+  session.set("userEmail", user.email);
+  session.set("userRole", user.role);
+  return redirect((await isParent(user.id)) ? "/family?install=1" : "/dashboard", {
+    headers: { "Set-Cookie": await commitSession(session, { maxAge: 60 * 60 * 24 * 30 }) },
+  });
+}
+
+export type CodeResult =
+  | { ok: true; user: SignedInUser }
+  | { ok: false; error: string };
+
+// The typed-code twin of completeMagicLink, checked against the newest pending
+// link for this email. After MAX_CODE_ATTEMPTS wrong codes the link (and its
+// code) stop working, so guessing 1 in a million five times gets nowhere.
+export async function completeMagicCode(rawEmail: string, rawCode: string): Promise<CodeResult> {
+  const email = normalizeEmail(rawEmail);
+  const code = normalizeCode(rawCode);
+  const expired = { ok: false as const, error: "That code has expired or was already used. Send a new one." };
+  if (code.length !== 6) return { ok: false, error: "Enter the 6-digit code from the email." };
+
+  const [link] = await db
+    .select({ id: loginLinks.id, email: loginLinks.email, codeHash: loginLinks.codeHash })
+    .from(loginLinks)
+    .where(and(eq(loginLinks.email, email), isNull(loginLinks.usedAt), gt(loginLinks.expiresAt, new Date().toISOString())))
+    .orderBy(desc(loginLinks.id))
+    .limit(1);
+  if (!link?.codeHash) return expired;
+
+  // Spend an attempt before comparing, in one statement, so parallel guesses can't share one
+  const [spent] = await db
+    .update(loginLinks)
+    .set({ codeAttempts: sql`${loginLinks.codeAttempts} + 1` })
+    .where(and(eq(loginLinks.id, link.id), isNull(loginLinks.usedAt), sql`${loginLinks.codeAttempts} < ${MAX_CODE_ATTEMPTS}`))
+    .returning({ attempts: loginLinks.codeAttempts });
+  if (!spent) return expired;
+
+  const matches = crypto.timingSafeEqual(Buffer.from(link.codeHash, "hex"), Buffer.from(hashCode(email, code), "hex"));
+  if (!matches) {
+    const left = MAX_CODE_ATTEMPTS - spent.attempts;
+    if (left <= 0) {
+      await db.update(loginLinks).set({ usedAt: new Date().toISOString() }).where(eq(loginLinks.id, link.id));
+      return { ok: false, error: "Too many wrong codes. Send a new one." };
+    }
+    return { ok: false, error: `That code doesn't match. ${left} ${left === 1 ? "try" : "tries"} left.` };
+  }
+
+  const user = await signInWithLink(link);
+  return user ? { ok: true, user } : expired;
+}
+
+async function signInWithLink(link: { id: number; email: string }) {
   // Claim the token first so a double submit can't use it twice
   const claimed = await db
     .update(loginLinks)
