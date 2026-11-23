@@ -1,5 +1,5 @@
 import type { Route } from "./+types/team.contacts.new";
-import { Form, Link, data, redirect } from "react-router";
+import { Form, Link, data, redirect, useSearchParams } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, contacts } from "~/db";
@@ -122,6 +122,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function NewContact({ loaderData, actionData }: Route.ComponentProps) {
+  const [searchParams] = useSearchParams();
   const { team, players } = loaderData;
   const error = actionData?.error;
 
@@ -188,7 +189,7 @@ export default function NewContact({ loaderData, actionData }: Route.ComponentPr
               <label htmlFor="playerId" className={labelClass}>
                 Player
               </label>
-              <select id="playerId" name="playerId" className={inputClass}>
+              <select id="playerId" name="playerId" className={inputClass} defaultValue={searchParams.get("playerId") ?? ""}>
                 <option value="">None (general team contact)</option>
                 {players.map((player) => (
                   <option key={player.id} value={player.id}>

@@ -6,7 +6,8 @@ import { requireTeamAccess } from "~/utils/team-access.server";
 import { lastTeamCookie } from "~/utils/last-team.server";
 import { TeamSwitcher } from "~/components/TeamSwitcher";
 import { Badge } from "~/components/ui";
-import { CalendarBlank, Gear, House, UsersThree } from "@phosphor-icons/react";
+import { coachConversationIds, totalUnread } from "~/utils/messages.server";
+import { CalendarBlank, ChatsCircle, Gear, House, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -14,11 +15,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Owners and invited coaches both get in; role tells child routes which one
   const { team, role } = await requireTeamAccess(teamId, user.id);
+  const unread = await totalUnread(await coachConversationIds(teamId), user.id);
 
   return data(
     {
       team,
       role,
+      unread,
       user: {
         id: user.id,
         email: user.email,
@@ -31,14 +34,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
-  const { team } = loaderData;
+  const { team, unread } = loaderData;
   const base = `/dashboard/team/${team.id}`;
 
   const tabs = [
-    { label: "Overview", to: base, end: true, icon: House },
-    { label: "Games", to: `${base}/games`, end: false, icon: CalendarBlank },
-    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree },
-    { label: "Settings", to: `${base}/settings`, end: false, icon: Gear },
+    { label: "Overview", to: base, end: true, icon: House, badge: 0 },
+    { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0 },
+    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0 },
+    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread },
+    { label: "Settings", to: `${base}/settings`, end: false, icon: Gear, badge: 0 },
   ];
 
   return (
@@ -54,9 +58,9 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
 
-          {/* Equal columns with the icon over the label on phones, so all four always fit */}
-          <nav className="-mb-px mt-2 grid grid-cols-4 sm:flex sm:gap-1" aria-label="Team">
-            {tabs.map(({ label, to, end, icon: Icon }) => (
+          {/* Equal columns with the icon over the label on phones, so all five always fit */}
+          <nav className="-mb-px mt-2 grid grid-cols-5 sm:flex sm:gap-1" aria-label="Team">
+            {tabs.map(({ label, to, end, icon: Icon, badge }) => (
               <NavLink
                 key={label}
                 to={to}
@@ -72,8 +76,21 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
               >
                 {({ isActive }) => (
                   <>
-                    <Icon size={18} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : ""} />
+                    <span className="relative">
+                      <Icon size={18} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : ""} />
+                      {badge > 0 && (
+                        <span aria-hidden className="absolute -top-1.5 -right-2.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white tabular sm:hidden">
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
+                    </span>
                     {label}
+                    {badge > 0 && (
+                      <span aria-hidden className="hidden h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white tabular sm:inline-flex">
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                    {badge > 0 && <span className="sr-only"> ({badge} unread)</span>}
                   </>
                 )}
               </NavLink>

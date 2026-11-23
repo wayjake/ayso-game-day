@@ -84,3 +84,46 @@ export function relativeGameDay(iso: string, today = todayISO()) {
   if (days > 1) return `In ${days} days`;
   return formatGameDate(iso);
 }
+
+// DB timestamps (CURRENT_TIMESTAMP) are "YYYY-MM-DD HH:MM:SS" in UTC with no
+// zone marker. Read them as UTC, then show them in the app's zone so server
+// and browser render the same text.
+export function parseDbTimestamp(value: string) {
+  return new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
+}
+
+// "3:42 PM" today, "Yesterday", "Tue", or "Nov 3" for older messages
+export function formatMessageTime(value: string, now = new Date()) {
+  const date = parseDbTimestamp(value);
+  const dayKey = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const days = daysBetween(dayKey(date), dayKey(now));
+  if (days <= 0) {
+    return new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, hour: "numeric", minute: "2-digit" }).format(date);
+  }
+  if (days === 1) return "Yesterday";
+  if (days < 7) return new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, weekday: "short" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, month: "short", day: "numeric" }).format(date);
+}
+
+// "Tue, Nov 3 at 3:42 PM" for message timestamps
+export function formatMessageDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parseDbTimestamp(value));
+}
+
+// "5:30 – 7:00 PM", "5:30 PM", or "" for a practice time range
+export function formatTimeRange(start: string | null | undefined, end: string | null | undefined) {
+  if (!start) return "";
+  if (!end) return formatGameTime(start);
+  const s = formatGameTime(start);
+  const e = formatGameTime(end);
+  // Drop the first AM/PM when both match: "5:30 – 7:00 PM"
+  return s.slice(-2) === e.slice(-2) ? `${s.slice(0, -3)} – ${e}` : `${s} – ${e}`;
+}

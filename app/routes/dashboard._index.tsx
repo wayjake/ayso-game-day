@@ -3,6 +3,7 @@ import { redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { getLastTeamId } from "~/utils/last-team.server";
+import { isParent } from "~/utils/family.server";
 import { db, teams } from "~/db";
 import { desc } from "drizzle-orm";
 
@@ -20,6 +21,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const lastTeamId = await getLastTeamId(request);
   if (lastTeamId && userTeams.some((t) => t.id === lastTeamId)) {
     throw redirect(`/dashboard/team/${lastTeamId}`);
+  }
+
+  // Parents who don't coach anything belong in the family app
+  if (userTeams.length === 0 && (await isParent(user.id))) {
+    throw redirect("/family");
   }
 
   if (userTeams.length === 1) {

@@ -8,7 +8,7 @@ import { eq, and } from "drizzle-orm";
 import { useState } from "react";
 import { RosterImportModal } from "~/components/RosterImportModal";
 import { Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, PlayerAvatar, buttonClass, cx } from "~/components/ui";
-import { CaretRight, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
+import { AddressBook, CaretRight, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -169,6 +169,10 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
         actions={
           players.length > 0 && (
             <>
+              <Link to={`/dashboard/team/${team.id}/families`} className={buttonClass({ variant: "secondary" })}>
+                <AddressBook size={18} />
+                Families
+              </Link>
               {importButton}
               {addPlayerLink}
             </>
