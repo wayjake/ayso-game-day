@@ -36,6 +36,13 @@
       "when": 1795399136602,
       "tag": "0004_login_links",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795406505064,
+      "tag": "0005_announcements",
+      "breakpoints": true
     }
   ]
 }

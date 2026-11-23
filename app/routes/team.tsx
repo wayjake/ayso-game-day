@@ -1,5 +1,5 @@
 import type { Route } from "./+types/team";
-import { Outlet, NavLink } from "react-router";
+import { Outlet, NavLink, useLocation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -7,6 +7,8 @@ import { lastTeamCookie } from "~/utils/last-team.server";
 import { TeamSwitcher } from "~/components/TeamSwitcher";
 import { Badge } from "~/components/ui";
 import { coachConversationIds, totalUnread } from "~/utils/messages.server";
+import { parseToursSeen } from "~/utils/tours";
+import { HelpButton, TourProvider } from "~/components/Tour";
 import { CalendarBlank, ChatsCircle, Gear, House, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -22,6 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       team,
       role,
       unread,
+      toursSeen: parseToursSeen(user.toursSeen),
       user: {
         id: user.id,
         email: user.email,
@@ -34,19 +37,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
-  const { team, unread } = loaderData;
+  const { team, unread, toursSeen } = loaderData;
+  const location = useLocation();
   const base = `/dashboard/team/${team.id}`;
 
   const tabs = [
     { label: "Overview", to: base, end: true, icon: House, badge: 0 },
-    { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0 },
+    { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0, tour: "tab-schedule" },
     { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0 },
-    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread },
+    // Announcements live under Messages, so keep the tab lit there too
+    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: `${base}/announcements` },
     { label: "Settings", to: `${base}/settings`, end: false, icon: Gear, badge: 0 },
   ];
 
   return (
-    <>
+    <TourProvider teamId={team.id} initialSeen={toursSeen}>
       <div className="border-b border-line bg-surface">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-4">
@@ -56,25 +61,30 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
               {team.ageGroup && <Badge>{team.ageGroup}</Badge>}
               {team.season && <span className="ml-1 text-sm text-muted">{team.season}</span>}
             </div>
+            <HelpButton className="ml-auto" />
           </div>
 
           {/* Equal columns with the icon over the label on phones, so all five always fit */}
-          <nav className="-mb-px mt-2 grid grid-cols-5 sm:flex sm:gap-1" aria-label="Team">
-            {tabs.map(({ label, to, end, icon: Icon, badge }) => (
+          <nav className="-mb-px mt-2 grid grid-cols-5 sm:flex sm:gap-1" aria-label="Team" data-tour="team-tabs">
+            {tabs.map(({ label, to, end, icon: Icon, badge, tour, also }) => (
               <NavLink
                 key={label}
                 to={to}
                 end={end}
                 prefetch="intent"
-                className={({ isActive }) =>
-                  `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-1 pt-2 pb-2.5 text-xs font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
+                data-tour={tour}
+                className={({ isActive: matched }) => {
+                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                  return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-1 pt-2 pb-2.5 text-xs font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
                     isActive
                       ? "border-primary text-ink"
                       : "border-transparent text-muted hover:border-line-strong hover:text-ink"
-                  }`
-                }
+                  }`;
+                }}
               >
-                {({ isActive }) => (
+                {({ isActive: matched }) => {
+                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                  return (
                   <>
                     <span className="relative">
                       <Icon size={18} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : ""} />
@@ -92,7 +102,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                     )}
                     {badge > 0 && <span className="sr-only"> ({badge} unread)</span>}
                   </>
-                )}
+                  );
+                }}
               </NavLink>
             ))}
           </nav>
@@ -100,6 +111,6 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
       </div>
 
       <Outlet />
-    </>
+    </TourProvider>
   );
 }

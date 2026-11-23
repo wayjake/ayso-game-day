@@ -9,10 +9,13 @@ export default [
   route("api/ai-lineup", "api/ai-lineup/route.ts"),
   route("api/roster-import", "api/roster-import/route.ts"),
   route("api/push", "routes/api.push.ts"),
+  route("api/email/webhook", "routes/api.email-webhook.ts"),
+  route("api/tours", "routes/api.tours.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("invite/:code", "routes/invite.tsx"),
   route("join/:code", "routes/join.tsx"),
+  route("ack/:token", "routes/ack.tsx"),
   // Family app: parents' schedule, RSVPs and messages
   route("family", "routes/family.tsx", [
     index("routes/family._index.tsx"),
@@ -56,6 +59,9 @@ export default [
       route("rsvps/:eventType/:eventId", "routes/team.rsvps.tsx"),
       route("messages", "routes/team.messages.tsx"),
       route("messages/:conversationId", "routes/team.messages.thread.tsx"),
+      route("announcements", "routes/team.announcements.tsx"),
+      route("announcements/new", "routes/team.announcements-new.tsx"),
+      route("announcements/:announcementId", "routes/team.announcements.detail.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

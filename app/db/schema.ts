@@ -11,6 +11,10 @@ export const users = sqliteTable('users', {
   teamName: text('team_name'),
   gameFormat: text('game_format', { enum: ['7v7', '9v9', '11v11'] }),
   region: text('region'),
+  // Address announcements and email replies go out from, on the app's sending
+  // domain (e.g. jake@aysogameday.com). Falls back to EMAIL_FROM.
+  sendingEmail: text('sending_email'),
+  toursSeen: text('tours_seen'), // JSON: { [tourId]: version } for tours finished or dismissed
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -329,23 +333,42 @@ export const conversations = sqliteTable('conversations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   kind: text('kind', { enum: ['team', 'direct'] }).notNull(),
-  parentUserId: integer('parent_user_id').references(() => users.id), // Set for 'direct' only
+  // 'direct' threads belong to a parent account, a family email, or both. A
+  // family that isn't on the app yet has only familyEmail; the thread moves to
+  // their account when they join with a proven email (invite or magic link).
+  parentUserId: integer('parent_user_id').references(() => users.id),
+  familyEmail: text('family_email'), // Lowercased
+  // A family wrote last and no coach has replied or marked it done
+  needsReply: integer('needs_reply', { mode: 'boolean' }).notNull().default(false),
   lastMessageAt: text('last_message_at'),
   lastMessagePreview: text('last_message_preview'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('conversations_team_chat_idx').on(t.teamId).where(sql`kind = 'team'`),
   uniqueIndex('conversations_direct_idx').on(t.teamId, t.parentUserId).where(sql`kind = 'direct'`),
+  uniqueIndex('conversations_family_email_idx').on(t.teamId, t.familyEmail).where(sql`kind = 'direct' and family_email is not null`),
 ]);
 
 export const messages = sqliteTable('messages', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   conversationId: integer('conversation_id').notNull().references(() => conversations.id),
-  senderId: integer('sender_id').notNull().references(() => users.id),
-  body: text('body').notNull(),
+  // Null for a reply that came in by email from a family with no account
+  senderId: integer('sender_id').references(() => users.id),
+  senderEmail: text('sender_email'), // Email replies: who it came from
+  senderName: text('sender_name'),
+  source: text('source', { enum: ['app', 'email'] }).notNull().default('app'),
+  body: text('body').notNull(), // For email replies, the new text with quoted history trimmed
+  announcementId: integer('announcement_id'), // Set on the copy of an announcement in a family's thread
+  inboundEmailId: integer('inbound_email_id'), // Email replies: the full message
+  // A coach's message that was also emailed to the family
+  emailedTo: text('emailed_to'),
+  resendEmailId: text('resend_email_id'),
+  emailMessageId: text('email_message_id'), // RFC Message-ID, so replies to it can be matched
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   index('messages_conversation_idx').on(t.conversationId, t.id),
+  index('messages_resend_email_idx').on(t.resendEmailId),
+  index('messages_email_message_idx').on(t.emailMessageId),
 ]);
 
 // Read position per person per conversation. Message ids only go up, so
@@ -358,6 +381,91 @@ export const conversationReads = sqliteTable('conversation_reads', {
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('conversation_reads_idx').on(t.conversationId, t.userId),
+]);
+
+// An email blast from a coach to families. Each family gets its own email
+// (so replies and opens can be tracked per family) and a copy in their
+// private thread with the coaches.
+export const announcements = sqliteTable('announcements', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  sentBy: integer('sent_by').notNull().references(() => users.id),
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+  ask: text('ask', { enum: ['none', 'ack', 'reply'] }).notNull().default('none'),
+  fromEmail: text('from_email').notNull(), // The address it went out from
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('announcements_team_idx').on(t.teamId)]);
+
+// One row per family per announcement, tracking what happened to their email.
+export const announcementRecipients = sqliteTable('announcement_recipients', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  announcementId: integer('announcement_id').notNull().references(() => announcements.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  familyEmail: text('family_email').notNull(), // Lowercased
+  familyLabel: text('family_label').notNull(), // "Garcia (Mia, Leo)" when sent
+  sentToEmail: text('sent_to_email').notNull(), // Differs from familyEmail only when dev redirect is on
+  parentUserId: integer('parent_user_id').references(() => users.id), // On the app when sent
+  conversationId: integer('conversation_id').references(() => conversations.id),
+  messageId: integer('message_id').references(() => messages.id), // The copy in their thread
+  ackToken: text('ack_token').notNull().unique(),
+  status: text('status', { enum: ['pending', 'sent', 'failed'] }).notNull().default('pending'),
+  error: text('error'),
+  resendEmailId: text('resend_email_id'),
+  emailMessageId: text('email_message_id'),
+  sentAt: text('sent_at'),
+  deliveredAt: text('delivered_at'),
+  openedAt: text('opened_at'),
+  bouncedAt: text('bounced_at'),
+  bounceReason: text('bounce_reason'),
+  complainedAt: text('complained_at'),
+  repliedAt: text('replied_at'),
+  acknowledgedAt: text('acknowledged_at'),
+  remindedAt: text('reminded_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('announcement_recipients_family_idx').on(t.announcementId, t.familyEmail),
+  index('announcement_recipients_resend_idx').on(t.resendEmailId),
+  index('announcement_recipients_message_idx').on(t.emailMessageId),
+  index('announcement_recipients_team_email_idx').on(t.teamId, t.familyEmail),
+]);
+
+// Coach-only notes about a family. Never loaded by anything a parent can reach.
+export const familyNotes = sqliteTable('family_notes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  familyEmail: text('family_email').notNull(), // Lowercased
+  authorId: integer('author_id').notNull().references(() => users.id),
+  body: text('body').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('family_notes_family_idx').on(t.teamId, t.familyEmail)]);
+
+// Every email received on the app's domain, kept whole so it can be re-matched.
+export const inboundEmails = sqliteTable('inbound_emails', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  resendEmailId: text('resend_email_id').notNull().unique(),
+  fromEmail: text('from_email').notNull(), // Lowercased
+  fromName: text('from_name'),
+  toEmails: text('to_emails').notNull(), // JSON array
+  subject: text('subject'),
+  text: text('text'), // Plain text only; inbound HTML is never rendered
+  emailMessageId: text('email_message_id'),
+  inReplyTo: text('in_reply_to'),
+  references: text('references'),
+  authPassed: integer('auth_passed', { mode: 'boolean' }),
+  isAutoReply: integer('is_auto_reply', { mode: 'boolean' }).notNull().default(false),
+  // matched: in a family thread. unmatched: needs a coach to assign it. dismissed: ignored.
+  status: text('status', { enum: ['matched', 'unmatched', 'dismissed'] }).notNull().default('unmatched'),
+  matchedBy: text('matched_by'), // headers | sender | coach
+  teamId: integer('team_id').references(() => teams.id),
+  ownerUserId: integer('owner_user_id').references(() => users.id), // Coach whose address it was sent to
+  conversationId: integer('conversation_id').references(() => conversations.id),
+  recipientId: integer('recipient_id').references(() => announcementRecipients.id),
+  receivedAt: text('received_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('inbound_emails_status_idx').on(t.status),
+  index('inbound_emails_owner_idx').on(t.ownerUserId),
 ]);
 
 // Web Push subscriptions, one per browser/device a person turned notifications on in.
@@ -415,3 +523,7 @@ export type Rsvp = typeof rsvps.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type Announcement = typeof announcements.$inferSelect;
+export type AnnouncementRecipient = typeof announcementRecipients.$inferSelect;
+export type FamilyNote = typeof familyNotes.$inferSelect;
+export type InboundEmail = typeof inboundEmails.$inferSelect;

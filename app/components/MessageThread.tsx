@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { PaperPlaneRight } from "@phosphor-icons/react";
+import { Check, PaperPlaneRight } from "@phosphor-icons/react";
 import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { Badge, cx } from "~/components/ui";
 
@@ -10,11 +10,15 @@ import { Badge, cx } from "~/components/ui";
 
 export type ThreadMessageView = {
   id: number;
-  senderId: number;
+  senderId: number | null; // Null for an email reply from a family with no account
   senderName: string;
   senderIsCoach: boolean;
   body: string;
   createdAt: string;
+  viaEmail?: boolean;
+  emailedTo?: string | null;
+  fullEmail?: string | null;
+  announcement?: { id: number; subject: string; ask: "none" | "ack" | "reply" } | null;
 };
 
 const POLL_MS = 5000;
@@ -32,14 +36,21 @@ export function MessageThread({
   emptyText,
   placeholder = "Write a message",
   widthClass = "max-w-3xl",
+  showEmailDetails = false,
+  acknowledged,
+  composerNote,
 }: {
   messages: ThreadMessageView[];
   meId: number;
   emptyText: string;
   placeholder?: string;
   widthClass?: string; // Match the page column so the composer lines up with the thread
+  showEmailDetails?: boolean; // Coaches: who a message was emailed to, and full emails
+  acknowledged?: number[]; // Parents: announcement messages already answered "Got it" (enables the button)
+  composerNote?: string | null; // Shown above the composer, e.g. "Also emailed to …"
 }) {
   const fetcher = useFetcher<{ error?: string }>();
+  const ackFetcher = useFetcher();
   const revalidator = useRevalidator();
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -107,9 +118,15 @@ export function MessageThread({
         <ol className="space-y-1 pb-2" aria-live="polite">
           {shown.map((m, i) => {
             const prev = shown[i - 1];
-            const mine = m.senderId === meId;
+            const mine = m.senderId != null && m.senderId === meId;
+            const sameSender = (a?: ThreadMessageView, b?: ThreadMessageView) =>
+              Boolean(a && b && a.senderId === b.senderId && (a.senderId != null || a.senderName === b.senderName));
             const newDay = !prev || dayLabel(prev.createdAt) !== dayLabel(m.createdAt);
-            const grouped = !newDay && prev && prev.senderId === m.senderId;
+            const grouped = !newDay && sameSender(prev, m);
+            const announcementBody = m.announcement ? m.body.slice(m.announcement.subject.length).trim() : m.body;
+            const ackPending = ackFetcher.formData?.get("messageId") === String(m.id);
+            const showAck = acknowledged && m.announcement?.ask === "ack";
+            const acked = acknowledged?.includes(m.id) || ackPending;
             return (
               <li key={m.id}>
                 {newDay && (
@@ -118,10 +135,11 @@ export function MessageThread({
                   </div>
                 )}
                 <div className={cx("flex flex-col", mine ? "items-end" : "items-start", !grouped && "mt-2")}>
-                  {!mine && !grouped && (
+                  {(!mine || m.viaEmail) && !grouped && (
                     <div className="mb-0.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-muted">
-                      {m.senderName}
+                      {mine ? "You" : m.senderName}
                       {m.senderIsCoach && <Badge tone="primary">Coach</Badge>}
+                      {m.viaEmail && <Badge>By email</Badge>}
                     </div>
                   )}
                   <div
@@ -132,10 +150,39 @@ export function MessageThread({
                     )}
                     title={m.pending ? "Sending…" : formatMessageDateTime(m.createdAt)}
                   >
-                    {m.body}
+                    {m.announcement && (
+                      <span className={cx("mb-1 block text-[11px] font-semibold uppercase tracking-wider", mine ? "text-white/70" : "text-muted")}>
+                        Announcement
+                      </span>
+                    )}
+                    {m.announcement && <strong className="mb-1 block">{m.announcement.subject}</strong>}
+                    {announcementBody}
+                    {showAck && (
+                      <ackFetcher.Form method="post" className="mt-2">
+                        <input type="hidden" name="_action" value="ack" />
+                        <input type="hidden" name="messageId" value={m.id} />
+                        <button
+                          type="submit"
+                          disabled={acked}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-semibold text-white disabled:bg-success-soft disabled:text-success"
+                        >
+                          <Check size={16} weight="bold" />
+                          {acked ? "Coaches know you've seen it" : "Got it"}
+                        </button>
+                      </ackFetcher.Form>
+                    )}
                   </div>
-                  {!m.pending && (shown[i + 1]?.senderId !== m.senderId || i === shown.length - 1) && (
-                    <span className="mt-0.5 px-1 text-[11px] text-subtle">{formatMessageTime(m.createdAt)}</span>
+                  {showEmailDetails && m.fullEmail && (
+                    <details className="mt-1 max-w-[85%] px-1 text-xs text-muted sm:max-w-[70%]">
+                      <summary className="cursor-pointer">Show the full email</summary>
+                      <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-2 font-sans">{m.fullEmail}</pre>
+                    </details>
+                  )}
+                  {!m.pending && (!sameSender(shown[i + 1], m) || i === shown.length - 1) && (
+                    <span className="mt-0.5 px-1 text-[11px] text-subtle">
+                      {formatMessageTime(m.createdAt)}
+                      {showEmailDetails && m.emailedTo && ` · emailed to ${m.emailedTo}`}
+                    </span>
                   )}
                 </div>
               </li>
@@ -156,6 +203,7 @@ export function MessageThread({
         <input type="hidden" name="_action" value="send" />
         <div className={cx("mx-auto w-full px-4 sm:px-6", widthClass)}>
           {fetcher.data?.error && <p className="mb-2 text-sm text-danger">{fetcher.data.error}</p>}
+          {composerNote && !fetcher.data?.error && <p className="mb-2 text-xs text-muted">{composerNote}</p>}
           <div className="flex items-end gap-2">
             <label htmlFor="message-body" className="sr-only">Message</label>
             <textarea

@@ -11,3 +11,6 @@
 /build/
 .vercel
 .env*
+
+# Local dev database (see DATABASE_URL in .env)
+/data/
