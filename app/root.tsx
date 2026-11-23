@@ -41,6 +41,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <Meta />
         <Links />
+        {/* Chrome offers its install prompt before hydration: keep it for the Add to Home Screen sheet */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__installPrompt=e});addEventListener("appinstalled",function(){window.__installPrompt=null});`,
+          }}
+        />
       </head>
       <body>
         {children}
