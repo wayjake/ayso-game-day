@@ -140,8 +140,9 @@ The application uses Drizzle ORM with 8 main tables:
 14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
 15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus `direct` threads between one parent and all of the team's coaches. Unread = message ids above `lastReadMessageId`.
 16. **pushSubscriptions** - Web Push endpoints, one per browser.
+17. **loginLinks** - Email sign-in links for families (`/user/magic-link`). Keyed by email, not user: any email on a player's contacts (or already linked to a player) can ask for one, and using it creates a parent account if needed and links every player whose contacts list that email. Hashed token, single use, 20 minutes. Opening the link shows a button and only the POST signs in, so mail scanners can't burn it. Needs Resend in production; there's no fallback.
 
-Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
+Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
 
 ## Authentication System
 
@@ -224,6 +225,8 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /user/logout - Logout
 /user/forgot-password - Request a reset link
 /user/reset-password/:token - Choose a new password (signs you in)
+/user/magic-link - Families: email me a sign-in link (no password)
+/user/magic-link/:token - Confirm and sign in (creates the parent account on first use)
 /api/uploadthing - File upload handler
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)

@@ -28,6 +28,8 @@ export default [
     route("logout", "routes/user.logout.tsx"),
     route("forgot-password", "routes/user.forgot-password.tsx"),
     route("reset-password/:token", "routes/user.reset-password.tsx"),
+    route("magic-link", "routes/user.magic-link.tsx"),
+    route("magic-link/:token", "routes/user.magic-link.token.tsx"),
   ]),
   route("dashboard", "routes/dashboard.tsx", [
     route("", "routes/dashboard._index.tsx"),

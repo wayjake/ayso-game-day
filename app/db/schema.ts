@@ -274,6 +274,18 @@ export const parentInvites = sqliteTable('parent_invites', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+// Email sign-in links for families. Keyed by email rather than user, since
+// using the link creates the parent's account if there isn't one yet. Only a
+// SHA-256 hash of the token is stored. Single use, short-lived.
+export const loginLinks = sqliteTable('login_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull(), // Lowercased
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  usedAt: text('used_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('login_links_email_idx').on(t.email)]);
+
 // Practices. A weekly series is just rows sharing a seriesId, so any single
 // date can be moved or cancelled without touching the rest.
 export const practices = sqliteTable('practices', {
