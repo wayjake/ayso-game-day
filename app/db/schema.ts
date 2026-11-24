@@ -225,7 +225,10 @@ export const teamMembers = sqliteTable('team_members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   userId: integer('user_id').notNull().references(() => users.id),
-  role: text('role', { enum: ['owner', 'coach'] }).notNull(), // 'owner' rows are a legacy backfill of each team's creator
+  // Staff role (utils/team-roles.ts); all give the same coach access. 'owner' rows
+  // are a legacy backfill of each team's creator and read as 'coach'. The owner
+  // may have no row at all, in which case they're a coach.
+  role: text('role', { enum: ['owner', 'coach', 'assistant-coach', 'team-manager'] }).notNull(),
   invitedBy: integer('invited_by').references(() => users.id),
   invitedAt: text('invited_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   joinedAt: text('joined_at'),
@@ -240,7 +243,7 @@ export const teamInvites = sqliteTable('team_invites', {
   teamId: integer('team_id').notNull().references(() => teams.id),
   email: text('email'),
   shareCode: text('share_code').unique(),
-  role: text('role', { enum: ['coach'] }).notNull(),
+  role: text('role', { enum: ['coach', 'assistant-coach', 'team-manager'] }).notNull(), // Staff role given on accept
   invitedBy: integer('invited_by').notNull().references(() => users.id),
   expiresAt: text('expires_at').notNull(),
   status: text('status', { enum: ['pending', 'accepted', 'revoked'] }).notNull().default('pending'),

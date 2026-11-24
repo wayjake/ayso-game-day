@@ -1,9 +1,9 @@
 import type { Route } from "./+types/team.games.game.card";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { getTeamStaff, requireTeamAccess } from "~/utils/team-access.server";
 import { buildGameCard } from "~/utils/game-card.server";
-import { db, games, players, users, teamMembers } from "~/db";
-import { eq, and, ne } from "drizzle-orm";
+import { db, games, players } from "~/db";
+import { eq, and } from "drizzle-orm";
 
 // Resource route: the official AYSO lineup card for one game, filled in as a PDF
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -27,32 +27,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .from(players)
     .where(eq(players.teamId, teamId));
 
-  const [owner] = await db
-    .select({ name: users.name })
-    .from(users)
-    .where(eq(users.id, team.coachId))
-    .limit(1);
-
-  // First coach to join is the assistant on the card. Older data lists the
-  // owner as a member of their own team, so skip them.
-  const [assistant] = await db
-    .select({ name: users.name })
-    .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.userId, users.id))
-    .where(and(
-      eq(teamMembers.teamId, teamId),
-      eq(teamMembers.status, "active"),
-      ne(teamMembers.userId, team.coachId)
-    ))
-    .orderBy(teamMembers.joinedAt)
-    .limit(1);
+  // Coach is the owner unless they've given themselves another role; the
+  // assistant is the first assistant coach, else a second coach. Team
+  // managers aren't on the card.
+  const staff = await getTeamStaff(teamId);
+  const coach = staff.find((s) => s.role === "coach");
+  const assistant =
+    staff.find((s) => s.role === "assistant-coach") ??
+    staff.find((s) => s.role === "coach" && s !== coach);
 
   const pdf = await buildGameCard({
     region: team.region,
     ageGroup: team.ageGroup,
     teamNumber: team.teamNumber,
     teamName: team.name,
-    coachName: owner?.name ?? null,
+    coachName: coach?.name ?? null,
     assistantCoachName: assistant?.name ?? null,
     gameDate: game.gameDate,
     opponent: game.opponent,

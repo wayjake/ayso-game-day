@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { db, teams, teamInvites, teamMembers, users } from "~/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { escapeHtml, sendEmail } from "~/utils/email.server";
+import { setStaffRole } from "~/utils/team-access.server";
+import { staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 
 const INVITE_TTL_DAYS = 14;
 
@@ -25,10 +27,12 @@ export async function createInvites({
   email,
   teamIds,
   invitedBy,
+  role,
 }: {
   email: string;
   teamIds: number[];
   invitedBy: number;
+  role: StaffRole;
 }) {
   const normalized = normalizeEmail(email);
   const [existingUser] = await db
@@ -78,7 +82,7 @@ export async function createInvites({
       teamId,
       email: normalized,
       shareCode,
-      role: "coach",
+      role,
       invitedBy,
       expiresAt,
     });
@@ -95,6 +99,7 @@ export async function sendInviteEmail({
   inviterName,
   inviterEmail,
   teamNames,
+  role,
 }: {
   request: Request;
   to: string;
@@ -102,13 +107,16 @@ export async function sendInviteEmail({
   inviterName: string;
   inviterEmail: string;
   teamNames: string[];
+  role: StaffRole;
 }) {
   const url = inviteUrl(request, shareCode);
   const teamList = teamNames.join(", ");
-  const subject = `${inviterName} invited you to coach ${teamNames.length === 1 ? teamNames[0] : "their teams"} on AYSO Game Day`;
+  const roleLabel = staffRoleLabel(role).toLowerCase();
+  const article = /^[aeiou]/.test(roleLabel) ? "an" : "a";
+  const subject = `${inviterName} invited you to join ${teamNames.length === 1 ? teamNames[0] : "their teams"} as ${article} ${roleLabel} on AYSO Game Day`;
 
   const text = [
-    `${inviterName} invited you to help coach on AYSO Game Day.`,
+    `${inviterName} invited you to join the team staff on AYSO Game Day as ${article} ${roleLabel}.`,
     ``,
     `Team${teamNames.length === 1 ? "" : "s"}: ${teamList}`,
     ``,
@@ -121,7 +129,7 @@ export async function sendInviteEmail({
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #0f172a;">
-      <p>${escapeHtml(inviterName)} invited you to help coach on AYSO Game Day.</p>
+      <p>${escapeHtml(inviterName)} invited you to join the team staff on AYSO Game Day as ${article} ${escapeHtml(roleLabel)}.</p>
       <p><strong>Team${teamNames.length === 1 ? "" : "s"}:</strong> ${escapeHtml(teamList)}</p>
       <p>You'll be able to plan lineups, manage the roster, and edit games.</p>
       <p style="margin: 24px 0;">
@@ -152,7 +160,7 @@ export async function getInviteByCode(shareCode: string) {
     invite.status === "pending" && isExpired(invite) ? "expired" : invite.status;
 
   const pendingForEmail = await db
-    .select({ id: teamInvites.id, teamId: teamInvites.teamId, teamName: teams.name, expiresAt: teamInvites.expiresAt })
+    .select({ id: teamInvites.id, teamId: teamInvites.teamId, teamName: teams.name, role: teamInvites.role, expiresAt: teamInvites.expiresAt })
     .from(teamInvites)
     .innerJoin(teams, eq(teamInvites.teamId, teams.id))
     .where(and(eq(teamInvites.email, invite.email), eq(teamInvites.status, "pending")));
@@ -178,36 +186,15 @@ export async function acceptInvites(shareCode: string, userId: number) {
   if (!found || found.state !== "pending") return [];
 
   const teamIds = [...new Set(found.teams.map((row) => row.teamId))];
-  const now = new Date().toISOString();
 
-  for (const teamId of teamIds) {
+  for (const row of found.teams) {
     const [team] = await db
       .select({ coachId: teams.coachId })
       .from(teams)
-      .where(eq(teams.id, teamId))
+      .where(eq(teams.id, row.teamId))
       .limit(1);
     if (!team || team.coachId === userId) continue;
-
-    const [existing] = await db
-      .select({ id: teamMembers.id })
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .limit(1);
-
-    if (existing) {
-      await db
-        .update(teamMembers)
-        .set({ status: "active", role: "coach", joinedAt: now, updatedAt: now })
-        .where(eq(teamMembers.id, existing.id));
-    } else {
-      await db.insert(teamMembers).values({
-        teamId,
-        userId,
-        role: "coach",
-        invitedBy: found.invite.invitedBy,
-        joinedAt: now,
-      });
-    }
+    await setStaffRole(row.teamId, userId, row.role, found.invite.invitedBy);
   }
 
   await db

@@ -17,6 +17,8 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
+import { getStaffRoles } from "~/utils/team-access.server";
+import type { StaffRole } from "~/utils/team-roles";
 import { sendPush } from "~/utils/push.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail, textToHtml, escapeHtml } from "~/utils/email.server";
 
@@ -361,7 +363,8 @@ export type ThreadMessage = {
   id: number;
   senderId: number | null;
   senderName: string;
-  senderIsCoach: boolean;
+  senderIsCoach: boolean; // On the team staff (any role)
+  senderRole: StaffRole | null; // Their staff role, shown as a badge
   body: string;
   createdAt: string;
   viaEmail: boolean; // Came in as an email reply
@@ -409,14 +412,16 @@ export async function getThread(conversationId: number, limit = 200): Promise<Th
     : [];
   const fullById = new Map(inboundRows.map((r) => [r.id, r.text]));
 
-  const coachIds = new Set(await getCoachUserIds(conversation.teamId));
+  const staffRoles = await getStaffRoles(conversation.teamId);
   return rows.reverse().map((r) => {
+    const senderRole = r.senderId != null ? staffRoles.get(r.senderId) ?? null : null;
     const full = r.inboundEmailId ? fullById.get(r.inboundEmailId)?.trim() ?? null : null;
     return {
       id: r.id,
       senderId: r.senderId,
       senderName: r.name || r.senderName || r.email?.split("@")[0] || r.senderEmail || "Family",
-      senderIsCoach: r.senderId != null && coachIds.has(r.senderId),
+      senderIsCoach: senderRole != null,
+      senderRole,
       body: r.body,
       createdAt: r.createdAt,
       viaEmail: r.source === "email",
