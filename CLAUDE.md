@@ -157,7 +157,7 @@ Flow: Resend sends and receives for the whole domain (one MX record on the root)
 
 Tours: `utils/tours.ts` defines them, `components/Tour.tsx` runs them and the Help sheet (the ? in the team header). Steps point at `data-tour="..."` attributes. Finished/dismissed tours are saved per account in `users.toursSeen`; bump a tour's `version` to show it again.
 
-Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. In the family app, `usePush` (in `routes/family.tsx`, shared through `useFamily()`) drives the header bell (`NotificationsMenu`), the Settings page, and the one-time `NotifyPrompt`. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
+Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. Realtime goes through Ably (`utils/realtime.server.ts`, `hooks/useConversationRealtime.ts`): after each message or reaction the server publishes a `changed` event on `team:<teamId>:conversation:<id>` and open threads reload; typing uses Ably presence. `/api/realtime/token` gives each person a 1-hour token for only the channels they can read. The account is billed per monthly active user, so it must use `@ably/pubsub-server` and `@ably/pubsub-device`; the old `ably` package is refused. Without `ABLY_API_KEY` pages poll instead. `public/sw.js` handles push only and caches nothing. In the family app, `usePush` (in `routes/family.tsx`, shared through `useFamily()`) drives the header bell (`NotificationsMenu`), the Settings page, and the one-time `NotifyPrompt`. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
 
 ## Authentication System
 
@@ -467,6 +467,7 @@ APP_URL=https://your-domain          # Origin used in invite links
 RESEND_API_KEY / EMAIL_FROM          # Without them, invites fall back to copyable links
 RESEND_WEBHOOK_SECRET=whsec_...      # Signing secret of the Resend webhook pointed at /api/email/webhook
 EMAIL_DELIVER_TO_FAMILIES=true       # Outside production only: actually email families instead of the coach
+ABLY_API_KEY=...                     # Realtime chat. The key needs Publish, Subscribe and Presence
 ```
 
 ## Testing & Quality Assurance
