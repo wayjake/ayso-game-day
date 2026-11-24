@@ -71,7 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     role,
     me: { id: user.id, name: user.name, email: user.email, sendingEmail: user.sendingEmail, isAdmin: user.role === "admin" },
     sendingDomain: sendingDomain(),
-    fromHeader: coachFromAddress(user).header,
+    fromHeader: coachFromAddress(user, team).header,
     owner,
     members,
     pendingInvites,

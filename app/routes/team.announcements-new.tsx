@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     team,
     families,
-    from: coachFromAddress(user).header,
+    from: coachFromAddress(user, team).header,
     hasOwnAddress: Boolean(user.sendingEmail),
     emailConfigured: isEmailConfigured(),
     redirectedTo: isFamilyDeliveryRedirected() ? user.email : null,

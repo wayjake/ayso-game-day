@@ -12,7 +12,7 @@ import {
   users,
 } from "~/db";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { getReceivedEmail } from "~/utils/email.server";
+import { getReceivedEmail, parseCoachTeamAddress } from "~/utils/email.server";
 import {
   authenticationPassed,
   getHeader,
@@ -183,7 +183,7 @@ async function matchByHeaders(refs: string[]): Promise<Match | null> {
 // 2. Sender: a family writing fresh. Only trusted when the email passed
 // SPF/DKIM/DMARC, so nobody can drop a message into a family's thread by
 // faking their address.
-async function matchBySender(address: string, subject: string | null, ownerUserId: number | null): Promise<Match | null> {
+async function matchBySender(address: string, subject: string | null, ownerUserId: number | null, toTeamId: number | null): Promise<Match | null> {
   const teamRows = await db
     .selectDistinct({ teamId: contacts.teamId })
     .from(contacts)
@@ -191,6 +191,9 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
     .where(and(sql`lower(trim(${contacts.email})) = ${address}`, eq(players.teamId, contacts.teamId)));
   let teamIds = teamRows.map((r) => r.teamId);
   if (teamIds.length === 0) return null;
+
+  // Sent to a coach+team address: that team, if the family is on it
+  if (toTeamId && teamIds.includes(toTeamId)) teamIds = [toTeamId];
 
   // Sent to a particular coach's address: prefer that coach's teams
   if (ownerUserId && teamIds.length > 1) {
@@ -308,6 +311,14 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   return conversation;
 }
 
+async function coachTeamFromAddresses(to: string[]) {
+  for (const address of to) {
+    const parsed = parseCoachTeamAddress(address);
+    if (parsed && (await getCoachUserIds(parsed.teamId)).includes(parsed.coachId)) return parsed;
+  }
+  return null;
+}
+
 export async function receiveEmail(resendEmailId: string) {
   // Webhooks can arrive more than once
   const [already] = await db.select({ id: inboundEmails.id }).from(inboundEmails).where(eq(inboundEmails.resendEmailId, resendEmailId)).limit(1);
@@ -323,10 +334,14 @@ export async function receiveEmail(resendEmailId: string) {
   const refs = referencedMessageIds(email.headers);
   const text = email.text?.trim() || (email.html ? htmlToText(email.html) : "");
 
-  // Sent to a coach's own address on the domain
-  const [owner] = to.length
-    ? await db.select({ id: users.id }).from(users).where(inArray(sql`lower(${users.sendingEmail})`, to)).limit(1)
-    : [];
+  // Sent to a coach+team address (only when that coach is on that team), or
+  // to an admin's own address on the domain
+  const toTeam = await coachTeamFromAddresses(to);
+  const [owner] = toTeam
+    ? [{ id: toTeam.coachId }]
+    : to.length
+      ? await db.select({ id: users.id }).from(users).where(inArray(sql`lower(${users.sendingEmail})`, to)).limit(1)
+      : [];
 
   const [inbound] = await db
     .insert(inboundEmails)
@@ -343,13 +358,15 @@ export async function receiveEmail(resendEmailId: string) {
       authPassed: authenticationPassed(email.authentication),
       isAutoReply: isAutoReply(email.headers, email.subject),
       ownerUserId: owner?.id ?? null,
+      // Unmatched mail to a team's address waits in that team's "Emails to sort"
+      teamId: toTeam?.teamId ?? null,
       receivedAt: email.created_at || new Date().toISOString(),
     })
     .onConflictDoNothing()
     .returning();
   if (!inbound) return; // Lost a race with a duplicate delivery
 
-  const match = (await matchByHeaders(refs)) ?? (inbound.authPassed ? await matchBySender(from.address, email.subject, inbound.ownerUserId) : null);
+  const match = (await matchByHeaders(refs)) ?? (inbound.authPassed ? await matchBySender(from.address, email.subject, inbound.ownerUserId, toTeam?.teamId ?? null) : null);
   if (match) await fileIntoThread(inbound, match);
 }
 

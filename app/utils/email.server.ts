@@ -117,9 +117,51 @@ function displayName(name: string) {
   return `"${name.replace(/["\\\r\n]/g, "")}"`;
 }
 
-// "Jake Berg" <jake@aysogameday.com>, or the shared address with the coach's name
-export function coachFromAddress(coach: { name: string | null; email: string; sendingEmail: string | null }) {
-  const address = coach.sendingEmail && isOnSendingDomain(coach.sendingEmail) ? coach.sendingEmail : bareAddress(process.env.EMAIL_FROM ?? "");
+function slug(value: string, max: number) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, max)
+    .replace(/-+$/, "");
+}
+
+// One address per coach per team, e.g. jake.thunder.12-3@aysogameday.com.
+// Only the trailing "<teamId>-<coachId>" identifies it; the names are for
+// people, so renaming a team or coach doesn't break replies to old mail.
+export function coachTeamAddress(
+  coach: { id: number; name: string | null; email: string },
+  team: { id: number; name: string }
+) {
+  const domain = sendingDomain();
+  if (!domain) return null;
+  const coachPart = slug(coach.name?.trim().split(/\s+/)[0] || coach.email.split("@")[0], 20) || "coach";
+  const teamPart = slug(team.name, 24) || "team";
+  return `${coachPart}.${teamPart}.${team.id}-${coach.id}@${domain}`;
+}
+
+// The team and coach a coach+team address stands for. The caller still checks
+// that the coach is on that team: anyone can type any address.
+export function parseCoachTeamAddress(address: string) {
+  const domain = sendingDomain();
+  if (!domain) return null;
+  const match = address.trim().toLowerCase().match(/\.(\d+)-(\d+)@(.+)$/);
+  if (!match || match[3] !== domain) return null;
+  return { teamId: Number(match[1]), coachId: Number(match[2]) };
+}
+
+// "Jake Berg" <jake@aysogameday.com> for an admin with their own address,
+// otherwise the coach+team address (or the shared one when there's no team)
+export function coachFromAddress(
+  coach: { id: number; name: string | null; email: string; sendingEmail: string | null },
+  team?: { id: number; name: string } | null
+) {
+  const address =
+    coach.sendingEmail && isOnSendingDomain(coach.sendingEmail)
+      ? coach.sendingEmail
+      : (team && coachTeamAddress(coach, team)) || bareAddress(process.env.EMAIL_FROM ?? "");
   const name = coach.name?.trim() || coach.email.split("@")[0];
   return { header: `${displayName(name)} <${address}>`, address };
 }
