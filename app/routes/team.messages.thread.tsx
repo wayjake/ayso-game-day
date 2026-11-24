@@ -19,6 +19,7 @@ import {
 } from "~/utils/messages.server";
 import { familyNotesView, handleNoteAction } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
+import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
 import { Button, cx } from "~/components/ui";
@@ -74,6 +75,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: conversation.kind,
     messages,
     thread,
+    realtime: isRealtimeConfigured()
+      ? { channel: conversationChannel(conversation.teamId, conversation.id), name: user.name || user.email.split("@")[0] }
+      : null,
     conversationId: conversation.id,
     needsReply: conversation.needsReply,
     familyEmail,
@@ -113,7 +117,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
-  const { me, title, subtitle, kind, messages, thread, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
+  const { me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
   const [showNotes, setShowNotes] = useState(false);
   const done = useFetcher();
   const pending = done.formData?.get("_action");
@@ -168,6 +172,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
       <MessageThread
         messages={messages}
         thread={thread}
+        realtime={realtime}
         meId={me}
         emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
         placeholder={kind === "team" ? "Message every family" : "Message this family"}

@@ -20,6 +20,7 @@ import { getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
 import { isReaction } from "~/utils/reactions";
+import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail, textToHtml, escapeHtml } from "~/utils/email.server";
 
 // Two kinds of conversation per team:
@@ -725,6 +726,7 @@ export async function postMessage(
     })
     .where(eq(conversations.id, conversation.id));
   await markRead(conversation.id, sender.id, message.id);
+  await publishConversation(conversation.teamId, conversation.id, { kind: "message", threadId: rootId });
 
   const emailed = emailTo ? await emailCoachMessage(conversation, message, sender, emailTo) : null;
 
@@ -784,9 +786,11 @@ export async function toggleReaction(
   const [existing] = await db.select({ id: messageReactions.id }).from(messageReactions).where(mine).limit(1);
   if (existing) {
     await db.delete(messageReactions).where(eq(messageReactions.id, existing.id));
+    await publishConversation(conversation.teamId, conversation.id, { kind: "reaction", threadId: message.parentId });
     return true;
   }
   await db.insert(messageReactions).values({ messageId, userId: user.id, emoji }).onConflictDoNothing();
+  await publishConversation(conversation.teamId, conversation.id, { kind: "reaction", threadId: message.parentId });
 
   if (message.senderId && message.senderId !== user.id) {
     const name = user.name || user.email.split("@")[0];

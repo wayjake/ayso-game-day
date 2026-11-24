@@ -4,6 +4,7 @@ import { ArrowBendUpLeft, ArrowLeft, ChatCircle, Check, PaperPlaneRight } from "
 import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { REACTIONS } from "~/utils/reactions";
 import { Badge, cx } from "~/components/ui";
+import { typingLabel, useConversationRealtime, type RealtimeConfig, type Typist, type TypingWhere } from "~/hooks/useConversationRealtime";
 
 // Chat thread shared by the coach dashboard and the family app. The route's
 // action handles `_action=send` (a `body`, and `replyTo` for a thread reply)
@@ -12,6 +13,9 @@ import { Badge, cx } from "~/components/ui";
 //
 // Tap a message to react or reply. Replies live in a thread under the message
 // (one level deep), opened with ?thread=<id> so a notification can link to it.
+//
+// With realtime set up (Ably), new messages and reactions arrive the moment
+// they're posted and polling drops to a slow safety net.
 
 export type ReactionView = { emoji: string; count: number; mine: boolean; names: string[] };
 
@@ -33,6 +37,7 @@ export type ThreadMessageView = {
 type Shown = ThreadMessageView & { pending?: boolean };
 
 const POLL_MS = 5000;
+const POLL_MS_LIVE = 30000; // Realtime connected: polling only catches anything missed
 const MAX_LENGTH = 2000;
 const MAIN_SEND = "send-main";
 const THREAD_SEND = "send-thread";
@@ -53,8 +58,11 @@ export function MessageThread({
   showEmailDetails = false,
   acknowledged,
   composerExtra,
+  realtime = null,
 }: {
   messages: ThreadMessageView[];
+  /** Ably channel for this conversation and my name for typing indicators; null polls instead */
+  realtime?: RealtimeConfig;
   /** The open thread (?thread=), if any */
   thread?: { root: ThreadMessageView; replies: ThreadMessageView[] } | null;
   meId: number;
@@ -70,18 +78,31 @@ export function MessageThread({
   const mainSend = useFetcher<{ error?: string }>({ key: MAIN_SEND });
   const pendingBody = pendingSendBody(mainSend);
 
+  // An event that arrives mid-reload waits for it to finish, then reloads again
+  const missed = useRef(false);
+  const live = useConversationRealtime(realtime, () => {
+    if (revalidator.state === "idle") revalidator.revalidate();
+    else missed.current = true;
+  });
+  useEffect(() => {
+    if (revalidator.state === "idle" && missed.current) {
+      missed.current = false;
+      revalidator.revalidate();
+    }
+  }, [revalidator]);
+
   // Poll while the tab is visible, and catch up as soon as it comes back
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate();
     };
-    const timer = setInterval(tick, POLL_MS);
+    const timer = setInterval(tick, live.connected ? POLL_MS_LIVE : POLL_MS);
     document.addEventListener("visibilitychange", tick);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [revalidator]);
+  }, [revalidator, live.connected]);
 
   // Stay pinned to the newest message when the user is already near it
   const lastId = messages[messages.length - 1]?.id ?? 0;
@@ -117,6 +138,8 @@ export function MessageThread({
         className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur"
         innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
         extra={composerExtra}
+        onTyping={live.setTyping}
+        typists={live.typists.filter((t) => t.where == null)}
       />
 
       {thread && (
@@ -127,6 +150,8 @@ export function MessageThread({
           meId={meId}
           showEmailDetails={showEmailDetails}
           widthClass={widthClass}
+          onTyping={live.setTyping}
+          typists={live.typists.filter((t) => t.where === thread.root.id)}
         />
       )}
     </div>
@@ -140,12 +165,16 @@ function ThreadPanel({
   meId,
   showEmailDetails,
   widthClass,
+  onTyping,
+  typists,
 }: {
   root: ThreadMessageView;
   replies: ThreadMessageView[];
   meId: number;
   showEmailDetails: boolean;
   widthClass: string;
+  onTyping: (where: TypingWhere) => void;
+  typists: Typist[];
 }) {
   const { pathname } = useLocation();
   const send = useFetcher<{ error?: string }>({ key: THREAD_SEND });
@@ -213,6 +242,8 @@ function ThreadPanel({
         replyTo={root.id}
         placeholder="Reply…"
         autoFocus
+        onTyping={onTyping}
+        typists={typists}
         className="border-t border-line bg-canvas pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
         innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
       />
@@ -439,7 +470,11 @@ function Composer({
   innerClassName,
   extra,
   autoFocus = false,
+  onTyping,
+  typists = [],
 }: {
+  onTyping?: (where: TypingWhere) => void;
+  typists?: Typist[];
   fetcherKey: string;
   replyTo?: number;
   placeholder: string;
@@ -454,6 +489,27 @@ function Composer({
   const [draft, setDraft] = useState("");
   const sending = fetcher.state !== "idle";
   const id = `message-body-${fetcherKey}`;
+  const typingText = typingLabel(typists);
+
+  // Tell the others I'm typing: at most every 3s, and stop after 5s of quiet
+  const typing = useRef<{ at: number; timer?: number }>({ at: 0 });
+  const signalTyping = (active: boolean) => {
+    if (!onTyping) return;
+    window.clearTimeout(typing.current.timer);
+    if (!active) {
+      if (typing.current.at) onTyping(false);
+      typing.current.at = 0;
+      return;
+    }
+    if (Date.now() - typing.current.at > 3000) {
+      typing.current.at = Date.now();
+      onTyping(replyTo ?? null);
+    }
+    typing.current.timer = window.setTimeout(() => signalTyping(false), 5000);
+  };
+  const stopTyping = useRef(signalTyping);
+  stopTyping.current = signalTyping;
+  useEffect(() => () => stopTyping.current(false), []);
 
   // Clear the box once the send lands
   useEffect(() => {
@@ -476,6 +532,7 @@ function Composer({
 
   const submit = () => {
     if (!draft.trim() || sending) return;
+    signalTyping(false);
     fetcher.submit(formRef.current);
   };
 
@@ -492,6 +549,16 @@ function Composer({
       <input type="hidden" name="_action" value="send" />
       {replyTo != null && <input type="hidden" name="replyTo" value={replyTo} />}
       <div className={innerClassName}>
+        {typingText && (
+          <p className="mb-2 flex items-center gap-2 px-1 text-xs text-muted" aria-live="polite">
+            <span className="flex gap-0.5" aria-hidden>
+              {[0, 150, 300].map((delay) => (
+                <span key={delay} className="size-1.5 animate-bounce rounded-full bg-subtle" style={{ animationDelay: `${delay}ms` }} />
+              ))}
+            </span>
+            {typingText}
+          </p>
+        )}
         {fetcher.data?.error && <p className="mb-2 text-sm text-danger">{fetcher.data.error}</p>}
         {extra}
         <div className="flex items-end gap-2">
@@ -505,7 +572,10 @@ function Composer({
             rows={1}
             maxLength={MAX_LENGTH}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              signalTyping(e.target.value.trim().length > 0);
+            }}
             onKeyDown={(e) => {
               // Enter sends on a keyboard; on phones the return key adds a line
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia("(pointer: fine)").matches) {

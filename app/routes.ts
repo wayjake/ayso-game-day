@@ -9,6 +9,7 @@ export default [
   route("api/ai-lineup", "api/ai-lineup/route.ts"),
   route("api/roster-import", "api/roster-import/route.ts"),
   route("api/push", "routes/api.push.ts"),
+  route("api/realtime/token", "routes/api.realtime-token.ts"),
   route("api/email/webhook", "routes/api.email-webhook.ts"),
   route("api/tours", "routes/api.tours.ts"),
   // Public routes (no auth required)

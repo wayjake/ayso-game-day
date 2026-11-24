@@ -26,6 +26,7 @@ import {
 import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
+import { publishConversation } from "~/utils/realtime.server";
 
 // Everything that comes back from Resend: delivery events for mail we sent,
 // and email received on the domain.
@@ -286,6 +287,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       ...(inbound.isAutoReply ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
+  await publishConversation(match.teamId, conversation.id, { kind: "message" });
 
   if (match.recipientId && !inbound.isAutoReply) {
     await db

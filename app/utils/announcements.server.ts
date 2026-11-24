@@ -16,6 +16,7 @@ import { getCoachUserIds } from "~/utils/family.server";
 import { listFamilies, type Family } from "~/utils/parent-invites.server";
 import { getOrCreateFamilyConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
 import { sendPush } from "~/utils/push.server";
+import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, escapeHtml, familyDeliveryAddress, sendEmail, textToHtml } from "~/utils/email.server";
 
 // Announcements: one email per family (so opens and replies are tracked per
@@ -180,6 +181,7 @@ export async function sendAnnouncement({
       .update(conversations)
       .set({ lastMessageAt: message.createdAt, lastMessagePreview: preview(subject) })
       .where(eq(conversations.id, conversation.id));
+    await publishConversation(teamId, conversation.id, { kind: "message" });
     await markRead(conversation.id, coach.id, message.id);
 
     const [recipient] = await db

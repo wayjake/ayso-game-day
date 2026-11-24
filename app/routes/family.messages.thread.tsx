@@ -6,6 +6,7 @@ import { requireParent } from "~/utils/family.server";
 import { getConversationAccess, getReplies, getThread, latestMessageId, markRead, postMessage, toggleReaction } from "~/utils/messages.server";
 import { acknowledgeFromThread, acknowledgedMessageIds } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
+import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { ArrowLeft } from "@phosphor-icons/react";
 
 async function access(request: Request, conversationId: number) {
@@ -34,6 +35,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teamName: team?.name ?? "Team",
     messages,
     thread,
+    realtime: isRealtimeConfigured()
+      ? { channel: conversationChannel(conversation.teamId, conversation.id), name: user.name || user.email.split("@")[0] }
+      : null,
     // Announcements in their private thread can be answered with "Got it"
     acknowledged: conversation.kind === "direct" ? await acknowledgedMessageIds(conversation.id) : null,
   });
@@ -63,7 +67,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function FamilyThread({ loaderData }: Route.ComponentProps) {
-  const { me, kind, teamName, messages, thread, acknowledged } = loaderData;
+  const { me, kind, teamName, messages, thread, realtime, acknowledged } = loaderData;
   return (
     <div>
       <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur">
@@ -80,6 +84,7 @@ export default function FamilyThread({ loaderData }: Route.ComponentProps) {
       <MessageThread
         messages={messages}
         thread={thread}
+        realtime={realtime}
         meId={me}
         emptyText={kind === "team" ? "No messages yet. Say hi to the team." : "Questions about practice, playing time, anything? Message the coaches here."}
         placeholder={kind === "team" ? "Message the team" : "Message the coaches"}
