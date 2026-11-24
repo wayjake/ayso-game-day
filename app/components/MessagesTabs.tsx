@@ -2,7 +2,7 @@ import { NavLink } from "react-router";
 import { cx } from "~/components/ui";
 
 // Inbox | Announcements switch at the top of the Messages tab
-export function MessagesTabs({ teamId, needsReply = 0 }: { teamId: number; needsReply?: number }) {
+export function MessagesTabs({ teamId, needsReply = 0, className }: { teamId: number; needsReply?: number; className?: string }) {
   const base = `/dashboard/team/${teamId}`;
   const tab = ({ isActive }: { isActive: boolean }) =>
     cx(
@@ -10,8 +10,8 @@ export function MessagesTabs({ teamId, needsReply = 0 }: { teamId: number; needs
       isActive ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-muted hover:text-ink"
     );
   return (
-    <nav aria-label="Messages" className="mb-6 flex gap-1 rounded-xl bg-surface-2 p-1 ring-1 ring-line sm:inline-flex" data-tour="messages-tabs">
-      <NavLink to={`${base}/messages`} end className={tab}>
+    <nav aria-label="Messages" className={cx("mb-6 flex gap-1 rounded-xl bg-surface-2 p-1 ring-1 ring-line sm:inline-flex", className)} data-tour="messages-tabs">
+      <NavLink to={`${base}/messages`} className={tab}>
         Inbox
         {needsReply > 0 && (
           <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white tabular">

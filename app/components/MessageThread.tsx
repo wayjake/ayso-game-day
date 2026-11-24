@@ -16,6 +16,12 @@ import { typingLabel, useConversationRealtime, type RealtimeConfig, type Typist,
 //
 // With realtime set up (Ably), new messages and reactions arrive the moment
 // they're posted and polling drops to a slow safety net.
+//
+// layout="window" (the default) scrolls the page with the composer fixed to the
+// bottom of the screen. layout="pane" does the same on phones, and from lg up
+// fills its flex parent: the messages scroll inside it and the composer sits
+// at its foot. Which one applies is decided by CSS, and the scroll code checks
+// which element actually scrolls, so there's no media query in JS.
 
 export type ReactionView = { emoji: string; count: number; mine: boolean; names: string[] };
 
@@ -59,7 +65,9 @@ export function MessageThread({
   acknowledged,
   composerExtra,
   realtime = null,
+  layout = "window",
 }: {
+  layout?: "window" | "pane";
   messages: ThreadMessageView[];
   /** Ably channel for this conversation and my name for typing indicators; null polls instead */
   realtime?: RealtimeConfig;
@@ -73,6 +81,8 @@ export function MessageThread({
   acknowledged?: number[]; // Parents: announcement messages already answered "Got it" (enables the button)
   composerExtra?: ReactNode; // Inside the form above the composer, e.g. the "Also send by email" checkbox
 }) {
+  const pane = layout === "pane";
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const revalidator = useRevalidator();
   const reactions = usePendingReactions();
   const mainSend = useFetcher<{ error?: string }>({ key: MAIN_SEND });
@@ -108,9 +118,16 @@ export function MessageThread({
   const lastId = messages[messages.length - 1]?.id ?? 0;
   const firstRender = useRef(true);
   useLayoutEffect(() => {
-    const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
+    // The pane scrolls itself only where its CSS makes it scrollable (lg up)
+    const el = scrollerRef.current;
+    const inPane = el && getComputedStyle(el).overflowY === "auto" ? el : null;
+    const nearBottom = inPane
+      ? inPane.scrollTop + inPane.clientHeight >= inPane.scrollHeight - 200
+      : window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
     if (firstRender.current || nearBottom || pendingBody) {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: firstRender.current ? "instant" : "smooth" });
+      const behavior = firstRender.current ? "instant" : "smooth";
+      if (inPane) inPane.scrollTo({ top: inPane.scrollHeight, behavior });
+      else window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
     }
     firstRender.current = false;
   }, [lastId, pendingBody]);
@@ -119,24 +136,29 @@ export function MessageThread({
 
   return (
     // Bottom padding leaves room for the fixed composer
-    <div className="pb-28">
-      {shown.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted">{emptyText}</p>
-      ) : (
-        <MessageList
-          messages={shown.map(reactions.apply)}
-          meId={meId}
-          showEmailDetails={showEmailDetails}
-          acknowledged={acknowledged}
-          canReply
-        />
-      )}
+    <div className={cx("pb-28", pane && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:pb-0")}>
+      <div ref={scrollerRef} className={cx(pane && "lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-6 lg:pt-2")}>
+        {shown.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted">{emptyText}</p>
+        ) : (
+          <MessageList
+            messages={shown.map(reactions.apply)}
+            meId={meId}
+            showEmailDetails={showEmailDetails}
+            acknowledged={acknowledged}
+            canReply
+          />
+        )}
+      </div>
 
       <Composer
         fetcherKey={MAIN_SEND}
         placeholder={placeholder}
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur"
-        innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
+        className={cx(
+          "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur",
+          pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
+        )}
+        innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}
         extra={composerExtra}
         onTyping={live.setTyping}
         typists={live.typists.filter((t) => t.where == null)}
