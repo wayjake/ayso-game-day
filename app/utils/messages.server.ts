@@ -596,7 +596,7 @@ export async function usersWithPush(userIds: number[]) {
 export type FamilyDelivery = {
   /** Where the email copy goes; null for the team chat or a thread with no address */
   email: string | null;
-  /** On the app with notifications on, so the email copy is optional */
+  /** On the app with notifications on: they'll see it without the email */
   pushReady: boolean;
 };
 
@@ -685,7 +685,7 @@ export async function postMessage(
   sender: Sender,
   body: string,
   options: {
-    /** Coach messages to a family: false skips the email copy, honored only when they have push */
+    /** Coach messages to a family: also email it. Only when the coach ticks "Send by email"; never for thread replies. */
     email?: boolean;
     /** Reply in the thread under this message */
     replyTo?: number | null;
@@ -708,8 +708,8 @@ export async function postMessage(
 
   const coachIds = await getCoachUserIds(conversation.teamId);
   const senderIsCoach = coachIds.includes(sender.id);
-  const delivery = senderIsCoach ? await familyDelivery(conversation) : null;
-  const emailTo = delivery?.email && (options.email !== false || !delivery.pushReady) ? delivery.email : null;
+  const delivery = senderIsCoach && options.email === true && !rootId ? await familyDelivery(conversation) : null;
+  const emailTo = delivery?.email ?? null;
 
   const [message] = await db
     .insert(messages)
