@@ -9,7 +9,7 @@ import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
 import { isEmailConfigured } from "~/utils/email.server";
 import { formatMessageTime } from "~/utils/dates";
 import { Alert, Badge, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx } from "~/components/ui";
-import { AddressBook, Check, CheckCircle, Copy, EnvelopeSimple, PaperPlaneTilt, Plus } from "@phosphor-icons/react";
+import { AddressBook, Check, CheckCircle, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -109,15 +109,21 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
         title="Families"
         description={`${joined} of ${families.length} families are on the app. Parents RSVP their kids to games and practices and get team messages.`}
         actions={
-          toInvite > 0 && (
-            <Form method="post">
-              <input type="hidden" name="_action" value="inviteAll" />
-              <Button type="submit" disabled={invitingAll}>
-                <PaperPlaneTilt size={18} />
-                {invitingAll ? "Inviting…" : `Invite ${toInvite} ${toInvite === 1 ? "family" : "families"}`}
-              </Button>
-            </Form>
-          )
+          <>
+            <Link to={`${base}/families/edit`} className={buttonClass({ variant: "secondary" })}>
+              <Plus size={18} weight="bold" />
+              Add family
+            </Link>
+            {toInvite > 0 && (
+              <Form method="post">
+                <input type="hidden" name="_action" value="inviteAll" />
+                <Button type="submit" disabled={invitingAll}>
+                  <PaperPlaneTilt size={18} />
+                  {invitingAll ? "Inviting…" : `Invite ${toInvite} ${toInvite === 1 ? "family" : "families"}`}
+                </Button>
+              </Form>
+            )}
+          </>
         }
       />
 
@@ -138,9 +144,9 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
           <EmptyState
             icon={<AddressBook size={24} />}
             title="No family emails yet"
-            action={<Link to={`${base}/contacts/new`} className={buttonClass()}><Plus size={18} weight="bold" />Add a contact</Link>}
+            action={<Link to={`${base}/families/edit`} className={buttonClass()}><Plus size={18} weight="bold" />Add family</Link>}
           >
-            Add a parent contact with an email for each player, then invite them here.
+            Add a parent with an email for each player, then invite them here.
           </EmptyState>
         </Card>
       ) : (
@@ -167,6 +173,14 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1 sm:justify-end">
+                  <Link
+                    to={`${base}/families/edit?email=${encodeURIComponent(f.email)}`}
+                    className={buttonClass({ variant: "ghost", size: "sm" })}
+                    aria-label={`Edit ${f.parentNames[0] ?? f.email}`}
+                  >
+                    <PencilSimple size={16} />
+                    Edit
+                  </Link>
                   {f.inviteUrl && <CopyLink url={f.inviteUrl} />}
                   {(f.status !== "joined" || f.kids.some((k) => !k.linked)) && (
                     <Form method="post">
@@ -193,11 +207,11 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
       {missing.length > 0 && (
         <Card className="mt-6 p-5">
           <h2 className="text-base font-semibold">No family email</h2>
-          <p className="mt-1 text-sm text-muted">Add a parent contact with an email to invite these families.</p>
+          <p className="mt-1 text-sm text-muted">Add a family with an email to invite them.</p>
           <ul className="mt-3 flex flex-wrap gap-2">
             {missing.map((p) => (
               <li key={p.id}>
-                <Link to={`${base}/contacts/new?playerId=${p.id}`} className={cx(buttonClass({ variant: "secondary", size: "sm" }))}>
+                <Link to={`${base}/families/edit?playerId=${p.id}`} className={cx(buttonClass({ variant: "secondary", size: "sm" }))}>
                   <Plus size={14} weight="bold" />
                   {p.name}
                 </Link>

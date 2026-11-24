@@ -3,8 +3,8 @@ import { Form, data, useNavigation } from "react-router";
 import { db, users } from "~/db";
 import { eq, sql } from "drizzle-orm";
 import { requireParent } from "~/utils/family.server";
-import { vapidPublicKey } from "~/utils/push.server";
-import { PushToggle } from "~/components/PushToggle";
+import { PushControls } from "~/components/PushToggle";
+import { useFamily } from "~/hooks/useFamily";
 import { Alert, Button, Card, CardHeader, PlayerAvatar, inputClass, labelClass } from "~/components/ui";
 import { SignOut } from "@phosphor-icons/react";
 
@@ -13,7 +13,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   return data({
     me: { name: user.name ?? "", email: user.email },
     kids,
-    vapidPublicKey: vapidPublicKey(),
   });
 }
 
@@ -34,7 +33,8 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function FamilySettings({ loaderData, actionData }: Route.ComponentProps) {
-  const { me, kids, vapidPublicKey } = loaderData;
+  const { me, kids } = loaderData;
+  const { push, openInstall } = useFamily();
   const navigation = useNavigation();
   const saving = navigation.state === "submitting" && navigation.formData?.get("_action") === "updateName";
 
@@ -47,7 +47,7 @@ export default function FamilySettings({ loaderData, actionData }: Route.Compone
         <p className="mb-4 text-sm text-muted">
           New messages, and new or cancelled games and practices. Turn it on separately on each phone or computer you use.
         </p>
-        <PushToggle vapidPublicKey={vapidPublicKey} />
+        <PushControls push={push} onInstall={openInstall} />
       </Card>
 
       <Card className="p-5">

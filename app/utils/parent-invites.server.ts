@@ -3,6 +3,7 @@ import { db, contacts, guardians, parentInvites, players, teams, users } from "~
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { escapeHtml, sendEmail } from "~/utils/email.server";
 import { normalizeEmail } from "~/utils/invites.server";
+import { claimFamilyConversation } from "~/utils/messages.server";
 
 // Parent invites go out per family: one email address per team, covering every
 // player on the team whose contacts list that address (so siblings come along).
@@ -35,12 +36,13 @@ export type Family = {
   status: FamilyStatus;
   invitedAt: string | null;
   inviteUrl: string | null;
+  userIds: number[]; // Parent accounts that belong to this family email
 };
 
 // Every family on the team (grouped by contact email) with where they are in
 // the invite flow. A family is "joined" once an account with that email, or
 // the account that accepted their invite, is linked to one of their kids.
-export async function listFamilies(request: Request, teamId: number): Promise<Family[]> {
+export async function listFamilies(request: Request | null, teamId: number): Promise<Family[]> {
   const rows = await db
     .select({
       email: contacts.email,
@@ -71,7 +73,7 @@ export async function listFamilies(request: Request, teamId: number): Promise<Fa
     if (!email) continue;
     let family = families.get(email);
     if (!family) {
-      family = { email, parentNames: [], kids: [], status: "not-invited", invitedAt: null, inviteUrl: null };
+      family = { email, parentNames: [], kids: [], status: "not-invited", invitedAt: null, inviteUrl: null, userIds: [] };
       families.set(email, family);
     }
     if (!family.parentNames.includes(row.contactName)) family.parentNames.push(row.contactName);
@@ -86,6 +88,7 @@ export async function listFamilies(request: Request, teamId: number): Promise<Fa
       links.filter((l) => normalizeEmail(l.email) === family.email).map((l) => l.userId)
     );
     if (latest?.status === "accepted" && latest.acceptedBy) familyUserIds.add(latest.acceptedBy);
+    family.userIds = [...familyUserIds];
 
     for (const kid of family.kids) {
       kid.linked = links.some((l) => l.playerId === kid.id && familyUserIds.has(l.userId));
@@ -96,7 +99,7 @@ export async function listFamilies(request: Request, teamId: number): Promise<Fa
     } else if (latest?.status === "pending") {
       family.status = isExpired(latest) ? "expired" : "invited";
       family.invitedAt = latest.createdAt;
-      family.inviteUrl = isExpired(latest) ? null : parentInviteUrl(request, latest.shareCode);
+      family.inviteUrl = isExpired(latest) || !request ? null : parentInviteUrl(request, latest.shareCode);
     }
   }
 
@@ -120,6 +123,9 @@ export async function linkFamily(teamId: number, email: string, userId: number) 
       .values(toLink.map((k) => ({ userId, playerId: k.id, teamId })))
       .onConflictDoNothing();
   }
+  // Callers have proven this email (invite link or magic link), so any thread
+  // the coaches already had with it by email becomes this account's
+  await claimFamilyConversation(teamId, normalizeEmail(email), userId);
   return toLink.map((k) => k.id);
 }
 

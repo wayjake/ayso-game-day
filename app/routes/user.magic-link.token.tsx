@@ -1,8 +1,6 @@
 import type { Route } from "./+types/user.magic-link.token";
-import { Form, Link, data, redirect, useNavigation } from "react-router";
-import { commitSession, getSession } from "~/sessions.server";
-import { completeMagicLink, findValidMagicLink } from "~/utils/magic-link.server";
-import { isParent } from "~/utils/family.server";
+import { Form, Link, data, useNavigation } from "react-router";
+import { completeMagicLink, findValidMagicLink, signInFamilyRedirect } from "~/utils/magic-link.server";
 import { Alert, Button, Card, EmptyState, buttonClass } from "~/components/ui";
 import { LinkBreak, SignIn } from "@phosphor-icons/react";
 
@@ -23,16 +21,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!user) {
     return data({ error: "This link has expired or was already used. Request a new one." }, { status: 400 });
   }
-
-  const session = await getSession(request.headers.get("Cookie"));
-  session.set("userId", user.id);
-  session.set("userEmail", user.email);
-  session.set("userRole", user.role);
-
-  // Parents stay signed in for a month: they open this from a phone home screen
-  return redirect((await isParent(user.id)) ? "/family" : "/dashboard", {
-    headers: { "Set-Cookie": await commitSession(session, { maxAge: 60 * 60 * 24 * 30 }) },
-  });
+  return signInFamilyRedirect(request, user);
 }
 
 export default function MagicLinkSignIn({ loaderData, actionData }: Route.ComponentProps) {

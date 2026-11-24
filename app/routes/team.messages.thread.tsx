@@ -1,11 +1,25 @@
 import type { Route } from "./+types/team.messages.thread";
-import { Link, data } from "react-router";
+import { useState } from "react";
+import { Link, data, useFetcher } from "react-router";
 import { db, guardians, players, users } from "~/db";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "~/utils/auth.server";
-import { getConversationAccess, getThread, markRead, postMessage } from "~/utils/messages.server";
+import {
+  type FamilyDelivery,
+  familyDelivery,
+  familyLabels,
+  getConversationAccess,
+  getThread,
+  markRead,
+  postMessage,
+  setNeedsReply,
+} from "~/utils/messages.server";
+import { familyNotesView, handleNoteAction } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
-import { ArrowLeft } from "@phosphor-icons/react";
+import { FamilyNotes } from "~/components/FamilyNotes";
+import { EmailToggle } from "~/components/EmailToggle";
+import { Button, cx } from "~/components/ui";
+import { ArrowLeft, Check, NotePencil } from "@phosphor-icons/react";
 
 async function access(request: Request, teamId: number, conversationId: number) {
   const user = await getUser(request);
@@ -23,26 +37,62 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   let title = "Team chat";
   let subtitle = "Every coach and family on the app";
-  if (conversation.kind === "direct" && conversation.parentUserId) {
-    const [parent] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, conversation.parentUserId)).limit(1);
-    const kids = await db
-      .select({ name: players.name })
-      .from(guardians)
-      .innerJoin(players, eq(guardians.playerId, players.id))
-      .where(and(eq(guardians.userId, conversation.parentUserId), eq(guardians.teamId, conversation.teamId)));
-    title = parent?.name || parent?.email || "Family";
-    subtitle = `${kids.map((k) => k.name.split(" ")[0]).join(" & ") || "Family"} · private with the coaches`;
+  let familyEmail: string | null = null;
+  let delivery: FamilyDelivery = { email: null, pushReady: false };
+
+  if (conversation.kind === "direct") {
+    const parent = conversation.parentUserId
+      ? (await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, conversation.parentUserId)).limit(1))[0]
+      : undefined;
+    familyEmail = conversation.familyEmail ?? parent?.email.toLowerCase() ?? null;
+    const label = familyEmail ? (await familyLabels(conversation.teamId, [familyEmail])).get(familyEmail) : undefined;
+    const kids = conversation.parentUserId
+      ? (
+          await db
+            .select({ name: players.name })
+            .from(guardians)
+            .innerJoin(players, eq(guardians.playerId, players.id))
+            .where(and(eq(guardians.userId, conversation.parentUserId), eq(guardians.teamId, conversation.teamId)))
+        ).map((k) => k.name.split(" ")[0])
+      : [];
+    const kidNames = (kids.length ? kids : label?.kids ?? []).join(" & ") || "Family";
+    delivery = await familyDelivery(conversation);
+    title = parent?.name || label?.names[0] || parent?.email || familyEmail || "Family";
+    subtitle = `${kidNames} · ${kids.length ? "private with the coaches" : "by email, not on the app yet"}`;
   }
 
-  return data({ me: user.id, title, subtitle, kind: conversation.kind, messages });
+  return data({
+    me: user.id,
+    title,
+    subtitle,
+    kind: conversation.kind,
+    messages,
+    conversationId: conversation.id,
+    needsReply: conversation.needsReply,
+    familyEmail,
+    delivery,
+    notes: familyEmail ? await familyNotesView(conversation.teamId, familyEmail) : [],
+  });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const { user, conversation } = await access(request, Number(params.teamId), Number(params.conversationId));
   const formData = await request.formData();
-  if (formData.get("_action") !== "send") return data({ error: "Unknown action" }, { status: 400 });
-  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""));
+  const intent = formData.get("_action");
+
+  const notes = await handleNoteAction(formData, conversation.teamId, user.id);
+  if (notes) return data(notes);
+
+  if (intent === "done" || intent === "undone") {
+    await setNeedsReply(conversation.id, intent === "undone");
+    return data({ ok: true });
+  }
+  if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
+  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
+    email: formData.get("alsoEmail") === "1",
+  });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
+  if (message.emailError) return data({ error: `Sent in the app, but the email didn't go out: ${message.emailError}` });
   return data({ ok: true });
 }
 
@@ -51,21 +101,57 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
-  const { me, title, subtitle, kind, messages } = loaderData;
+  const { me, title, subtitle, kind, messages, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
+  const [showNotes, setShowNotes] = useState(false);
+  const done = useFetcher();
+  const pending = done.formData?.get("_action");
+  const flagged = pending ? pending === "undone" : needsReply;
+
   return (
     <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
-      <div className="sticky top-0 z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:mx-0 sm:px-0">
-        <Link
-          to={`/dashboard/team/${params.teamId}/messages`}
-          className="-ml-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
-          aria-label="All messages"
-        >
-          <ArrowLeft size={20} weight="bold" />
-        </Link>
-        <div className="min-w-0">
-          <h1 className="truncate font-semibold leading-tight">{title}</h1>
-          <p className="truncate text-xs text-muted">{subtitle}</p>
+      <div className="sticky top-0 z-20 -mx-4 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:mx-0 sm:px-0">
+        <div className="flex items-center gap-3">
+          <Link
+            to={`/dashboard/team/${params.teamId}/messages`}
+            className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            aria-label="All messages"
+          >
+            <ArrowLeft size={20} weight="bold" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate font-semibold leading-tight">{title}</h1>
+            <p className="truncate text-xs text-muted">{subtitle}</p>
+          </div>
+          {kind === "direct" && (
+            <>
+              <done.Form method="post">
+                <input type="hidden" name="_action" value={flagged ? "done" : "undone"} />
+                <Button type="submit" size="sm" variant={flagged ? "secondary" : "ghost"} title={flagged ? "Clear from Needs reply" : "Flag as needing a reply"}>
+                  <Check size={16} weight="bold" />
+                  <span className="hidden sm:inline">{flagged ? "Mark done" : "Done"}</span>
+                </Button>
+              </done.Form>
+              {familyEmail && (
+                <Button
+                  size="sm"
+                  variant={showNotes ? "secondary" : "ghost"}
+                  onClick={() => setShowNotes((v) => !v)}
+                  aria-expanded={showNotes}
+                  aria-controls="thread-notes"
+                >
+                  <NotePencil size={16} />
+                  <span className="hidden sm:inline">Notes</span>
+                  {notes.length > 0 && <span className="tabular text-muted">{notes.length}</span>}
+                </Button>
+              )}
+            </>
+          )}
         </div>
+        {showNotes && familyEmail && (
+          <div id="thread-notes" className={cx("mt-3 max-h-[50dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line")}>
+            <FamilyNotes notes={notes} familyEmail={familyEmail} meId={me} />
+          </div>
+        )}
       </div>
       <MessageThread
         messages={messages}
@@ -73,6 +159,12 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
         emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
         placeholder={kind === "team" ? "Message every family" : "Message this family"}
         widthClass="max-w-2xl"
+        showEmailDetails
+        composerExtra={
+          delivery.email ? (
+            <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />
+          ) : null
+        }
       />
     </div>
   );

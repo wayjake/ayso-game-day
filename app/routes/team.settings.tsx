@@ -4,7 +4,7 @@ import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess, requireTeamOwner } from "~/utils/team-access.server";
 import { createInvites, inviteUrl, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
-import { isEmailConfigured } from "~/utils/email.server";
+import { coachFromAddress, isEmailConfigured, isOnSendingDomain, sendingDomain } from "~/utils/email.server";
 import { db, teams, users, teamMembers, teamInvites } from "~/db";
 import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, inputClass, labelClass } from "~/components/ui";
@@ -69,7 +69,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     team,
     role,
-    me: { id: user.id, name: user.name, email: user.email },
+    me: { id: user.id, name: user.name, email: user.email, sendingEmail: user.sendingEmail, isAdmin: user.role === "admin" },
+    sendingDomain: sendingDomain(),
+    fromHeader: coachFromAddress(user).header,
     owner,
     members,
     pendingInvites,
@@ -115,6 +117,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       .where(eq(users.id, user.id));
 
     return data({ intent, success: "Your name was saved" });
+  }
+
+  if (intent === "updateSendingEmail") {
+    // Only admins pick an address, and each address belongs to one account,
+    // so nobody can send announcements as another coach
+    if (user.role !== "admin") return data({ intent, error: "Ask the site owner to set up an address for you" }, { status: 403 });
+    const address = text("sendingEmail").toLowerCase();
+    if (address && (!/^[a-z0-9._+-]+@[a-z0-9.-]+$/.test(address) || !isOnSendingDomain(address))) {
+      return data({ intent, error: `Use an address ending in @${sendingDomain()}` }, { status: 400 });
+    }
+    if (address) {
+      const [taken] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(sql`lower(${users.sendingEmail}) = ${address}`, ne(users.id, user.id)))
+        .limit(1);
+      if (taken) return data({ intent, error: "Another account already uses that address" }, { status: 400 });
+    }
+    await db.update(users).set({ sendingEmail: address || null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(users.id, user.id));
+    return data({ intent, success: address ? `Announcements now come from ${address}` : "Using the shared address" });
   }
 
   if (intent === "invite") {
@@ -318,6 +340,36 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
           </Button>
         </Form>
         {message("updateName")}
+      </Card>
+
+      {/* Sending address for announcements and email replies */}
+      <Card className="scroll-mt-6 p-5 sm:p-6" id="your-email">
+        <CardHeader title="Your email address" />
+        <p className="mt-0.5 text-sm text-muted">
+          Announcements and replies to families go out as <span className="font-medium text-ink">{loaderData.fromHeader}</span>.
+          Replies come back here either way.
+        </p>
+        {me.isAdmin && loaderData.sendingDomain ? (
+          <Form method="post" className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <input type="hidden" name="_action" value="updateSendingEmail" />
+            <input
+              name="sendingEmail"
+              type="email"
+              defaultValue={me.sendingEmail ?? ""}
+              placeholder={`you@${loaderData.sendingDomain}`}
+              className={inputClass}
+              aria-label="Your sending address"
+            />
+            <Button type="submit" className="sm:h-auto" disabled={busy("updateSendingEmail")}>
+              {busy("updateSendingEmail") ? "Saving…" : "Save"}
+            </Button>
+          </Form>
+        ) : (
+          !me.sendingEmail && (
+            <p className="mt-3 text-sm text-muted">Want your own @{loaderData.sendingDomain ?? "team"} address? Ask the site owner to set one up.</p>
+          )
+        )}
+        {message("updateSendingEmail")}
       </Card>
 
       {/* Coaches */}

@@ -1,7 +1,7 @@
 import { Link } from "react-router";
-import { ChatsCircle, UserCircle } from "@phosphor-icons/react";
+import { ChatsCircle, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
 import { formatMessageTime } from "~/utils/dates";
-import { Card, cx } from "~/components/ui";
+import { Badge, Card, cx } from "~/components/ui";
 
 export type ConversationListItem = {
   id: number;
@@ -11,6 +11,8 @@ export type ConversationListItem = {
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   unread: number;
+  needsReply?: boolean;
+  emailOnly?: boolean;
 };
 
 export function ConversationList({
@@ -32,7 +34,7 @@ export function ConversationList({
                   c.kind === "team" ? "bg-primary-soft text-primary" : "bg-surface-2 text-muted"
                 )}
               >
-                {c.kind === "team" ? <ChatsCircle size={24} weight="fill" /> : <UserCircle size={24} weight="fill" />}
+                {c.kind === "team" ? <ChatsCircle size={24} weight="fill" /> : c.emailOnly ? <EnvelopeSimple size={22} weight="fill" /> : <UserCircle size={24} weight="fill" />}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline justify-between gap-3">
@@ -54,7 +56,12 @@ export function ConversationList({
                     </span>
                   )}
                 </span>
-                {c.lastMessagePreview && <span className="block truncate text-xs text-subtle">{c.subtitle}</span>}
+                {(c.lastMessagePreview || c.needsReply) && (
+                  <span className="mt-0.5 flex items-center gap-1.5">
+                    {c.needsReply && <Badge tone="warning">Needs reply</Badge>}
+                    {c.lastMessagePreview && <span className="truncate text-xs text-subtle">{c.subtitle}{c.emailOnly ? " · by email" : ""}</span>}
+                  </span>
+                )}
               </span>
             </Link>
           </li>

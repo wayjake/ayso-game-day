@@ -1,10 +1,18 @@
 import type { Route } from "./+types/family";
-import { Form, Link, NavLink, Outlet, data, useMatches } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Form, Link, NavLink, Outlet, data, useMatches, useSearchParams } from "react-router";
 import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { requireParent } from "~/utils/family.server";
 import { parentConversationIds, totalUnread } from "~/utils/messages.server";
+import { vapidPublicKey } from "~/utils/push.server";
+import { detectPlatform } from "~/utils/pwa";
+import { usePush } from "~/hooks/usePush";
+import type { FamilyContext } from "~/hooks/useFamily";
 import { AppMark } from "~/components/AppMark";
+import { InstallSheet } from "~/components/InstallSheet";
+import { NotificationsMenu } from "~/components/NotificationsMenu";
+import { NotifyPrompt } from "~/components/NotifyPrompt";
 import { buttonClass, cx } from "~/components/ui";
 import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, SignOut } from "@phosphor-icons/react";
 
@@ -21,6 +29,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     kids,
     unread,
     isCoach: Boolean(coaching),
+    vapidPublicKey: vapidPublicKey(),
+    platform: detectPlatform(request.headers.get("user-agent") ?? "", 0),
   });
 }
 
@@ -33,10 +43,52 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   // A chat thread takes the whole screen on phones, with its own back link
   const inThread = useMatches().some((m) => m.id === "routes/family.messages.thread");
 
+  const push = usePush(loaderData.vapidPublicKey);
+
+  // Just signed in (?install=1): on a phone that isn't running the installed
+  // app, start with how to add it to the Home Screen. The session cookie is
+  // already set, so the app opens signed in. The sheet comes with the page and
+  // its own script decides whether to open it, so it slides up right away
+  // instead of after hydration; elsewhere it closes itself unseen.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const justSignedIn = searchParams.has("install");
+  const [install, setInstall] = useState<{ openOnLoad: boolean } | null>(justSignedIn ? { openOnLoad: true } : null);
+  const openInstall = useCallback(() => setInstall({ openOnLoad: false }), []);
+  useEffect(() => {
+    if (!justSignedIn) return;
+    // Drop the flag so a reload or the back button doesn't bring it up again
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("install");
+        return next;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  }, [justSignedIn, setSearchParams]);
+
   const tabs = [
-    { label: "Schedule", to: "/family", end: true, icon: CalendarCheck, badge: 0 },
-    { label: "Messages", to: "/family/messages", end: false, icon: ChatsCircle, badge: unread },
-    { label: "Settings", to: "/family/settings", end: false, icon: GearSix, badge: 0 },
+    {
+      label: "Schedule",
+      to: "/family",
+      end: true,
+      icon: CalendarCheck,
+      badge: 0,
+    },
+    {
+      label: "Messages",
+      to: "/family/messages",
+      end: false,
+      icon: ChatsCircle,
+      badge: unread,
+    },
+    {
+      label: "Settings",
+      to: "/family/settings",
+      end: false,
+      icon: GearSix,
+      badge: 0,
+    },
   ];
 
   return (
@@ -57,7 +109,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
                 className={({ isActive }) =>
                   cx(
                     "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
-                    isActive ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink"
+                    isActive ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
                   )
                 }
               >
@@ -69,6 +121,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
           </nav>
 
           <div className="flex items-center gap-1">
+            <NotificationsMenu push={push} onInstall={openInstall} />
             {isCoach && (
               <Link to="/dashboard" className={buttonClass({ variant: "ghost", size: "sm" })}>
                 <ClipboardText size={18} />
@@ -85,8 +138,14 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       </header>
 
       <main id="main" className={cx("mx-auto w-full max-w-3xl px-4", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
-        <Outlet />
+        <Outlet context={{ push, openInstall } satisfies FamilyContext} />
       </main>
+
+      {install && (
+        <InstallSheet platform={loaderData.platform} openOnLoad={install.openOnLoad} onClose={() => setInstall(null)} />
+      )}
+      {/* Once per phone, as soon as it can say yes (on iPhone: first launch from the Home Screen) */}
+      <NotifyPrompt push={push} />
 
       {/* Phone tab bar */}
       {!inThread && (
@@ -103,7 +162,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
               className={({ isActive }) =>
                 cx(
                   "relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold",
-                  isActive ? "text-primary" : "text-muted"
+                  isActive ? "text-primary" : "text-muted",
                 )
               }
             >
@@ -129,7 +188,7 @@ function UnreadDot({ count, className }: { count: number; className?: string }) 
     <span
       className={cx(
         "inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white tabular",
-        className
+        className,
       )}
     >
       <span className="sr-only">, </span>

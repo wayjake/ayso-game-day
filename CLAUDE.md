@@ -19,7 +19,11 @@ This project is an AYSO (American Youth Soccer Organization) team management app
 - **Turso/LibSQL** - Cloud-based SQLite for staging and production
 - **SQLite** - Local development fallback
 - **Database environments**:
-  - **Local/Staging**: Uses `TURSO_URL` and `TURSO_TOKEN` (or falls back to local SQLite)
+  - **Local**: SQLite at `data/dev.db` (`DATABASE_URL=file:./data/dev.db`), for quick test data. `data/` is ignored by git and Syncthing. `local.db` in the repo is a stale copy; don't use it.
+    - Leave `TURSO_URL`/`TURSO_TOKEN` unset locally. When they're set, both the app and drizzle-kit use them instead, so placeholder values crash the app (`URL_INVALID`) and make drizzle-kit write to a file named after the placeholder.
+    - Scripts run with `tsx` (e.g. `npm run db:seed`) don't load `.env`. Prefix them with `DATABASE_URL=file:./data/dev.db` or they write to `local.db`.
+    - `npm run db:push` currently fails on this schema: drizzle-kit mishandles the partial unique indexes from 0003 ("no such index") and applies nothing. Apply new migration SQL to `data/dev.db` directly with `sqlite3`.
+    - Test logins: `jake@dubsado.com` (coach on team 1, below), `coach@example.com`, and parents `maria`/`chen`/`patel`/`rivera` `@example.com`.
     - Commands: `npm run db:push`, `npm run db:migrate`, `npm run db:studio`
   - **Production**: Uses `TURSO_PROD_URL` and `TURSO_PROD_TOKEN`
     - Commands: `npm run db:prod:migrate`, `npm run db:prod:studio`
@@ -140,9 +144,19 @@ The application uses Drizzle ORM with 8 main tables:
 14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
 15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus `direct` threads between one parent and all of the team's coaches. Unread = message ids above `lastReadMessageId`.
 16. **pushSubscriptions** - Web Push endpoints, one per browser.
-17. **loginLinks** - Email sign-in links for families (`/user/magic-link`). Keyed by email, not user: any email on a player's contacts (or already linked to a player) can ask for one, and using it creates a parent account if needed and links every player whose contacts list that email. Hashed token, single use, 20 minutes. Opening the link shows a button and only the POST signs in, so mail scanners can't burn it. Needs Resend in production; there's no fallback.
+15b. **conversations.familyEmail / needsReply** - A `direct` thread belongs to a parent account, a family email, or both. Families not on the app get an email-only thread (no `parentUserId`), visible to coaches only; `claimFamilyConversation` hands it to their account when they prove the email (invite or magic link, via `linkFamily`). A coach's message in a direct thread is also emailed to the family unless the coach unchecks "Also send by email" (`EmailToggle`), which is only allowed when the parent holding the thread has a push subscription (`familyDelivery` in `messages.server.ts`; the server enforces it). `needsReply` is set when a family writes and cleared when a coach replies or marks it done. `messages.senderId` is null for an email reply from a family with no account (`source = 'email'`, `senderEmail`/`senderName` set).
+17. **loginLinks** - Email sign-in links for families (`/user/magic-link`). Keyed by email, not user: any email on a player's contacts (or already linked to a player) can ask for one, and using it creates a parent account if needed and links every player whose contacts list that email. Hashed token, single use, 20 minutes. Opening the link shows a button and only the POST signs in, so mail scanners can't burn it. Needs Resend in production; there's no fallback. The same email has a 6-digit code (`codeHash`, hashed with the email) for the Home Screen app, since links in Mail always open in the browser: `/user/magic-link?step=code`. Five wrong codes burn the link. Either way, parents land on `/family?install=1`, which opens the Add to Home Screen sheet on phones not already in the installed app.
 
-Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
+### Announcements and email replies
+18. **announcements / announcementRecipients** - An email blast. Each family gets its own email (from the coach's address) plus a copy in their private thread; one recipient row per family tracks sent/delivered/opened/bounced/replied/"Got it" (`/ack/:token`, POST-only). `emailMessageId` holds every RFC Message-ID sent to them (announcement and reminders), space-separated.
+19. **inboundEmails** - Every email received on the domain, kept whole. Matched to a family by In-Reply-To/References first, then by sender address only if SPF/DKIM/DMARC passed (so a spoofed parent can't post into a thread); the rest wait in "Emails to sort" on the Messages page. Auto-replies never mark a family as replied. Inbound HTML is never rendered.
+20. **familyNotes** - Coach-only notes per family email per team. Never loaded by anything a parent can reach.
+
+Flow: Resend sends and receives for the whole domain (one MX record on the root). `app/routes/api.email-webhook.ts` takes every `email.*` event (Svix-signed; set `RESEND_WEBHOOK_SECRET`). Helpers: `utils/announcements.server.ts`, `utils/inbound-email.server.ts`, `utils/email-reply.ts` (pure: quote stripping, header parsing, auto-reply detection), `utils/email.server.ts`. Outside production (and on Vercel preview deploys) every family email is redirected to the sending coach unless `EMAIL_DELIVER_TO_FAMILIES=true`. Only `admin` users can set `users.sendingEmail` (their own address on the sending domain, unique per account); everyone else sends from `EMAIL_FROM` with their own display name. Opens show only if open tracking is on for the domain in Resend; leave click tracking off (it rewrites magic links).
+
+Tours: `utils/tours.ts` defines them, `components/Tour.tsx` runs them and the Help sheet (the ? in the team header). Steps point at `data-tour="..."` attributes. Finished/dismissed tours are saved per account in `users.toursSeen`; bump a tour's `version` to show it again.
+
+Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. In the family app, `usePush` (in `routes/family.tsx`, shared through `useFamily()`) drives the header bell (`NotificationsMenu`), the Settings page, and the one-time `NotifyPrompt`. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
 
 ## Authentication System
 
@@ -232,6 +246,9 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /public/game/:id - Public game view (no auth)
 /dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 /join/:code - Parent invite: sign up or log in, linked to their kids
+/ack/:token - "Got it" from an announcement email (POST to confirm)
+/api/email/webhook - Resend events and received email
+/api/tours - Save finished/dismissed tours
 /api/push - JSON: subscribe, unsubscribe, test push
 /family - Family app (parents): schedule with RSVPs
   /family/messages - Team chat + private thread with the coaches
@@ -257,7 +274,10 @@ export default function Component({ loaderData }: Route.ComponentProps) {
     /dashboard/team/:teamId/practices/:practiceId/edit - Edit, cancel, delete (one or rest of series)
     /dashboard/team/:teamId/rsvps/:eventType/:eventId - Who's coming; answer for a family; remind non-responders
     /dashboard/team/:teamId/messages - Team chat and family threads
-    /dashboard/team/:teamId/messages/:conversationId - Thread
+    /dashboard/team/:teamId/messages/:conversationId - Thread (notes, mark done; replies email families not on the app)
+    /dashboard/team/:teamId/announcements - Announcements list
+    /dashboard/team/:teamId/announcements/new - Compose: audience, ask for nothing / "Got it" / a reply, send a test
+    /dashboard/team/:teamId/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
 ```
 
 ## Key Features & Implementation Patterns
@@ -426,7 +446,7 @@ var(--text-color)
 
 Required:
 ```bash
-DATABASE_URL=file:./local.db          # SQLite local database
+DATABASE_URL=file:./data/dev.db       # SQLite local database
 SESSION_SECRET=your-secret-key-here   # Required in production
 UPLOADTHING_TOKEN=your-token          # For image uploads
 ```
@@ -444,6 +464,8 @@ VAPID_PRIVATE_KEY=...
 VAPID_SUBJECT=mailto:you@example.com
 APP_URL=https://your-domain          # Origin used in invite links
 RESEND_API_KEY / EMAIL_FROM          # Without them, invites fall back to copyable links
+RESEND_WEBHOOK_SECRET=whsec_...      # Signing secret of the Resend webhook pointed at /api/email/webhook
+EMAIL_DELIVER_TO_FAMILIES=true       # Outside production only: actually email families instead of the coach
 ```
 
 ## Testing & Quality Assurance
@@ -566,6 +588,9 @@ export async function action({ request }: Route.ActionArgs) {
 | Per-quarter lineup plans | `/app/utils/lineup.ts` (read-only views) and `lineup.server.ts` |
 | Family app (parents) | `/app/routes/family*.tsx` |
 | Chat thread UI | `/app/components/MessageThread.tsx` |
+| Announcements + tracker | `/app/routes/team.announcements*.tsx`, `/app/utils/announcements.server.ts` |
+| Email replies (inbound) | `/app/utils/inbound-email.server.ts`, `/app/utils/email-reply.ts` |
+| Tours + Help | `/app/utils/tours.ts`, `/app/components/Tour.tsx` |
 | Roster CSV import MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default) |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |
