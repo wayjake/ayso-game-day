@@ -9,9 +9,12 @@ import {
   familyDelivery,
   familyLabels,
   getConversationAccess,
+  getReplies,
   getThread,
+  latestMessageId,
   markRead,
   postMessage,
+  toggleReaction,
   setNeedsReply,
 } from "~/utils/messages.server";
 import { familyNotesView, handleNoteAction } from "~/utils/announcements.server";
@@ -32,8 +35,11 @@ async function access(request: Request, teamId: number, conversationId: number) 
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { user, conversation } = await access(request, Number(params.teamId), Number(params.conversationId));
-  const messages = await getThread(conversation.id);
-  await markRead(conversation.id, user.id, messages[messages.length - 1]?.id ?? 0);
+  const messages = await getThread(conversation.id, user.id);
+  const threadParam = new URL(request.url).searchParams.get("thread");
+  const thread = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  // Everything is on screen or summed up under its thread, so all of it counts as read
+  await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
 
   let title = "Team chat";
   let subtitle = "Every coach and family on the app";
@@ -67,6 +73,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle,
     kind: conversation.kind,
     messages,
+    thread,
     conversationId: conversation.id,
     needsReply: conversation.needsReply,
     familyEmail,
@@ -87,9 +94,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     await setNeedsReply(conversation.id, intent === "undone");
     return data({ ok: true });
   }
+  if (intent === "react") {
+    await toggleReaction(conversation, user, Number(formData.get("messageId")), String(formData.get("emoji") ?? ""));
+    return data({ ok: true });
+  }
   if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
   const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
     email: formData.get("alsoEmail") === "1",
+    replyTo: Number(formData.get("replyTo")) || null,
   });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   if (message.emailError) return data({ error: `Sent in the app, but the email didn't go out: ${message.emailError}` });
@@ -101,7 +113,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
-  const { me, title, subtitle, kind, messages, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
+  const { me, title, subtitle, kind, messages, thread, needsReply, familyEmail, delivery, notes, conversationId } = loaderData;
   const [showNotes, setShowNotes] = useState(false);
   const done = useFetcher();
   const pending = done.formData?.get("_action");
@@ -155,6 +167,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
       </div>
       <MessageThread
         messages={messages}
+        thread={thread}
         meId={me}
         emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
         placeholder={kind === "team" ? "Message every family" : "Message this family"}

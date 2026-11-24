@@ -6,7 +6,7 @@
 // Stored as JSON overrides in users.notify_prefs, so adding a category later
 // needs no migration: anyone without an override gets its default.
 
-export type NotifyKind = "team" | "chat" | "dropouts";
+export type NotifyKind = "team" | "chat" | "replies" | "reactions" | "dropouts";
 
 export type NotifyCategory = {
   kind: NotifyKind;
@@ -28,6 +28,8 @@ export const NOTIFY_CATEGORIES: NotifyCategory[] = [
     default: true,
   },
   { kind: "chat", label: "Chat messages", detail: "Team chat and your messages with the coaches.", default: true },
+  { kind: "replies", label: "Replies to threads you're in", detail: "When someone replies to a thread you started or replied to.", default: true },
+  { kind: "reactions", label: "Reactions", detail: "When someone reacts to one of your messages.", default: true },
   { kind: "dropouts", label: "Players dropping out", detail: "When a family says their player can't make it.", coachOnly: true, default: true },
 ];
 

@@ -3,7 +3,7 @@ import { Link, data, redirect } from "react-router";
 import { db, teams } from "~/db";
 import { eq } from "drizzle-orm";
 import { requireParent } from "~/utils/family.server";
-import { getConversationAccess, getThread, markRead, postMessage } from "~/utils/messages.server";
+import { getConversationAccess, getReplies, getThread, latestMessageId, markRead, postMessage, toggleReaction } from "~/utils/messages.server";
 import { acknowledgeFromThread, acknowledgedMessageIds } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
 import { ArrowLeft } from "@phosphor-icons/react";
@@ -21,8 +21,11 @@ async function access(request: Request, conversationId: number) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { user, conversation } = await access(request, Number(params.conversationId));
-  const messages = await getThread(conversation.id);
-  await markRead(conversation.id, user.id, messages[messages.length - 1]?.id ?? 0);
+  const messages = await getThread(conversation.id, user.id);
+  const threadParam = new URL(request.url).searchParams.get("thread");
+  const thread = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  // Everything is on screen or summed up under its thread, so all of it counts as read
+  await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
   const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
 
   return data({
@@ -30,6 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: conversation.kind,
     teamName: team?.name ?? "Team",
     messages,
+    thread,
     // Announcements in their private thread can be answered with "Got it"
     acknowledged: conversation.kind === "direct" ? await acknowledgedMessageIds(conversation.id) : null,
   });
@@ -42,8 +46,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     await acknowledgeFromThread(Number(formData.get("messageId")), conversation.id);
     return data({ ok: true });
   }
+  if (formData.get("_action") === "react") {
+    await toggleReaction(conversation, user, Number(formData.get("messageId")), String(formData.get("emoji") ?? ""));
+    return data({ ok: true });
+  }
   if (formData.get("_action") !== "send") return data({ error: "Unknown action" }, { status: 400 });
-  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""));
+  const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
+    replyTo: Number(formData.get("replyTo")) || null,
+  });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   return data({ ok: true });
 }
@@ -53,7 +63,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function FamilyThread({ loaderData }: Route.ComponentProps) {
-  const { me, kind, teamName, messages, acknowledged } = loaderData;
+  const { me, kind, teamName, messages, thread, acknowledged } = loaderData;
   return (
     <div>
       <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur">
@@ -69,6 +79,7 @@ export default function FamilyThread({ loaderData }: Route.ComponentProps) {
       </div>
       <MessageThread
         messages={messages}
+        thread={thread}
         meId={me}
         emptyText={kind === "team" ? "No messages yet. Say hi to the team." : "Questions about practice, playing time, anything? Message the coaches here."}
         placeholder={kind === "team" ? "Message the team" : "Message the coaches"}
