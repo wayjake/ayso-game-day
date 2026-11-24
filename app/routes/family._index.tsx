@@ -56,7 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Coaches hear about it when someone drops out
   if (status === "no" && previous !== "no") {
-    await sendPush(await getCoachUserIds(kid.teamId), {
+    await sendPush(await getCoachUserIds(kid.teamId), "dropouts", {
       title: `${kid.name.split(" ")[0]} can't make it`,
       body: `${kid.name} is out for ${eventPhrase(event)} ${eventDayPhrase(event.date)}.`,
       url: `/dashboard/team/${kid.teamId}/rsvps/${event.type}/${event.id}`,

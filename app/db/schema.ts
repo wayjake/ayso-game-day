@@ -15,6 +15,7 @@ export const users = sqliteTable('users', {
   // domain (e.g. jake@aysogameday.com). Falls back to EMAIL_FROM.
   sendingEmail: text('sending_email'),
   toursSeen: text('tours_seen'), // JSON: { [tourId]: version } for tours finished or dismissed
+  notifyPrefs: text('notify_prefs'), // JSON: { [kind]: boolean } overrides; see utils/notify.ts
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -367,11 +368,26 @@ export const messages = sqliteTable('messages', {
   emailedTo: text('emailed_to'),
   resendEmailId: text('resend_email_id'),
   emailMessageId: text('email_message_id'), // RFC Message-ID, so replies to it can be matched
+  // Set on a reply: the thread's root message. Threads are one level deep, so
+  // a reply to a reply points at the same root.
+  parentId: integer('parent_id'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   index('messages_conversation_idx').on(t.conversationId, t.id),
+  index('messages_parent_idx').on(t.parentId, t.id),
   index('messages_resend_email_idx').on(t.resendEmailId),
   index('messages_email_message_idx').on(t.emailMessageId),
+]);
+
+// One emoji reaction per person per message per emoji, from a fixed set (utils/reactions.ts).
+export const messageReactions = sqliteTable('message_reactions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  messageId: integer('message_id').notNull().references(() => messages.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  emoji: text('emoji').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('message_reactions_unique_idx').on(t.messageId, t.userId, t.emoji),
 ]);
 
 // Read position per person per conversation. Message ids only go up, so

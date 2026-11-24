@@ -2,11 +2,13 @@ import type { Route } from "./+types/api.push";
 import { data } from "react-router";
 import { z } from "zod";
 import { getUser } from "~/utils/auth.server";
-import { deleteSubscription, isPushConfigured, saveSubscription, sendPush } from "~/utils/push.server";
+import { deleteSubscription, isPushConfigured, saveSubscription, sendPush, setNotifyPref } from "~/utils/push.server";
+import { isSwitchableKind } from "~/utils/notify";
 import { db, pushSubscriptions } from "~/db";
 import { and, eq } from "drizzle-orm";
 
-// JSON endpoint for PushToggle: subscribe, unsubscribe, or send a test to yourself
+// JSON endpoint for usePush: subscribe, unsubscribe, choose which kinds of
+// notification you get (account-wide), or send a test to yourself
 
 const body = z.discriminatedUnion("action", [
   z.object({
@@ -18,16 +20,24 @@ const body = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("unsubscribe"), endpoint: z.string().max(2000) }),
   z.object({ action: z.literal("test") }),
+  z.object({ action: z.literal("prefs"), kind: z.string().refine(isSwitchableKind), on: z.boolean() }),
 ]);
 
 export async function action({ request }: Route.ActionArgs) {
   const user = await getUser(request, false);
   if (!user) return data({ error: "Sign in first" }, { status: 401 });
-  if (!isPushConfigured()) return data({ error: "Notifications aren't set up on this server" }, { status: 503 });
 
   const parsed = body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return data({ error: "Bad request" }, { status: 400 });
   const input = parsed.data;
+
+  // Choices are saved even before push is set up, so they're ready when it is
+  if (input.action === "prefs") {
+    const prefs = await setNotifyPref(user.id, input.kind as Parameters<typeof setNotifyPref>[1], input.on);
+    return data({ ok: true, prefs });
+  }
+
+  if (!isPushConfigured()) return data({ error: "Notifications aren't set up on this server" }, { status: 503 });
 
   if (input.action === "subscribe") {
     await saveSubscription(user.id, input.subscription, request.headers.get("User-Agent"));
@@ -45,7 +55,7 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ ok: true });
   }
 
-  await sendPush([user.id], {
+  await sendPush([user.id], "team", {
     title: "BenchTalk",
     body: "Notifications are working on this device.",
     url: "/family",

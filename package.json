@@ -16,6 +16,8 @@
     "db:prod:studio": "drizzle-kit studio --config=drizzle.config.prod.ts"
   },
   "dependencies": {
+    "@ably/pubsub-device": "^3.2.0",
+    "@ably/pubsub-server": "^3.2.0",
     "@anthropic-ai/sdk": "^0.65.0",
     "@libsql/client": "^0.15.12",
     "@phosphor-icons/react": "^2.1.10",

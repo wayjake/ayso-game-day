@@ -1,6 +1,7 @@
 import { sendNotification, WebPushError } from "web-push";
-import { db, pushSubscriptions } from "~/db";
+import { db, pushSubscriptions, users } from "~/db";
 import { eq, inArray } from "drizzle-orm";
+import { isSwitchableKind, parseNotifyPrefs, wantsNotification, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
 
 // Web Push with VAPID. Nothing is sent unless VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY and VAPID_SUBJECT are set (generate a pair with
@@ -42,12 +43,32 @@ export async function deleteSubscription(endpoint: string) {
   await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
 }
 
-// Sends to every device of every user given. Awaited by callers on purpose:
-// on serverless hosts work left running after the response may never finish.
+export async function getNotifyPrefs(userId: number): Promise<NotifyPrefs> {
+  const [row] = await db.select({ prefs: users.notifyPrefs }).from(users).where(eq(users.id, userId)).limit(1);
+  return parseNotifyPrefs(row?.prefs);
+}
+
+export async function setNotifyPref(userId: number, kind: NotifyKind, on: boolean) {
+  if (!isSwitchableKind(kind)) throw new Error("That kind of notification can't be turned off");
+  const prefs = { ...(await getNotifyPrefs(userId)), [kind]: on };
+  await db.update(users).set({ notifyPrefs: JSON.stringify(prefs) }).where(eq(users.id, userId));
+  return prefs;
+}
+
+// Sends to every device of every user given who wants this kind of
+// notification (see utils/notify.ts). Awaited by callers on purpose: on
+// serverless hosts work left running after the response may never finish.
 // Failures are logged, never thrown, so a push problem can't break the action.
-export async function sendPush(userIds: number[], payload: PushPayload) {
-  const ids = [...new Set(userIds)];
+export async function sendPush(userIds: number[], kind: NotifyKind, payload: PushPayload) {
+  let ids = [...new Set(userIds)];
   if (ids.length === 0 || !isPushConfigured()) return;
+
+  if (isSwitchableKind(kind)) {
+    const rows = await db.select({ id: users.id, prefs: users.notifyPrefs }).from(users).where(inArray(users.id, ids));
+    const wanted = new Set(rows.filter((r) => wantsNotification(parseNotifyPrefs(r.prefs), kind)).map((r) => r.id));
+    ids = ids.filter((id) => wanted.has(id));
+    if (ids.length === 0) return;
+  }
 
   const subs = await db.select().from(pushSubscriptions).where(inArray(pushSubscriptions.userId, ids));
   if (subs.length === 0) return;

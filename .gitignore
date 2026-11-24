@@ -14,3 +14,6 @@
 
 # Local dev database (see DATABASE_URL in .env)
 /data/
+
+# Claude Code worktrees
+/.claude/worktrees/

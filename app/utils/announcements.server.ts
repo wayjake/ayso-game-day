@@ -16,6 +16,7 @@ import { getCoachUserIds } from "~/utils/family.server";
 import { listFamilies, type Family } from "~/utils/parent-invites.server";
 import { getOrCreateFamilyConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
 import { sendPush } from "~/utils/push.server";
+import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, escapeHtml, familyDeliveryAddress, sendEmail, textToHtml } from "~/utils/email.server";
 
 // Announcements: one email per family (so opens and replies are tracked per
@@ -180,6 +181,7 @@ export async function sendAnnouncement({
       .update(conversations)
       .set({ lastMessageAt: message.createdAt, lastMessagePreview: preview(subject) })
       .where(eq(conversations.id, conversation.id));
+    await publishConversation(teamId, conversation.id, { kind: "message" });
     await markRead(conversation.id, coach.id, message.id);
 
     const [recipient] = await db
@@ -215,7 +217,7 @@ export async function sendAnnouncement({
     prepared
       .filter((p) => p.userIds.length > 0)
       .map((p) =>
-        sendPush(p.userIds, {
+        sendPush(p.userIds, "team", {
           title: `${teamName} · ${subject}`,
           body: preview(body, 180),
           url: `/family/messages/${p.conversationId}`,
@@ -258,7 +260,7 @@ export async function sendTestAnnouncement({
 }
 
 // Families who haven't done what the announcement asked for
-function awaitingResponse(r: RecipientView, ask: Ask) {
+export function awaitingResponse(r: RecipientView, ask: Ask) {
   if (r.state === "bounced" || r.state === "failed") return false;
   if (ask === "ack") return !r.acknowledgedAt && !r.repliedAt;
   if (ask === "reply") return !r.repliedAt;
@@ -375,6 +377,58 @@ export type RecipientView = {
 
 const NOT_OPENED_AFTER_HOURS = 48;
 
+type RecipientRow = typeof announcementRecipients.$inferSelect;
+
+// Read in the app by whoever holds the family's thread now
+function isSeenInApp(r: RecipientRow, currentParent: number | null, lastRead: number | null) {
+  return Boolean(currentParent && r.messageId && lastRead != null && lastRead >= r.messageId);
+}
+
+function recipientState(r: RecipientRow, seenInApp: boolean): RecipientState {
+  return r.status === "failed" ? "failed"
+    : r.bouncedAt ? "bounced"
+    : r.repliedAt ? "replied"
+    : r.acknowledgedAt ? "acknowledged"
+    : r.openedAt || seenInApp ? "opened"
+    : r.deliveredAt ? "delivered"
+    : r.status === "sent" ? "sent"
+    : "pending";
+}
+
+// The latest announcements one family got, with what happened to each, using
+// the same rules as the tracker
+export async function familyAnnouncements(teamId: number, familyEmail: string, limit = 4) {
+  const rows = await db
+    .select({
+      r: announcementRecipients,
+      subject: announcements.subject,
+      ask: announcements.ask,
+      createdAt: announcements.createdAt,
+      currentParent: conversations.parentUserId,
+      lastRead: conversationReads.lastReadMessageId,
+    })
+    .from(announcementRecipients)
+    .innerJoin(announcements, eq(announcementRecipients.announcementId, announcements.id))
+    .leftJoin(conversations, eq(announcementRecipients.conversationId, conversations.id))
+    .leftJoin(
+      conversationReads,
+      and(
+        eq(conversationReads.conversationId, announcementRecipients.conversationId),
+        eq(conversationReads.userId, conversations.parentUserId)
+      )
+    )
+    .where(and(eq(announcementRecipients.teamId, teamId), eq(announcementRecipients.familyEmail, familyEmail.toLowerCase())))
+    .orderBy(desc(announcementRecipients.id))
+    .limit(limit);
+  return rows.map(({ r, subject, ask, createdAt, currentParent, lastRead }) => ({
+    id: r.announcementId,
+    subject,
+    ask,
+    createdAt,
+    state: recipientState(r, isSeenInApp(r, currentParent, lastRead)),
+  }));
+}
+
 export async function getAnnouncementTracker(announcementId: number, teamId: number) {
   if (!Number.isInteger(announcementId)) return null;
   const [announcement] = await db
@@ -428,16 +482,8 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
   const withPush = await usersWithPush(rows.flatMap((x) => (x.currentParent ? [x.currentParent] : [])));
   const now = Date.now();
   const recipients: RecipientView[] = rows.map(({ r, needsReply, currentParent, lastRead }) => {
-    const seenInApp = Boolean(currentParent && r.messageId && lastRead != null && lastRead >= r.messageId);
-    const state: RecipientState =
-      r.status === "failed" ? "failed"
-      : r.bouncedAt ? "bounced"
-      : r.repliedAt ? "replied"
-      : r.acknowledgedAt ? "acknowledged"
-      : r.openedAt || seenInApp ? "opened"
-      : r.deliveredAt ? "delivered"
-      : r.status === "sent" ? "sent"
-      : "pending";
+    const seenInApp = isSeenInApp(r, currentParent, lastRead);
+    const state = recipientState(r, seenInApp);
     const quiet = !r.openedAt && !seenInApp && !r.repliedAt && !r.acknowledgedAt;
     const stale = r.sentAt ? now - new Date(r.sentAt).getTime() > NOT_OPENED_AFTER_HOURS * 3600_000 : false;
     const replyWaiting = Boolean(needsReply && (r.repliedAt || latestReply.has(r.conversationId ?? -1)));

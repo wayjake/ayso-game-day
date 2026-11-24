@@ -26,6 +26,7 @@ import {
 import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
+import { publishConversation } from "~/utils/realtime.server";
 
 // Everything that comes back from Resend: delivery events for mail we sent,
 // and email received on the domain.
@@ -286,6 +287,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       ...(inbound.isAutoReply ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
+  await publishConversation(match.teamId, conversation.id, { kind: "message" });
 
   if (match.recipientId && !inbound.isAutoReply) {
     await db
@@ -301,7 +303,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
 
   if (!inbound.isAutoReply) {
     const who = inbound.fromName || inbound.fromEmail;
-    await sendPush(await getCoachUserIds(match.teamId), {
+    await sendPush(await getCoachUserIds(match.teamId), "chat", {
       title: `${who} replied by email`,
       body: preview(text, 180),
       url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
@@ -375,12 +377,25 @@ export async function receiveEmail(resendEmailId: string) {
 
 // Unmatched email a coach can see: sent to their address, or guessed onto one
 // of their teams. Mail to nobody in particular goes to admins.
-export async function listUnmatched(user: { id: number; role: string }, teamId: number) {
-  const visible = or(
+function unmatchedVisibleTo(user: { id: number; role: string }, teamId: number) {
+  return or(
     eq(inboundEmails.ownerUserId, user.id),
     eq(inboundEmails.teamId, teamId),
     ...(user.role === "admin" ? [and(isNull(inboundEmails.ownerUserId), isNull(inboundEmails.teamId))] : [])
   );
+}
+
+// How many emails wait in "Emails to sort", without loading them
+export async function countUnmatched(user: { id: number; role: string }, teamId: number) {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(inboundEmails)
+    .where(and(eq(inboundEmails.status, "unmatched"), unmatchedVisibleTo(user, teamId)));
+  return Math.min(Number(row?.n ?? 0), 50);
+}
+
+export async function listUnmatched(user: { id: number; role: string }, teamId: number) {
+  const visible = unmatchedVisibleTo(user, teamId);
   return db
     .select({
       id: inboundEmails.id,
