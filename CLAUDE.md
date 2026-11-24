@@ -598,6 +598,54 @@ export async function action({ request }: Route.ActionArgs) {
 | Root Layout | `/app/root.tsx` |
 | Dashboard Layout | `/app/routes/dashboard.tsx` |
 
+## Worktrees for feature work
+
+Do feature development in a git worktree, never in the main checkout, so several Claude Code sessions can work at once without touching each other's files.
+
+- At the start of a feature session, create a worktree on a new branch (`EnterWorktree`, or `git worktree add .claude/worktrees/<name> -b <branch>`). Quick questions, reviews, and one-line fixes the user asks for in place don't need one.
+- A new worktree has no `node_modules`, `.env`, or `data/`. Run `npm install`, and copy `.env` and `data/dev.db` from the main checkout (copy the db, don't symlink it, so two sessions never write the same SQLite file).
+- Each worktree runs its own dev server, which overrides the general "don't run `npm run dev`" rule. The user's server runs from the main checkout on 5173. Start the worktree's server in the background on the first free port from 5174 up, with `npm run dev -- --port <n> --strictPort`, so every tree keeps its own port. Keep it running for the whole session and tell the user the URL. Cookies are per host, not per port, so a session signed in on 5173 is signed in here too.
+- When the work is done, commit on the worktree's branch and tell the user the branch name. Don't merge into `preview`/`main` or remove the worktree unless asked.
+
+### After every push, update the local checkout
+
+Any time Claude pushes (a merge to `preview` or `main`, or a feature branch), bring the main checkout up to date straight after. The user's dev server on 5173 runs from it.
+
+1. In the main checkout, run `git fetch origin`, then `git pull --ff-only` on its current branch. If that branch is the one just pushed and it can't fast-forward, stop and tell the user. Don't reset or force anything.
+2. If the pushed changes touch `package.json`, run `npm install` there. If they add migrations, check they're applied to `data/dev.db` (see below).
+3. For worktrees still in use, tell the user if their branches are now behind. Only rebase or merge them when asked.
+4. Report the result: the branch, and the old and new commit.
+
+### Migrations and production data
+
+- **Run migrations without asking once a feature is ready**, meaning it typechecks and has been checked in the app. Do these three steps:
+  1. Generate the migration with `npm run db:generate -- --name <name>`.
+  2. Apply its SQL with `sqlite3` to both the worktree's `data/dev.db` and the main checkout's `data/dev.db`, because `db:push` is broken.
+  3. Run `npm run db:prod:migrate`.
+- **This only covers additive migrations:** new tables, new nullable or defaulted columns, and new indexes. Anything that drops, renames, or rewrites columns or data needs the user's OK first.
+- **Read production data freely when it helps** (for example to check real data before a change). Use `TURSO_PROD_URL`/`TURSO_PROD_TOKEN` from `.env`, either from a throwaway `tsx` script or `npm run db:prod:studio`.
+- **Ask before writing anything to production.** Inserts, updates, deletes and backfills all need a yes first, with what will change and how many rows.
+
+### Vercel config and env vars
+
+Claude owns the Vercel side of a feature: `vercel.json` and the project's environment variables. The project is linked in `.vercel/` (`ayso-game-day`), and the CLI runs with `npx vercel` (it isn't installed globally).
+
+- **When a feature adds an env var**, push it to Vercel as part of finishing the feature. Don't leave it for the user.
+  - Use `npx vercel env add <NAME> <environment>` for `production`, `preview`, and `development`, as the var needs.
+  - Pipe the value from `.env`, so it never appears in the command line or the chat.
+  - Then add it to the env list in this file and to `.env.example`.
+- **Keep the three environments consistent.**
+  - Run `npx vercel env ls` before shipping, to find vars that are missing from one environment or that the code no longer reads.
+  - On Vercel, production and preview both point `TURSO_URL` at the production database (the same one as `TURSO_PROD_URL` in `.env`; checked 2026-11-24). So a preview deploy reads and writes real data. Never give preview a value that would make it send test data there, or send real email or pushes from a test.
+- **The CLI needs a login on each machine.** If `npx vercel` stops at a login prompt, ask the user to run `! npx vercel login` rather than waiting on it.
+- **Config changes** (`vercel.json`: regions, functions, headers, crons) go in the feature's branch like any other code.
+- **Ask first before:**
+  - changing or removing a production value that already exists;
+  - rotating a key;
+  - changing project settings in the dashboard (domains, build settings).
+  Adding a missing var doesn't need a yes.
+- **Never print secret values.** When reporting, list var names and environments only.
+
 ## Git Commit Guidelines
 
 When making commits:
