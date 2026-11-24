@@ -52,7 +52,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <TourProvider teamId={team.id} initialSeen={toursSeen}>
-      <div className="border-b border-line bg-surface">
+      <div className="shrink-0 border-b border-line bg-surface">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-4">
             <TeamSwitcher team={team} />

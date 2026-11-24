@@ -1,5 +1,5 @@
 import type { Route } from "./+types/dashboard";
-import { Outlet, Link, Form } from "react-router";
+import { Outlet, Link, Form, useMatches } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
@@ -7,7 +7,7 @@ import { db, teams } from "~/db";
 import { desc } from "drizzle-orm";
 import { SignOut } from "@phosphor-icons/react";
 import { AppMark } from "~/components/AppMark";
-import { buttonClass } from "~/components/ui";
+import { buttonClass, cx } from "~/components/ui";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -38,16 +38,19 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const { user } = loaderData;
+  // Routes with handle.workspace (Messages) fill the window on desktop and
+  // scroll inside their own panes, so this layout becomes a fixed-height column
+  const workspace = useMatches().some((m) => (m.handle as { workspace?: boolean } | undefined)?.workspace);
 
   return (
-    <div className="min-h-dvh bg-canvas text-ink">
+    <div className={cx("min-h-dvh bg-canvas text-ink", workspace && "lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden")}>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-raised"
       >
         Skip to content
       </a>
-      <header className="border-b border-line bg-surface">
+      <header className="shrink-0 border-b border-line bg-surface">
         <nav className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link to="/dashboard" aria-label="AYSO Game Day home">
             <AppMark />
@@ -65,7 +68,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
         </nav>
       </header>
 
-      <main id="main">
+      <main id="main" className={cx(workspace && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
         <Outlet />
       </main>
     </div>

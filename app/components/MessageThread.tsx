@@ -7,6 +7,12 @@ import { Badge, cx } from "~/components/ui";
 // Chat thread shared by the coach dashboard and the family app. The route's
 // action handles `_action=send` with a `body`; its loader marks the thread
 // read, so polling it while the thread is open keeps the read marker current.
+//
+// layout="window" (the default) scrolls the page with the composer fixed to the
+// bottom of the screen. layout="pane" does the same on phones, and from lg up
+// fills its flex parent: the messages scroll inside it and the composer sits
+// at its foot. Which one applies is decided by CSS, and the scroll code checks
+// which element actually scrolls, so there's no media query in JS.
 
 export type ThreadMessageView = {
   id: number;
@@ -39,6 +45,7 @@ export function MessageThread({
   showEmailDetails = false,
   acknowledged,
   composerExtra,
+  layout = "window",
 }: {
   messages: ThreadMessageView[];
   meId: number;
@@ -48,7 +55,10 @@ export function MessageThread({
   showEmailDetails?: boolean; // Coaches: who a message was emailed to, and full emails
   acknowledged?: number[]; // Parents: announcement messages already answered "Got it" (enables the button)
   composerExtra?: ReactNode; // Inside the form above the composer, e.g. the "Also send by email" checkbox
+  layout?: "window" | "pane";
 }) {
+  const pane = layout === "pane";
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const fetcher = useFetcher<{ error?: string }>();
   const ackFetcher = useFetcher();
   const revalidator = useRevalidator();
@@ -76,9 +86,16 @@ export function MessageThread({
   const lastId = messages[messages.length - 1]?.id ?? 0;
   const firstRender = useRef(true);
   useLayoutEffect(() => {
-    const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
+    // The pane scrolls itself only where its CSS makes it scrollable (lg up)
+    const el = scrollerRef.current;
+    const inPane = el && getComputedStyle(el).overflowY === "auto" ? el : null;
+    const nearBottom = inPane
+      ? inPane.scrollTop + inPane.clientHeight >= inPane.scrollHeight - 200
+      : window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
     if (firstRender.current || nearBottom || pendingBody) {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: firstRender.current ? "instant" : "smooth" });
+      const behavior = firstRender.current ? "instant" : "smooth";
+      if (inPane) inPane.scrollTo({ top: inPane.scrollHeight, behavior });
+      else window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
     }
     firstRender.current = false;
   }, [lastId, pendingBody]);
@@ -111,7 +128,8 @@ export function MessageThread({
 
   return (
     // Bottom padding leaves room for the fixed composer
-    <div className="pb-28">
+    <div className={cx("pb-28", pane && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:pb-0")}>
+      <div ref={scrollerRef} className={cx(pane && "lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-6 lg:pt-2")}>
       {shown.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted">{emptyText}</p>
       ) : (
@@ -190,18 +208,22 @@ export function MessageThread({
           })}
         </ol>
       )}
+      </div>
 
       <fetcher.Form
         ref={formRef}
         method="post"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur"
+        className={cx(
+          "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur",
+          pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
+        )}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
       >
         <input type="hidden" name="_action" value="send" />
-        <div className={cx("mx-auto w-full px-4 sm:px-6", widthClass)}>
+        <div className={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}>
           {fetcher.data?.error && <p className="mb-2 text-sm text-danger">{fetcher.data.error}</p>}
           {composerExtra}
           <div className="flex items-end gap-2">
