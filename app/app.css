@@ -3,8 +3,10 @@
 /*
  * Design tokens. Every color here becomes a Tailwind utility
  * (bg-surface, text-muted, border-line, bg-primary-soft, ...).
- * Neutrals are one cool slate family; there is one accent (royal blue).
- * Green, amber and red are status colors only. Brand red is the logo mark.
+ * Neutrals are one cool slate family. Royal blue (primary) is the action and
+ * logo color; coral is the secondary color, for decoration only (eyebrows,
+ * icon tiles, accent shapes), never for buttons, links or status.
+ * Green, amber and red are status colors only.
  */
 @theme {
 	--font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
@@ -30,7 +32,10 @@
 	--color-warning-soft: #FCF1E1;
 	--color-danger: #C42B2B;
 	--color-danger-soft: #FCEBEA;
-	--color-brand: #E03131;
+	--color-coral: #F0643C;
+	--color-coral-soft: #FFEDE6;
+	--color-coral-ink: #B4401C;
+	--color-brand: var(--color-primary); /* BenchTalk: the logo tile is primary. The AYSO-era red #E03131 is retired (it read as an error next to danger) */
 
 	--color-pitch: #2F7D3E;
 	--color-pitch-dark: #276A34;

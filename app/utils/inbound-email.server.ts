@@ -12,7 +12,7 @@ import {
   users,
 } from "~/db";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { getReceivedEmail } from "~/utils/email.server";
+import { getReceivedEmail, parseCoachTeamAddress } from "~/utils/email.server";
 import {
   authenticationPassed,
   getHeader,
@@ -26,6 +26,7 @@ import {
 import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
+import { publishConversation } from "~/utils/realtime.server";
 
 // Everything that comes back from Resend: delivery events for mail we sent,
 // and email received on the domain.
@@ -183,7 +184,7 @@ async function matchByHeaders(refs: string[]): Promise<Match | null> {
 // 2. Sender: a family writing fresh. Only trusted when the email passed
 // SPF/DKIM/DMARC, so nobody can drop a message into a family's thread by
 // faking their address.
-async function matchBySender(address: string, subject: string | null, ownerUserId: number | null): Promise<Match | null> {
+async function matchBySender(address: string, subject: string | null, ownerUserId: number | null, toTeamId: number | null): Promise<Match | null> {
   const teamRows = await db
     .selectDistinct({ teamId: contacts.teamId })
     .from(contacts)
@@ -191,6 +192,9 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
     .where(and(sql`lower(trim(${contacts.email})) = ${address}`, eq(players.teamId, contacts.teamId)));
   let teamIds = teamRows.map((r) => r.teamId);
   if (teamIds.length === 0) return null;
+
+  // Sent to a coach+team address: that team, if the family is on it
+  if (toTeamId && teamIds.includes(toTeamId)) teamIds = [toTeamId];
 
   // Sent to a particular coach's address: prefer that coach's teams
   if (ownerUserId && teamIds.length > 1) {
@@ -283,6 +287,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       ...(inbound.isAutoReply ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
+  await publishConversation(match.teamId, conversation.id, { kind: "message" });
 
   if (match.recipientId && !inbound.isAutoReply) {
     await db
@@ -298,7 +303,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
 
   if (!inbound.isAutoReply) {
     const who = inbound.fromName || inbound.fromEmail;
-    await sendPush(await getCoachUserIds(match.teamId), {
+    await sendPush(await getCoachUserIds(match.teamId), "chat", {
       title: `${who} replied by email`,
       body: preview(text, 180),
       url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
@@ -306,6 +311,14 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
     });
   }
   return conversation;
+}
+
+async function coachTeamFromAddresses(to: string[]) {
+  for (const address of to) {
+    const parsed = parseCoachTeamAddress(address);
+    if (parsed && (await getCoachUserIds(parsed.teamId)).includes(parsed.coachId)) return parsed;
+  }
+  return null;
 }
 
 export async function receiveEmail(resendEmailId: string) {
@@ -323,10 +336,14 @@ export async function receiveEmail(resendEmailId: string) {
   const refs = referencedMessageIds(email.headers);
   const text = email.text?.trim() || (email.html ? htmlToText(email.html) : "");
 
-  // Sent to a coach's own address on the domain
-  const [owner] = to.length
-    ? await db.select({ id: users.id }).from(users).where(inArray(sql`lower(${users.sendingEmail})`, to)).limit(1)
-    : [];
+  // Sent to a coach+team address (only when that coach is on that team), or
+  // to an admin's own address on the domain
+  const toTeam = await coachTeamFromAddresses(to);
+  const [owner] = toTeam
+    ? [{ id: toTeam.coachId }]
+    : to.length
+      ? await db.select({ id: users.id }).from(users).where(inArray(sql`lower(${users.sendingEmail})`, to)).limit(1)
+      : [];
 
   const [inbound] = await db
     .insert(inboundEmails)
@@ -343,13 +360,15 @@ export async function receiveEmail(resendEmailId: string) {
       authPassed: authenticationPassed(email.authentication),
       isAutoReply: isAutoReply(email.headers, email.subject),
       ownerUserId: owner?.id ?? null,
+      // Unmatched mail to a team's address waits in that team's "Emails to sort"
+      teamId: toTeam?.teamId ?? null,
       receivedAt: email.created_at || new Date().toISOString(),
     })
     .onConflictDoNothing()
     .returning();
   if (!inbound) return; // Lost a race with a duplicate delivery
 
-  const match = (await matchByHeaders(refs)) ?? (inbound.authPassed ? await matchBySender(from.address, email.subject, inbound.ownerUserId) : null);
+  const match = (await matchByHeaders(refs)) ?? (inbound.authPassed ? await matchBySender(from.address, email.subject, inbound.ownerUserId, toTeam?.teamId ?? null) : null);
   if (match) await fileIntoThread(inbound, match);
 }
 
@@ -358,12 +377,25 @@ export async function receiveEmail(resendEmailId: string) {
 
 // Unmatched email a coach can see: sent to their address, or guessed onto one
 // of their teams. Mail to nobody in particular goes to admins.
-export async function listUnmatched(user: { id: number; role: string }, teamId: number) {
-  const visible = or(
+function unmatchedVisibleTo(user: { id: number; role: string }, teamId: number) {
+  return or(
     eq(inboundEmails.ownerUserId, user.id),
     eq(inboundEmails.teamId, teamId),
     ...(user.role === "admin" ? [and(isNull(inboundEmails.ownerUserId), isNull(inboundEmails.teamId))] : [])
   );
+}
+
+// How many emails wait in "Emails to sort", without loading them
+export async function countUnmatched(user: { id: number; role: string }, teamId: number) {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(inboundEmails)
+    .where(and(eq(inboundEmails.status, "unmatched"), unmatchedVisibleTo(user, teamId)));
+  return Math.min(Number(row?.n ?? 0), 50);
+}
+
+export async function listUnmatched(user: { id: number; role: string }, teamId: number) {
+  const visible = unmatchedVisibleTo(user, teamId);
   return db
     .select({
       id: inboundEmails.id,

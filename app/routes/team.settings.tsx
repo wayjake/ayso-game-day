@@ -71,7 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     role,
     me: { id: user.id, name: user.name, email: user.email, sendingEmail: user.sendingEmail, isAdmin: user.role === "admin" },
     sendingDomain: sendingDomain(),
-    fromHeader: coachFromAddress(user).header,
+    fromHeader: coachFromAddress(user, team).header,
     owner,
     members,
     pendingInvites,
@@ -229,7 +229,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Team settings - AYSO Game Day" },
+    { title: "Team settings - BenchTalk" },
     { name: "description", content: "Team details and coaches" },
   ];
 }

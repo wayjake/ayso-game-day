@@ -5,7 +5,7 @@ import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { requireParent } from "~/utils/family.server";
 import { parentConversationIds, totalUnread } from "~/utils/messages.server";
-import { vapidPublicKey } from "~/utils/push.server";
+import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
 import { usePush } from "~/hooks/usePush";
 import type { FamilyContext } from "~/hooks/useFamily";
@@ -30,12 +30,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     unread,
     isCoach: Boolean(coaching),
     vapidPublicKey: vapidPublicKey(),
+    notifyPrefs: await getNotifyPrefs(user.id),
     platform: detectPlatform(request.headers.get("user-agent") ?? "", 0),
   });
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "AYSO Game Day" }];
+  return [{ title: "BenchTalk" }];
 }
 
 export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
@@ -43,7 +44,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   // A chat thread takes the whole screen on phones, with its own back link
   const inThread = useMatches().some((m) => m.id === "routes/family.messages.thread");
 
-  const push = usePush(loaderData.vapidPublicKey);
+  const push = usePush(loaderData.vapidPublicKey, loaderData.notifyPrefs);
 
   // Just signed in (?install=1): on a phone that isn't running the installed
   // app, start with how to add it to the Home Screen. The session cookie is

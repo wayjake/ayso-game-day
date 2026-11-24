@@ -139,24 +139,24 @@ export async function requestMagicLink(request: Request, rawEmail: string) {
   await sendEmail({
     to: email,
     // The code in the subject shows on a lock-screen preview, so it can be typed without opening Mail
-    subject: `${formatCode(code)} is your AYSO Game Day sign-in code`,
+    subject: `${formatCode(code)} is your BenchTalk sign-in code`,
     text: [
-      `Sign in to AYSO Game Day to see the schedule, RSVP and message the coaches:`,
+      `Sign in to BenchTalk to see the schedule, RSVP and message the coaches:`,
       url,
       ``,
-      `Using the Game Day app on your Home Screen? Enter this code there instead: ${formatCode(code)}`,
+      `Using the BenchTalk app on your Home Screen? Enter this code there instead: ${formatCode(code)}`,
       ``,
       `The link and code work once and expire in ${LINK_TTL_MINUTES} minutes.`,
       `If you didn't ask for it, you can ignore this email.`,
     ].join("\n"),
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #101B2D;">
-        <p>Sign in to AYSO Game Day to see the schedule, RSVP and message the coaches.</p>
+        <p>Sign in to BenchTalk to see the schedule, RSVP and message the coaches.</p>
         <p style="margin: 24px 0;">
           <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Sign in</a>
         </p>
         <p style="color: #536175; font-size: 13px;">Or paste this link into your browser:<br>${escapeHtml(url)}</p>
-        <p style="margin: 24px 0 4px;">Using the Game Day app on your Home Screen? Enter this code there instead:</p>
+        <p style="margin: 24px 0 4px;">Using the BenchTalk app on your Home Screen? Enter this code there instead:</p>
         <p style="margin: 0 0 24px; font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: ui-monospace, Menlo, monospace;">${formatCode(code)}</p>
         <p style="color: #536175; font-size: 13px;">The link and code work once and expire in ${LINK_TTL_MINUTES} minutes. If you didn't ask for them, ignore this email.</p>
       </div>

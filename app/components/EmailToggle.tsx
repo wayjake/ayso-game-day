@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Question } from "@phosphor-icons/react";
 
-// "Also send by email" for a coach writing to a family. Families with the app
-// and notifications on get a push for every message, so the email copy is
-// optional for them (and unchecking saves a double ping). Everyone else needs
-// the email to know there's a message, so it's locked on. The server applies
-// the same rule. Unchecking is remembered per thread on this device.
+// "Send by email" for a coach writing to a family. A message is emailed only
+// when this is ticked, and thread replies never are. It starts ticked for
+// families who'd otherwise not hear about it (no app notifications) and
+// unticked for those who get a push; the coach's choice is remembered per
+// thread on this device.
 
 export function EmailToggle({
   email,
@@ -16,48 +16,42 @@ export function EmailToggle({
   pushReady: boolean;
   conversationId: number;
 }) {
-  const storageKey = `email-off:${conversationId}`;
-  const [checked, setChecked] = useState(true);
+  const storageKey = `send-email:${conversationId}`;
+  const [checked, setChecked] = useState(!pushReady);
   useEffect(() => {
-    if (!pushReady) return setChecked(true);
     try {
-      setChecked(!localStorage.getItem(storageKey));
+      const saved = localStorage.getItem(storageKey);
+      setChecked(saved == null ? !pushReady : saved === "1");
     } catch {}
   }, [pushReady, storageKey]);
 
   const change = (next: boolean) => {
     setChecked(next);
     try {
-      if (next) localStorage.removeItem(storageKey);
-      else localStorage.setItem(storageKey, "1");
+      localStorage.setItem(storageKey, next ? "1" : "0");
     } catch {}
   };
 
   return (
     <div className="relative mb-2 flex items-center gap-1.5 text-xs text-muted">
-      <label
-        className={pushReady ? "flex min-w-0 cursor-pointer items-center gap-2" : "flex min-w-0 items-center gap-2"}
-      >
+      <label className="flex min-w-0 cursor-pointer items-center gap-2">
         <input
           type="checkbox"
           name="alsoEmail"
           value="1"
           checked={checked}
-          disabled={!pushReady}
           onChange={(e) => change(e.target.checked)}
-          className="size-4 shrink-0 accent-primary disabled:opacity-60"
+          className="size-4 shrink-0 accent-primary"
         />
         <span className="truncate">
-          Also send by email to <span className="font-medium text-ink">{email}</span>
+          Send by email to <span className="font-medium text-ink">{email}</span>
         </span>
       </label>
-      {/* A disabled checkbox isn't submitted; say yes explicitly */}
-      {!pushReady && <input type="hidden" name="alsoEmail" value="1" />}
       <HelpTip
         text={
           pushReady
-            ? "They have the app with notifications on, so they'll get this as a push either way. Uncheck to skip the email and the double ping."
-            : "Locked on: they haven't turned on notifications in the app yet, so email is how they'll know you wrote. Once they do, you can turn this off."
+            ? "They have the app with notifications on, so they'll get a push either way. Tick this to email it too."
+            : "They don't have app notifications on, so without email they won't know you wrote until they open the app."
         }
       />
     </div>

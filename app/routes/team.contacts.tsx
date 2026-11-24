@@ -59,7 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export function meta({ params }: Route.MetaArgs) {
   return [
-    { title: "Contacts - AYSO Game Day" },
+    { title: "Contacts - BenchTalk" },
     { name: "description", content: "Manage contacts for your team" },
   ];
 }

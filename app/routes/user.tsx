@@ -10,19 +10,17 @@ export default function UserLayout() {
         <PitchLines className="absolute inset-0 h-full w-full" />
         <div className="relative bg-linear-to-t from-pitch-dark via-pitch-dark/80 to-transparent p-10 pt-32 xl:p-14 xl:pt-40">
           <p className="font-display text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
-            Every kid plays.
-            <br />
-            Every quarter planned.
+            Calm on the sideline.
           </p>
           <p className="mt-4 max-w-sm text-white/80">
-            Lineups, sit-outs and position changes for your AYSO team, ready before kickoff.
+            The schedule, RSVPs and every message with your families, in one place.
           </p>
         </div>
       </aside>
 
       <div className="flex min-h-dvh flex-col px-4 sm:px-6">
         <header className="flex h-16 items-center justify-between gap-4">
-          <Link to="/" aria-label="AYSO Game Day home">
+          <Link to="/" aria-label="BenchTalk home">
             <AppMark />
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-ink">

@@ -5,7 +5,7 @@ import { Alert, Button, Card, inputClass, labelClass } from "~/components/ui";
 import { ArrowLeft, EnvelopeSimple } from "@phosphor-icons/react";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Reset password - AYSO Game Day" }];
+  return [{ title: "Reset password - BenchTalk" }];
 }
 
 export async function action({ request }: Route.ActionArgs) {

@@ -61,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Add practice - AYSO Game Day" }];
+  return [{ title: "Add practice - BenchTalk" }];
 }
 
 const WEEKDAYS = [

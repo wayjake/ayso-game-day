@@ -47,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export function meta({ params }: Route.MetaArgs) {
   return [
-    { title: "Roster - AYSO Game Day" },
+    { title: "Roster - BenchTalk" },
     { name: "description", content: "Manage your team roster" },
   ];
 }

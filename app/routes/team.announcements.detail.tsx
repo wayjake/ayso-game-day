@@ -83,7 +83,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.announcement.subject ?? "Announcement"} - AYSO Game Day` }];
+  return [{ title: `${data?.announcement.subject ?? "Announcement"} - BenchTalk` }];
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
                   className={cx(
                     "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold ring-1 transition",
                     filter === c.value ? "bg-ink text-white ring-ink" : "bg-surface text-ink ring-line-strong hover:bg-surface-2",
-                    c.value === "needs" && c.count > 0 && filter !== c.value && "ring-brand/50 text-brand"
+                    c.value === "needs" && c.count > 0 && filter !== c.value && "ring-warning/50 text-warning"
                   )}
                 >
                   {c.label}
@@ -257,7 +257,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
                     aria-hidden
                     className={cx(
                       "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                      r.needsYou ? "bg-brand" : r.state === "replied" || r.state === "acknowledged" ? "bg-success" : r.state === "opened" ? "bg-primary" : "bg-line-strong"
+                      r.needsYou ? "bg-warning" : r.state === "replied" || r.state === "acknowledged" ? "bg-success" : r.state === "opened" ? "bg-primary" : "bg-line-strong"
                     )}
                   />
                   <div className="min-w-0 flex-1">
@@ -272,7 +272,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
                         : r.sentAt ? `Sent ${formatMessageTime(r.sentAt)}${r.remindedAt ? ` · reminded ${formatMessageTime(r.remindedAt)}` : ""}`
                         : r.error ?? "Sending…"}
                     </p>
-                    {r.needsYouReason && r.lastReply && <p className="mt-0.5 text-xs font-semibold text-brand">{r.needsYouReason}</p>}
+                    {r.needsYouReason && r.lastReply && <p className="mt-0.5 text-xs font-semibold text-warning">{r.needsYouReason}</p>}
                   </div>
                 </Link>
               ))

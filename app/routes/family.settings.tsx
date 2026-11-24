@@ -29,7 +29,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Settings - AYSO Game Day" }];
+  return [{ title: "Settings - BenchTalk" }];
 }
 
 export default function FamilySettings({ loaderData, actionData }: Route.ComponentProps) {
@@ -45,7 +45,7 @@ export default function FamilySettings({ loaderData, actionData }: Route.Compone
       <Card className="p-5">
         <CardHeader title="Notifications" className="mb-1" />
         <p className="mb-4 text-sm text-muted">
-          New messages, and new or cancelled games and practices. Turn it on separately on each phone or computer you use.
+          Turn it on separately on each phone or computer you use. What you choose to get applies to all of them.
         </p>
         <PushControls push={push} onInstall={openInstall} />
       </Card>

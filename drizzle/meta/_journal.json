@@ -50,6 +50,20 @@
       "when": 1795462397258,
       "tag": "0006_login_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795549621988,
+      "tag": "0007_notify_prefs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795549920112,
+      "tag": "0008_chat_threads",
+      "breakpoints": true
     }
   ]
 }

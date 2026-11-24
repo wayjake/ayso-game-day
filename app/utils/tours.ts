@@ -28,7 +28,7 @@ export const TOURS: Tour[] = [
     summary: "The five team tabs and where everything lives",
     steps: [
       {
-        title: "Welcome to AYSO Game Day",
+        title: "Welcome to BenchTalk",
         body: "A quick look around. It takes under a minute, and you can replay it any time from the ? button.",
         path: team,
       },

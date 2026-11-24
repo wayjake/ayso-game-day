@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.family ? "Edit family" : "Add family"} - AYSO Game Day` }];
+  return [{ title: `${data?.family ? "Edit family" : "Add family"} - BenchTalk` }];
 }
 
 export default function EditFamily({ loaderData, actionData }: Route.ComponentProps) {

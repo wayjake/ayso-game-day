@@ -56,11 +56,11 @@ export async function requestPasswordReset(request: Request, email: string) {
   const greeting = user.name ? `Hi ${user.name},` : "Hi,";
   await sendEmail({
     to: user.email,
-    subject: "Reset your AYSO Game Day password",
+    subject: "Reset your BenchTalk password",
     text: [
       greeting,
       ``,
-      `Someone asked to reset the password for your AYSO Game Day account.`,
+      `Someone asked to reset the password for your BenchTalk account.`,
       `Choose a new password here: ${url}`,
       ``,
       `This link works once and expires in ${RESET_TTL_MINUTES} minutes.`,
@@ -69,7 +69,7 @@ export async function requestPasswordReset(request: Request, email: string) {
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #101B2D;">
         <p>${escapeHtml(greeting)}</p>
-        <p>Someone asked to reset the password for your AYSO Game Day account.</p>
+        <p>Someone asked to reset the password for your BenchTalk account.</p>
         <p style="margin: 24px 0;">
           <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Choose a new password</a>
         </p>

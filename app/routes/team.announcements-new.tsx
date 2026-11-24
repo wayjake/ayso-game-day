@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     team,
     families,
-    from: coachFromAddress(user).header,
+    from: coachFromAddress(user, team).header,
     hasOwnAddress: Boolean(user.sendingEmail),
     emailConfigured: isEmailConfigured(),
     redirectedTo: isFamilyDeliveryRedirected() ? user.email : null,
@@ -66,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "New announcement - AYSO Game Day" }];
+  return [{ title: "New announcement - BenchTalk" }];
 }
 
 type Audience = "all" | "app" | "email" | "pick";

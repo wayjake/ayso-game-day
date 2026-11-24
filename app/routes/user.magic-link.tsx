@@ -10,7 +10,7 @@ import { ArrowLeft, EnvelopeSimple } from "@phosphor-icons/react";
 // app may have reloaded while they were in Mail).
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Sign in with email - AYSO Game Day" }];
+  return [{ title: "Sign in with email - BenchTalk" }];
 }
 
 type ActionData =

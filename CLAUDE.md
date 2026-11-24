@@ -143,8 +143,9 @@ The application uses Drizzle ORM with 8 main tables:
 13. **practices** - One row per practice; a weekly series is rows sharing `seriesId`.
 14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
 15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus `direct` threads between one parent and all of the team's coaches. Unread = message ids above `lastReadMessageId`.
-16. **pushSubscriptions** - Web Push endpoints, one per browser.
-15b. **conversations.familyEmail / needsReply** - A `direct` thread belongs to a parent account, a family email, or both. Families not on the app get an email-only thread (no `parentUserId`), visible to coaches only; `claimFamilyConversation` hands it to their account when they prove the email (invite or magic link, via `linkFamily`). A coach's message in a direct thread is also emailed to the family unless the coach unchecks "Also send by email" (`EmailToggle`), which is only allowed when the parent holding the thread has a push subscription (`familyDelivery` in `messages.server.ts`; the server enforces it). `needsReply` is set when a family writes and cleared when a coach replies or marks it done. `messages.senderId` is null for an email reply from a family with no account (`source = 'email'`, `senderEmail`/`senderName` set).
+15a. **messages.parentId / messageReactions** - Tap a message to react (fixed set in `utils/reactions.ts`) or reply. Replies form a one-level thread under the root (`parentId` = root id; replying to a reply re-parents to the root), opened with `?thread=<id>` on the conversation page so pushes can deep-link. Replies notify only people in the thread (root author and repliers) and count as unread only for them; reactions notify the message's author.
+16. **pushSubscriptions** - Web Push endpoints, one per browser. Which kinds of push a person gets is per account, in `users.notifyPrefs` (JSON overrides). Categories live in `utils/notify.ts`; `sendPush(userIds, kind, payload)` drops anyone who turned that kind off. `team` (announcements, schedule changes, RSVP reminders) is locked on; `chat`, `replies`, `reactions` and coach-only `dropouts` can be switched off.
+15b. **conversations.familyEmail / needsReply** - A `direct` thread belongs to a parent account, a family email, or both. Families not on the app get an email-only thread (no `parentUserId`), visible to coaches only; `claimFamilyConversation` hands it to their account when they prove the email (invite or magic link, via `linkFamily`). A coach's top-level message in a direct thread is emailed to the family only when the coach ticks "Send by email" (`EmailToggle`; it starts ticked for families without push, per `familyDelivery` in `messages.server.ts`). Thread replies are never emailed. `needsReply` is set when a family writes and cleared when a coach replies or marks it done. `messages.senderId` is null for an email reply from a family with no account (`source = 'email'`, `senderEmail`/`senderName` set).
 17. **loginLinks** - Email sign-in links for families (`/user/magic-link`). Keyed by email, not user: any email on a player's contacts (or already linked to a player) can ask for one, and using it creates a parent account if needed and links every player whose contacts list that email. Hashed token, single use, 20 minutes. Opening the link shows a button and only the POST signs in, so mail scanners can't burn it. Needs Resend in production; there's no fallback. The same email has a 6-digit code (`codeHash`, hashed with the email) for the Home Screen app, since links in Mail always open in the browser: `/user/magic-link?step=code`. Five wrong codes burn the link. Either way, parents land on `/family?install=1`, which opens the Add to Home Screen sheet on phones not already in the installed app.
 
 ### Announcements and email replies
@@ -156,7 +157,7 @@ Flow: Resend sends and receives for the whole domain (one MX record on the root)
 
 Tours: `utils/tours.ts` defines them, `components/Tour.tsx` runs them and the Help sheet (the ? in the team header). Steps point at `data-tour="..."` attributes. Finished/dismissed tours are saved per account in `users.toursSeen`; bump a tour's `version` to show it again.
 
-Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. `public/sw.js` handles push only and caches nothing. In the family app, `usePush` (in `routes/family.tsx`, shared through `useFamily()`) drives the header bell (`NotificationsMenu`), the Settings page, and the one-time `NotifyPrompt`. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
+Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server.ts`, `magic-link.server.ts`, `schedule.server.ts` (games and practices as one event list, RSVPs, `notifyFamilies`), `messages.server.ts`, `push.server.ts`. Push is sent inline from actions (awaited) and is a no-op without the VAPID env vars. Realtime goes through Ably (`utils/realtime.server.ts`, `hooks/useConversationRealtime.ts`): after each message or reaction the server publishes a `changed` event on `team:<teamId>:conversation:<id>` and open threads reload; typing uses Ably presence. `/api/realtime/token` gives each person a 1-hour token for only the channels they can read. The account is billed per monthly active user, so it must use `@ably/pubsub-server` and `@ably/pubsub-device`; the old `ably` package is refused. Without `ABLY_API_KEY` pages poll instead. `public/sw.js` handles push only and caches nothing. In the family app, `usePush` (in `routes/family.tsx`, shared through `useFamily()`) drives the header bell (`NotificationsMenu`), the Settings page, and the one-time `NotifyPrompt`. `public/manifest.webmanifest` makes it installable, which iOS requires for push.
 
 ## Authentication System
 
@@ -466,6 +467,7 @@ APP_URL=https://your-domain          # Origin used in invite links
 RESEND_API_KEY / EMAIL_FROM          # Without them, invites fall back to copyable links
 RESEND_WEBHOOK_SECRET=whsec_...      # Signing secret of the Resend webhook pointed at /api/email/webhook
 EMAIL_DELIVER_TO_FAMILIES=true       # Outside production only: actually email families instead of the coach
+ABLY_API_KEY=...                     # Realtime chat. The key needs Publish, Subscribe and Presence
 ```
 
 ## Testing & Quality Assurance
@@ -597,6 +599,54 @@ export async function action({ request }: Route.ActionArgs) {
 | Global Styles | `/app/app.css` |
 | Root Layout | `/app/root.tsx` |
 | Dashboard Layout | `/app/routes/dashboard.tsx` |
+
+## Worktrees for feature work
+
+Do feature development in a git worktree, never in the main checkout, so several Claude Code sessions can work at once without touching each other's files.
+
+- At the start of a feature session, create a worktree on a new branch (`EnterWorktree`, or `git worktree add .claude/worktrees/<name> -b <branch>`). Quick questions, reviews, and one-line fixes the user asks for in place don't need one.
+- A new worktree has no `node_modules`, `.env`, or `data/`. Run `npm install`, and copy `.env` and `data/dev.db` from the main checkout (copy the db, don't symlink it, so two sessions never write the same SQLite file).
+- Each worktree runs its own dev server, which overrides the general "don't run `npm run dev`" rule. The user's server runs from the main checkout on 5173. Start the worktree's server in the background on the first free port from 5174 up, with `npm run dev -- --port <n> --strictPort`, so every tree keeps its own port. Keep it running for the whole session and tell the user the URL. Cookies are per host, not per port, so a session signed in on 5173 is signed in here too.
+- When the work is done, commit on the worktree's branch and tell the user the branch name. Don't merge into `preview`/`main` or remove the worktree unless asked.
+
+### After every push, update the local checkout
+
+Any time Claude pushes (a merge to `preview` or `main`, or a feature branch), bring the main checkout up to date straight after. The user's dev server on 5173 runs from it.
+
+1. In the main checkout, run `git fetch origin`, then `git pull --ff-only` on its current branch. If that branch is the one just pushed and it can't fast-forward, stop and tell the user. Don't reset or force anything.
+2. If the pushed changes touch `package.json`, run `npm install` there. If they add migrations, check they're applied to `data/dev.db` (see below).
+3. For worktrees still in use, tell the user if their branches are now behind. Only rebase or merge them when asked.
+4. Report the result: the branch, and the old and new commit.
+
+### Migrations and production data
+
+- **Run migrations without asking once a feature is ready**, meaning it typechecks and has been checked in the app. Do these three steps:
+  1. Generate the migration with `npm run db:generate -- --name <name>`.
+  2. Apply its SQL with `sqlite3` to both the worktree's `data/dev.db` and the main checkout's `data/dev.db`, because `db:push` is broken.
+  3. Run `npm run db:prod:migrate`.
+- **This only covers additive migrations:** new tables, new nullable or defaulted columns, and new indexes. Anything that drops, renames, or rewrites columns or data needs the user's OK first.
+- **Read production data freely when it helps** (for example to check real data before a change). Use `TURSO_PROD_URL`/`TURSO_PROD_TOKEN` from `.env`, either from a throwaway `tsx` script or `npm run db:prod:studio`.
+- **Ask before writing anything to production.** Inserts, updates, deletes and backfills all need a yes first, with what will change and how many rows.
+
+### Vercel config and env vars
+
+Claude owns the Vercel side of a feature: `vercel.json` and the project's environment variables. The project is linked in `.vercel/` (`ayso-game-day`), and the CLI runs with `npx vercel` (it isn't installed globally).
+
+- **When a feature adds an env var**, push it to Vercel as part of finishing the feature. Don't leave it for the user.
+  - Use `npx vercel env add <NAME> <environment>` for `production`, `preview`, and `development`, as the var needs.
+  - Pipe the value from `.env`, so it never appears in the command line or the chat.
+  - Then add it to the env list in this file and to `.env.example`.
+- **Keep the three environments consistent.**
+  - Run `npx vercel env ls` before shipping, to find vars that are missing from one environment or that the code no longer reads.
+  - On Vercel, production and preview both point `TURSO_URL` at the production database (the same one as `TURSO_PROD_URL` in `.env`; checked 2026-11-24). So a preview deploy reads and writes real data. Never give preview a value that would make it send test data there, or send real email or pushes from a test.
+- **The CLI needs a login on each machine.** If `npx vercel` stops at a login prompt, ask the user to run `! npx vercel login` rather than waiting on it.
+- **Config changes** (`vercel.json`: regions, functions, headers, crons) go in the feature's branch like any other code.
+- **Ask first before:**
+  - changing or removing a production value that already exists;
+  - rotating a key;
+  - changing project settings in the dashboard (domains, build settings).
+  Adding a missing var doesn't need a yes.
+- **Never print secret values.** When reporting, list var names and environments only.
 
 ## Git Commit Guidelines
 

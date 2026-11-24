@@ -65,7 +65,7 @@ export async function loader({ params }: Route.LoaderArgs) {
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
-    { title: `${loaderData?.team?.name || 'Team'} Lineup - vs ${loaderData?.game?.opponent || 'Game'} - AYSO Game Day` },
+    { title: `${loaderData?.team?.name || 'Team'} Lineup - vs ${loaderData?.game?.opponent || 'Game'} - BenchTalk` },
     { name: "description", content: "View team lineup and rotations" },
   ];
 }
@@ -101,7 +101,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
       {/* Slim header */}
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-          <Link to="/" aria-label="AYSO Game Day home">
+          <Link to="/" aria-label="BenchTalk home">
             <AppMark />
           </Link>
           <Badge>

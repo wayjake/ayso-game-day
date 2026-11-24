@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { detectPlatform, isStandalone, vapidKeyBytes } from "~/utils/pwa";
+import { wantsNotification, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
 
 // Web Push for this browser. Needs the service worker from /sw.js (registered
 // in root.tsx) and the VAPID public key from a loader. The family layout owns
@@ -28,8 +29,9 @@ async function post(body: unknown) {
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Request failed");
 }
 
-export function usePush(vapidPublicKey: string | null) {
+export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs = {}) {
   const [status, setStatus] = useState<PushStatus>("loading");
+  const [prefs, setPrefs] = useState<NotifyPrefs>(initialPrefs);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,7 +132,25 @@ export function usePush(vapidPublicKey: string | null) {
     }
   }, []);
 
-  return { status, busy, error, enable, disable, sendTest };
+  /** Which kinds this account gets, on every device. Saved right away, undone if the save fails. */
+  const choose = useCallback(async (kind: NotifyKind, on: boolean) => {
+    setError(null);
+    let before: NotifyPrefs = {};
+    setPrefs((current) => {
+      before = current;
+      return { ...current, [kind]: on };
+    });
+    try {
+      await post({ action: "prefs", kind, on });
+    } catch (e) {
+      setPrefs(before);
+      setError(`Couldn't save that: ${(e as Error).message}`);
+    }
+  }, []);
+
+  const wants = useCallback((kind: NotifyKind) => wantsNotification(prefs, kind), [prefs]);
+
+  return { status, busy, error, enable, disable, sendTest, wants, choose };
 }
 
 export type PushState = ReturnType<typeof usePush>;
