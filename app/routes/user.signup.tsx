@@ -8,7 +8,7 @@ import { Alert, Button, Card, hintClass, inputClass, labelClass } from "~/compon
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "Sign up - BenchTalk" },
-    { name: "description", content: "Create your BenchTalk account to start planning games and rotations" },
+    { name: "description", content: "Create your BenchTalk account to schedule your season and message your families" },
   ];
 }
 
@@ -253,8 +253,8 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
       {/* Benefits */}
       <ul className="mt-8 space-y-3 border-t border-line pt-6">
         {[
-          { title: "Free for coaches", detail: "Every planning and game day feature, no credit card" },
-          { title: "Fair-play rules built in", detail: "Sit-out counts and a fair play summary" },
+          { title: "Free for coaches", detail: "Schedule, messages and game day, no credit card" },
+          { title: "Every family in the loop", detail: "On the app or by email, replies land in one place" },
           { title: "AI only if you want it", detail: "Pay-as-you-go credits, no subscription" },
         ].map((benefit) => (
           <li key={benefit.title} className="flex items-start gap-3">

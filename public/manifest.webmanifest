@@ -1,7 +1,7 @@
 {
   "name": "BenchTalk",
   "short_name": "BenchTalk",
-  "description": "Lineups, game day and team messages for volunteer coaches",
+  "description": "Schedules, RSVPs and family messages for volunteer coaches",
   "id": "/",
   "start_url": "/dashboard?source=pwa",
   "scope": "/",

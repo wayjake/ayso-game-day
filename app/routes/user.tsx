@@ -10,12 +10,10 @@ export default function UserLayout() {
         <PitchLines className="absolute inset-0 h-full w-full" />
         <div className="relative bg-linear-to-t from-pitch-dark via-pitch-dark/80 to-transparent p-10 pt-32 xl:p-14 xl:pt-40">
           <p className="font-display text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
-            Every kid plays.
-            <br />
-            Every quarter planned.
+            Calm on the sideline.
           </p>
           <p className="mt-4 max-w-sm text-white/80">
-            Lineups, sit-outs and position changes for your team, ready before kickoff.
+            The schedule, RSVPs and every message with your families, in one place.
           </p>
         </div>
       </aside>
