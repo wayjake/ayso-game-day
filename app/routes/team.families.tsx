@@ -1,6 +1,6 @@
 import type { Route } from "./+types/team.families";
 import { useState } from "react";
-import { Form, Link, data, useNavigation } from "react-router";
+import { Form, Link, data, redirect, useNavigate, useNavigation } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { db, contacts, players } from "~/db";
@@ -8,8 +8,12 @@ import { and, eq, isNotNull, notInArray } from "drizzle-orm";
 import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
 import { isEmailConfigured } from "~/utils/email.server";
 import { formatMessageTime } from "~/utils/dates";
-import { Alert, Badge, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx } from "~/components/ui";
-import { AddressBook, Check, CheckCircle, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus } from "@phosphor-icons/react";
+import { handleNoteAction } from "~/utils/announcements.server";
+import { getOrCreateFamilyConversation } from "~/utils/messages.server";
+import { findFamily, getFamilyContext } from "~/utils/family-context.server";
+import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
+import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx } from "~/components/ui";
+import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -29,7 +33,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .where(and(eq(players.teamId, teamId), ids.length ? notInArray(players.id, ids) : undefined))
     .orderBy(players.name);
 
-  return data({ team, families, missing, emailConfigured: isEmailConfigured() });
+  // The family panel, opened with ?family=<email>
+  const selectedEmail = new URL(request.url).searchParams.get("family")?.toLowerCase() ?? null;
+  const selected = selectedEmail ? findFamily(families, { email: selectedEmail }) : null;
+  const panel = selected ? await getFamilyContext(teamId, selected) : null;
+
+  return data({ team, me: user.id, families, missing, panel, emailConfigured: isEmailConfigured() });
 }
 
 type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | "no-players"; url?: string; linkedCount?: number };
@@ -40,6 +49,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
+
+  const notes = await handleNoteAction(formData, teamId, user.id);
+  if (notes) return data(notes);
+
+  if (intent === "message") {
+    const family = findFamily(await listFamilies(null, teamId), { email: String(formData.get("email") ?? "") });
+    if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
+    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0]);
+    return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
+  }
 
   let emails: string[] = [];
   if (intent === "invite") {
@@ -63,12 +82,6 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Families - AYSO Game Day" }];
 }
 
-const statusBadge = {
-  joined: <Badge tone="success"><CheckCircle size={12} weight="fill" />On the app</Badge>,
-  invited: <Badge tone="primary">Invited</Badge>,
-  expired: <Badge tone="warning">Invite expired</Badge>,
-  "not-invited": <Badge>Not invited</Badge>,
-};
 
 function CopyLink({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
@@ -93,8 +106,11 @@ function CopyLink({ url }: { url: string }) {
 }
 
 export default function Families({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, families, missing, emailConfigured } = loaderData;
+  const { team, me, families, missing, panel, emailConfigured } = loaderData;
   const base = `/dashboard/team/${team.id}`;
+  const navigate = useNavigate();
+  const closePanel = () => navigate(`${base}/families`, { preventScrollReset: true });
+  const panelHref = (email: string) => `${base}/families?family=${encodeURIComponent(email)}`;
   const navigation = useNavigation();
   const busyEmail = navigation.state === "submitting" ? String(navigation.formData?.get("email") ?? "") : null;
   const invitingAll = navigation.state === "submitting" && navigation.formData?.get("_action") === "inviteAll";
@@ -103,7 +119,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
   const outcomes = actionData && "outcomes" in actionData ? actionData.outcomes : [];
 
   return (
-    <Page width="narrow">
+    <Page>
       <PageHeader
         back={{ to: `${base}/roster`, label: "Roster" }}
         title="Families"
@@ -150,13 +166,24 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
           </EmptyState>
         </Card>
       ) : (
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0">
         <Card>
           <ul className="divide-y divide-line">
             {families.map((f) => (
-              <li key={f.email} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-5">
+              <li
+                key={f.email}
+                aria-current={panel?.email === f.email ? "true" : undefined}
+                className={cx(
+                  "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-5",
+                  panel?.email === f.email && "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]"
+                )}
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{f.kids.map((k) => k.name).join(" & ")}</span>
+                    <Link to={panelHref(f.email)} preventScrollReset className="font-semibold hover:text-primary hover:underline">
+                      {f.kids.map((k) => k.name).join(" & ")}
+                    </Link>
                     {statusBadge[f.status]}
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted">
@@ -202,7 +229,6 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
             ))}
           </ul>
         </Card>
-      )}
 
       {missing.length > 0 && (
         <Card className="mt-6 p-5">
@@ -220,7 +246,74 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
           </ul>
         </Card>
       )}
+        </div>
+
+        {panel ? (
+          <FamilyPanel key={panel.email} panel={panel} teamId={team.id} me={me} onClose={closePanel} />
+        ) : (
+          <Card className="sticky top-4 hidden p-6 text-center lg:block">
+            <p className="font-semibold">Pick a family</p>
+            <p className="mt-1 text-sm text-muted">Click a name to see their RSVPs, how they responded to announcements, and your notes.</p>
+          </Card>
+        )}
+        </div>
+      )}
     </Page>
+  );
+}
+
+type Panel = NonNullable<Route.ComponentProps["loaderData"]["panel"]>;
+
+// A sheet on phones, a sticky column on desktop
+function FamilyPanel({ panel, teamId, me, onClose }: { panel: Panel; teamId: number; me: number; onClose: () => void }) {
+  const navigation = useNavigation();
+  const messaging = navigation.state !== "idle" && navigation.formData?.get("_action") === "message";
+  return (
+    <>
+      <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-30 bg-ink/30 lg:hidden" />
+      <aside
+        aria-label={panel.label}
+        className="fixed inset-x-0 bottom-0 z-40 flex max-h-[88dvh] flex-col rounded-t-2xl bg-surface shadow-2xl ring-1 ring-line lg:sticky lg:top-4 lg:inset-auto lg:z-auto lg:max-h-[calc(100dvh-2rem)] lg:rounded-2xl lg:shadow-card"
+      >
+        <header className="flex items-center gap-3 border-b border-line px-4 py-3">
+          <h2 className="min-w-0 flex-1 truncate font-semibold">{panel.label}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="-mr-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            aria-label="Close"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <FamilyContext
+            family={panel}
+            teamId={teamId}
+            meId={me}
+            actions={
+              <>
+                <Form method="post">
+                  <input type="hidden" name="_action" value="message" />
+                  <input type="hidden" name="email" value={panel.email} />
+                  <Button type="submit" size="sm" disabled={messaging}>
+                    <ChatCircleDots size={16} />
+                    {messaging ? "Opening…" : "Message"}
+                  </Button>
+                </Form>
+                <Link
+                  to={`/dashboard/team/${teamId}/families/edit?email=${encodeURIComponent(panel.email)}`}
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
+                >
+                  <PencilSimple size={16} />
+                  Edit
+                </Link>
+              </>
+            }
+          />
+        </div>
+      </aside>
+    </>
   );
 }
 
