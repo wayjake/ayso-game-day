@@ -78,7 +78,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <section className="overflow-hidden">
         <div className={cx(container, "grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16")}>
           <div>
-            <p className="text-sm font-semibold text-primary">For volunteer coaches</p>
+            <p className="text-sm font-semibold text-coral-ink">For volunteer coaches</p>
             <h1 className="mt-3 font-display text-5xl font-bold leading-[0.95] tracking-tight sm:text-6xl xl:text-7xl">
               Calm on the sideline.
             </h1>
@@ -98,7 +98,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <ul className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
               {["Free to use", "No passwords for families", "Works with families who only use email"].map((item) => (
                 <li key={item} className="flex items-center gap-1.5">
-                  <Check size={16} weight="bold" className="text-success" />
+                  <Check size={16} weight="bold" className="text-coral-ink" />
                   {item}
                 </li>
               ))}
@@ -110,10 +110,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       </section>
 
       {/* Why it exists */}
-      <section className="border-t border-line bg-surface py-14 sm:py-20">
+      <section className="bg-coral-soft py-14 sm:py-20">
         <div className={cx(container, "grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-16")}>
           <div>
-            <p className="text-sm font-semibold text-primary">Why we built it</p>
+            <p className="text-sm font-semibold text-coral-ink">Why we built it</p>
             <h2 className="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">Coaching is the easy part</h2>
           </div>
           <div className="space-y-4 text-lg text-muted">
@@ -425,13 +425,13 @@ const faqs = [
 ];
 
 function SectionLabel({ children }: { children: ReactNode }) {
-  return <p className="text-sm font-semibold text-primary">{children}</p>;
+  return <p className="text-sm font-semibold text-coral-ink">{children}</p>;
 }
 
 function Point({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <li className="flex gap-4">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">{icon}</span>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-coral-soft text-coral-ink">{icon}</span>
       <div>
         <div className="font-semibold">{title}</div>
         <p className="mt-0.5 text-muted">{children}</p>
@@ -490,7 +490,9 @@ function Bubble({ from, mine = false, children }: { from: string; mine?: boolean
 function HeroPreview() {
   return (
     <div className="relative mx-auto w-full max-w-md lg:max-w-none" role="img" aria-label="A practice with RSVP counts, and a private message thread between a family and the coaches">
-      <Card className="overflow-hidden shadow-overlay">
+      <div aria-hidden className="absolute -right-3 -bottom-3 left-8 top-10 rotate-2 rounded-2xl bg-coral sm:-right-5 sm:-bottom-5" />
+      <div aria-hidden className="absolute -top-4 -left-4 size-16 rounded-full bg-coral-soft" />
+      <Card className="relative overflow-hidden shadow-overlay">
         <div className="flex items-center gap-3 border-b border-line p-4 sm:p-5">
           <DateBlock month="Thu" day="14" />
           <div className="min-w-0 flex-1">
@@ -578,7 +580,7 @@ function InboxPreview() {
       <ul className="divide-y divide-line">
         {rows.map((r) => (
           <li key={r.name} className="flex items-start gap-3 px-5 py-3.5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+            <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", r.icon ? "bg-primary-soft text-primary" : "bg-coral-soft text-coral-ink")}>
               {r.icon ?? (r.email ? <EnvelopeSimple size={18} /> : <span className="text-sm font-semibold">{r.name[0]}</span>)}
             </span>
             <div className="min-w-0 flex-1">
