@@ -174,5 +174,5 @@ export async function getTeamPlayers(teamId: number) {
 
 // Push to every linked family on the team, e.g. when the schedule changes
 export async function notifyFamilies(teamId: number, payload: { title: string; body: string; tag?: string }) {
-  await sendPush(await getParentUserIds(teamId), { ...payload, url: "/family" });
+  await sendPush(await getParentUserIds(teamId), "team", { ...payload, url: "/family" });
 }

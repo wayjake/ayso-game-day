@@ -301,7 +301,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
 
   if (!inbound.isAutoReply) {
     const who = inbound.fromName || inbound.fromEmail;
-    await sendPush(await getCoachUserIds(match.teamId), {
+    await sendPush(await getCoachUserIds(match.teamId), "chat", {
       title: `${who} replied by email`,
       body: preview(text, 180),
       url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,

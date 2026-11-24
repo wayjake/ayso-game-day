@@ -4,12 +4,13 @@ import { useLocation } from "react-router";
 import { Bell, BellSlash, DeviceMobile } from "@phosphor-icons/react";
 import { NotificationsBlockedSheet } from "~/components/NotificationsBlockedSheet";
 import { cx } from "~/components/ui";
+import { NotifyCategories } from "~/components/NotifyCategories";
 import type { PushState } from "~/hooks/usePush";
 import { isStandalone, isTouchDevice } from "~/utils/pwa";
 
 // The bell in the family header: one tap shows whether this device gets
-// notifications, with the switch right there, plus "Add to Home Screen" on
-// phones that haven't installed the app yet.
+// notifications, with the switch right there, then which kinds you get, plus
+// "Add to Home Screen" on phones that haven't installed the app yet.
 
 export function NotificationsMenu({ push, onInstall }: { push: PushState; onInstall: () => void }) {
   const [open, setOpen] = useState(false);
@@ -73,7 +74,7 @@ export function NotificationsMenu({ push, onInstall }: { push: PushState; onInst
           <div
             role="dialog"
             aria-label="Notification settings"
-            className="fixed left-3 z-50 rounded-2xl bg-surface p-4 shadow-overlay ring-1 ring-line sm:left-auto sm:w-80"
+            className="fixed left-3 z-50 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl bg-surface p-4 shadow-overlay ring-1 ring-line sm:left-auto sm:w-80"
             style={position}
             onClick={(e) => e.stopPropagation()}
           >
@@ -87,6 +88,13 @@ export function NotificationsMenu({ push, onInstall }: { push: PushState; onInst
                 onInstall();
               }}
             />
+
+            {push.status === "on" && (
+              <>
+                <div className="my-4 border-t border-line" />
+                <NotifyCategories push={push} audience="family" />
+              </>
+            )}
 
             {canInstall && push.status !== "needs-install" && (
               <>
@@ -177,7 +185,7 @@ function PushRow({
             title={title}
             detail={
               push.status === "on"
-                ? "On for this device: messages and schedule changes."
+                ? "On for this device. Choose what you get below."
                 : "Get messages and schedule changes on this device."
             }
           >

@@ -615,13 +615,13 @@ export async function postMessage(
   const parentRecipients = parentIds.filter((id) => id !== sender.id && !coachIds.includes(id));
 
   await Promise.all([
-    sendPush(coachRecipients, {
+    sendPush(coachRecipients, "chat", {
       title: conversation.kind === "team" ? `${teamName} · ${senderName}` : `${senderName} (${teamName})`,
       body: preview(text, 180),
       url: `/dashboard/team/${conversation.teamId}/messages/${conversation.id}`,
       tag,
     }),
-    sendPush(parentRecipients, {
+    sendPush(parentRecipients, "chat", {
       title: conversation.kind === "team" ? `${teamName} · ${senderName}` : `${senderName} · Coaches`,
       body: preview(text, 180),
       url: `/family/messages/${conversation.id}`,

@@ -15,6 +15,7 @@ export const users = sqliteTable('users', {
   // domain (e.g. jake@aysogameday.com). Falls back to EMAIL_FROM.
   sendingEmail: text('sending_email'),
   toursSeen: text('tours_seen'), // JSON: { [tourId]: version } for tours finished or dismissed
+  notifyPrefs: text('notify_prefs'), // JSON: { [kind]: boolean } overrides; see utils/notify.ts
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });

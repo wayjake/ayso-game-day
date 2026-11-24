@@ -215,7 +215,7 @@ export async function sendAnnouncement({
     prepared
       .filter((p) => p.userIds.length > 0)
       .map((p) =>
-        sendPush(p.userIds, {
+        sendPush(p.userIds, "team", {
           title: `${teamName} · ${subject}`,
           body: preview(body, 180),
           url: `/family/messages/${p.conversationId}`,

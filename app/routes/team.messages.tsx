@@ -6,7 +6,7 @@ import { getOrCreateFamilyConversation, listCoachConversations } from "~/utils/m
 import { listFamilies } from "~/utils/parent-invites.server";
 import { familyLabel } from "~/utils/announcements.server";
 import { assignUnmatched, dismissUnmatched, listUnmatched } from "~/utils/inbound-email.server";
-import { vapidPublicKey } from "~/utils/push.server";
+import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { formatMessageTime } from "~/utils/dates";
 import { stripQuotedReply } from "~/utils/email-reply";
 import { ConversationList } from "~/components/ConversationList";
@@ -33,7 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     preview: stripQuotedReply(u.text ?? "").body.slice(0, 280),
   }));
 
-  return data({ team, conversations, families, unmatched, vapidPublicKey: vapidPublicKey() });
+  return data({ team, conversations, families, unmatched, vapidPublicKey: vapidPublicKey(), notifyPrefs: await getNotifyPrefs(user.id) });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -70,7 +70,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function TeamMessages({ loaderData }: Route.ComponentProps) {
-  const { team, conversations, families, unmatched, vapidPublicKey } = loaderData;
+  const { team, conversations, families, unmatched, vapidPublicKey, notifyPrefs } = loaderData;
   const base = `/dashboard/team/${team.id}`;
   const [params] = useSearchParams();
   const navigation = useNavigation();
@@ -210,7 +210,7 @@ export default function TeamMessages({ loaderData }: Route.ComponentProps) {
       <Card className="mt-6 p-5">
         <CardHeader title="Notifications on this device" className="mb-1" />
         <p className="mb-4 text-sm text-muted">Get new messages, email replies and "can't make it" RSVPs as push notifications.</p>
-        <PushToggle vapidPublicKey={vapidPublicKey} />
+        <PushToggle vapidPublicKey={vapidPublicKey} notifyPrefs={notifyPrefs} />
       </Card>
 
       <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-subtle">

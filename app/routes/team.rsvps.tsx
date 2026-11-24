@@ -68,7 +68,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const answered = new Set((await getEventRsvps(event.type, event.id)).map((a) => a.playerId));
     const waiting = players.filter((p) => !answered.has(p.id)).map((p) => p.id);
     const parents = await getParentUserIdsForPlayers(waiting);
-    await sendPush(parents, {
+    await sendPush(parents, "team", {
       title: "Can you make it?",
       body: `RSVP for ${eventPhrase(event)} ${eventDayPhrase(event.date)} so the coaches can plan.`,
       url: "/family",
