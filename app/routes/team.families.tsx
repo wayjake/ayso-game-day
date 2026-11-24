@@ -230,6 +230,19 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
           </ul>
         </Card>
 
+        </div>
+
+        {panel ? (
+          <FamilyPanel key={panel.email} panel={panel} teamId={team.id} me={me} onClose={closePanel} />
+        ) : (
+          <Card className="sticky top-4 hidden p-6 text-center lg:block">
+            <p className="font-semibold">Pick a family</p>
+            <p className="mt-1 text-sm text-muted">Click a name to see their RSVPs, how they responded to announcements, and your notes.</p>
+          </Card>
+        )}
+        </div>
+      )}
+
       {missing.length > 0 && (
         <Card className="mt-6 p-5">
           <h2 className="text-base font-semibold">No family email</h2>
@@ -245,18 +258,6 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
             ))}
           </ul>
         </Card>
-      )}
-        </div>
-
-        {panel ? (
-          <FamilyPanel key={panel.email} panel={panel} teamId={team.id} me={me} onClose={closePanel} />
-        ) : (
-          <Card className="sticky top-4 hidden p-6 text-center lg:block">
-            <p className="font-semibold">Pick a family</p>
-            <p className="mt-1 text-sm text-muted">Click a name to see their RSVPs, how they responded to announcements, and your notes.</p>
-          </Card>
-        )}
-        </div>
       )}
     </Page>
   );

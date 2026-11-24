@@ -30,6 +30,7 @@ export type FamilyContextView = {
     answers: { playerId: number; name: string; status: RsvpStatus | null }[];
   }[];
   announcements: Awaited<ReturnType<typeof familyAnnouncements>>;
+  notesEmail: string; // Notes are keyed by this email (a thread's own email can differ from the contact email)
   notes: Awaited<ReturnType<typeof familyNotesView>>;
 };
 
@@ -43,7 +44,7 @@ export function findFamily(families: Family[], { email, parentUserId }: { email?
   );
 }
 
-export async function getFamilyContext(teamId: number, family: Family): Promise<FamilyContextView> {
+export async function getFamilyContext(teamId: number, family: Family, notesEmail = family.email): Promise<FamilyContextView> {
   const today = todayISO();
   const kidIds = family.kids.map((k) => k.id);
 
@@ -52,7 +53,7 @@ export async function getFamilyContext(teamId: number, family: Family): Promise<
     getEvents([teamId], { from: today, to: addDays(today, 13) }),
     kidIds.length ? getRsvps([teamId], kidIds) : Promise.resolve([]),
     familyAnnouncements(teamId, family.email),
-    familyNotesView(teamId, family.email),
+    familyNotesView(teamId, notesEmail),
   ]);
 
   const upcoming = events
@@ -82,6 +83,7 @@ export async function getFamilyContext(teamId: number, family: Family): Promise<
     reach: family.status !== "joined" ? "email" : withPush.size > 0 ? "push" : "app",
     upcoming,
     announcements,
+    notesEmail,
     notes,
   };
 }

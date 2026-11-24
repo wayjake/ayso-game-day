@@ -70,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     conversation.kind === "direct"
       ? findFamily(await listFamilies(request, conversation.teamId), { email: familyEmail, parentUserId: conversation.parentUserId })
       : null;
-  const context = family ? await getFamilyContext(conversation.teamId, family) : null;
+  const context = family ? await getFamilyContext(conversation.teamId, family, familyEmail ?? family.email) : null;
   const teamContext = conversation.kind === "team" ? await getTeamChatContext(conversation.teamId) : null;
 
   return data({

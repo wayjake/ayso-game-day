@@ -1,4 +1,5 @@
 import type { Route } from "./+types/team.messages._index";
+import { useEffect, useRef } from "react";
 import { Form, Link, data, redirect, useNavigation, useSearchParams } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -72,6 +73,11 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
   const navigation = useNavigation();
   const [params] = useSearchParams();
   const composing = params.get("compose") === "1";
+  // "+ Message" lands here; the route may already be mounted, so autoFocus won't do
+  const pickerRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (composing) pickerRef.current?.focus();
+  }, [composing]);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-16 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pt-10">
@@ -150,7 +156,7 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
             <Form method="post" className="flex gap-2">
               <input type="hidden" name="_action" value="startDirect" />
               <label htmlFor="familyEmail" className="sr-only">Family</label>
-              <select id="familyEmail" name="familyEmail" required className={inputClass} autoFocus={composing}>
+              <select ref={pickerRef} id="familyEmail" name="familyEmail" required className={inputClass}>
                 {families.map((f) => (
                   <option key={f.email} value={f.email}>
                     {f.label}

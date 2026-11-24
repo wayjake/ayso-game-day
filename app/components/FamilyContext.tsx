@@ -146,7 +146,7 @@ export function FamilyContext({
 
       {showNotes && (
         <Section title="Notes" className="[&>h3]:sr-only">
-          <FamilyNotes notes={family.notes} familyEmail={family.email} meId={meId} />
+          <FamilyNotes notes={family.notes} familyEmail={family.notesEmail} meId={meId} />
         </Section>
       )}
     </div>
