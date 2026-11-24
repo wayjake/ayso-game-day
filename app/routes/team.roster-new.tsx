@@ -100,7 +100,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Add player - AYSO Game Day" },
+    { title: "Add player - BenchTalk" },
     { name: "description", content: "Add a new player to your team roster" },
   ];
 }

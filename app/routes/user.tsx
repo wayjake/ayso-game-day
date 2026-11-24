@@ -15,14 +15,14 @@ export default function UserLayout() {
             Every quarter planned.
           </p>
           <p className="mt-4 max-w-sm text-white/80">
-            Lineups, sit-outs and position changes for your AYSO team, ready before kickoff.
+            Lineups, sit-outs and position changes for your team, ready before kickoff.
           </p>
         </div>
       </aside>
 
       <div className="flex min-h-dvh flex-col px-4 sm:px-6">
         <header className="flex h-16 items-center justify-between gap-4">
-          <Link to="/" aria-label="AYSO Game Day home">
+          <Link to="/" aria-label="BenchTalk home">
             <AppMark />
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-ink">

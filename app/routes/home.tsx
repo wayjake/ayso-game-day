@@ -40,11 +40,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "AYSO Game Day" },
+    { title: "BenchTalk" },
     {
       name: "description",
       content:
-        "Plan fair AYSO lineups for every quarter and run substitutions from your phone on game day. Free for coaches; AI is optional, pay as you go.",
+        "Plan fair lineups for every quarter and run substitutions from your phone on game day. Free for coaches; AI is optional, pay as you go.",
     },
   ];
 }
@@ -116,7 +116,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       {/* Top nav */}
       <header className="sticky top-0 z-50 border-b border-line bg-surface/90 backdrop-blur">
         <nav className={cx(container, "flex h-14 items-center justify-between gap-4")}>
-          <a href="/" aria-label="AYSO Game Day home">
+          <a href="/" aria-label="BenchTalk home">
             <AppMark />
           </a>
           <ul className="hidden items-center gap-1 md:flex">
@@ -142,7 +142,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <section className="overflow-hidden">
         <div className={cx(container, "grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16")}>
           <div>
-            <p className="text-sm font-semibold text-primary">For AYSO coaches</p>
+            <p className="text-sm font-semibold text-primary">For volunteer coaches</p>
             <h1 className="mt-3 font-display text-5xl font-bold leading-[0.95] tracking-tight sm:text-6xl xl:text-7xl">
               Fair lineups for every quarter. Calm on the sideline.
             </h1>
@@ -186,7 +186,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               make a sub while remembering who has played and who hasn't, and keep it fair.
             </p>
             <p>
-              AYSO Game Day keeps that count for you. Mark the injury, see who's on the bench and how many quarters each
+              BenchTalk keeps that count for you. Mark the injury, see who's on the bench and how many quarters each
               player has sat, and make the fair call without the mental math. It's built for the volunteers who give
               their weekends to the game.
             </p>
@@ -201,7 +201,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <SectionLabel>Before the game</SectionLabel>
             <h2 className="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">Plan the whole game in one sitting</h2>
             <p className="mt-3 max-w-xl text-lg text-muted">
-              Built around how an AYSO game runs: four quarters, a full bench, and everyone gets their time.
+              Built around how a youth game runs: four quarters, a full bench, and everyone gets their time.
             </p>
             <ul className="mt-8 space-y-5">
               <Point icon={<HandTap size={20} />} title="Drag players onto the field">
@@ -213,7 +213,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               <Point icon={<UserPlus size={20} />} title="Mark who can't make it">
                 Absent or injured for one quarter or the rest of the game, and the counts adjust.
               </Point>
-              <Point icon={<Printer size={20} />} title="Print the AYSO game card">
+              <Point icon={<Printer size={20} />} title="Print the game card">
                 Filled in from your lineup, ready for the referee.
               </Point>
             </ul>
@@ -299,7 +299,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                   "Game day mode",
                   "Fair play summary",
                   "Share links for parents",
-                  "Printable AYSO game cards",
+                  "Printable game cards",
                   "Assistant coach invites",
                   "7v7, 9v9 and 11v11",
                 ].map((item) => (
@@ -397,7 +397,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <div className={cx(container, "flex flex-col gap-6 text-sm sm:flex-row sm:items-center sm:justify-between")}>
           <div>
             <AppMark />
-            <p className="mt-2 text-muted">Lineups and game day for AYSO coaches.</p>
+            <p className="mt-2 text-muted">Lineups, game day and team messages for volunteer coaches.</p>
           </div>
           <ul className="flex flex-wrap gap-x-5 gap-y-2 text-muted">
             <li><a className="transition hover:text-ink" href="#planning">Planning</a></li>
@@ -412,11 +412,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
         <div className={cx(container, "mt-8 space-y-2 border-t border-line pt-6 text-xs text-subtle")}>
           <p className="max-w-3xl">
-            AYSO Game Day is an independent volunteer tool. It is not affiliated with, endorsed by or sponsored by the
-            American Youth Soccer Organization (AYSO). We use the name only because the app is built around AYSO's fair
-            play rules.
+            BenchTalk is an independent volunteer tool. It is not affiliated with, endorsed by or sponsored by the
+            American Youth Soccer Organization (AYSO) or any other league.
           </p>
-          <p>© {new Date().getFullYear()} AYSO Game Day</p>
+          <p>© {new Date().getFullYear()} BenchTalk</p>
         </div>
       </footer>
     </div>
@@ -435,7 +434,7 @@ const faqs = [
       "You buy credits up front and each AI request uses some. We charge what the AI model costs us through OpenRouter, plus 50% to run the service. No subscription and no minimum.",
   },
   {
-    question: "Does it follow AYSO fair play?",
+    question: "Does it follow fair-play rules?",
     answer:
       "It counts the quarters each player sits, and the fair play summary flags anyone who hasn't played at least two quarters or sits more than one. Absent and injured players are left out of the count.",
   },
@@ -450,7 +449,7 @@ const faqs = [
   {
     question: "Is this an official AYSO app?",
     answer:
-      "No. We're independent and not affiliated with or endorsed by AYSO. The name is there because the app is built around AYSO's fair play rules, to make coaching easier for volunteers.",
+      "No. BenchTalk is independent and not affiliated with or endorsed by AYSO or any other league. It follows AYSO-style fair-play rules to make coaching easier for volunteers.",
   },
   {
     question: "What do I need on game day?",

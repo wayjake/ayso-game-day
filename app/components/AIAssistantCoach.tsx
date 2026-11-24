@@ -431,7 +431,7 @@ export function AIAssistantCoach({ isOpen, onClose, gameId, teamId, onAcceptLine
           <div className="mt-6 flex gap-2.5 rounded-xl bg-surface-2 p-3 text-xs text-muted">
             <Lightbulb size={16} className="mt-px shrink-0 text-subtle" />
             <p>
-              The AI considers AYSO fair play rules, player strengths, and past lineups when it suggests rotations.
+              The AI considers fair-play rules, player strengths, and past lineups when it suggests rotations.
             </p>
           </div>
         </div>

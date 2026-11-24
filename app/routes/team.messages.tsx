@@ -66,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Messages - AYSO Game Day" }];
+  return [{ title: "Messages - BenchTalk" }];
 }
 
 export default function TeamMessages({ loaderData }: Route.ComponentProps) {

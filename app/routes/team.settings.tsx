@@ -229,7 +229,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Team settings - AYSO Game Day" },
+    { title: "Team settings - BenchTalk" },
     { name: "description", content: "Team details and coaches" },
   ];
 }

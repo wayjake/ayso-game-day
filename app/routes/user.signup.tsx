@@ -7,8 +7,8 @@ import { Alert, Button, Card, hintClass, inputClass, labelClass } from "~/compon
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Sign up - AYSO Game Day" },
-    { name: "description", content: "Create your AYSO Game Day account to start planning games and rotations" },
+    { title: "Sign up - BenchTalk" },
+    { name: "description", content: "Create your BenchTalk account to start planning games and rotations" },
   ];
 }
 
@@ -254,7 +254,7 @@ export default function Signup({ loaderData }: Route.ComponentProps) {
       <ul className="mt-8 space-y-3 border-t border-line pt-6">
         {[
           { title: "Free for coaches", detail: "Every planning and game day feature, no credit card" },
-          { title: "AYSO fair play built in", detail: "Sit-out counts and a fair play summary" },
+          { title: "Fair-play rules built in", detail: "Sit-out counts and a fair play summary" },
           { title: "AI only if you want it", detail: "Pay-as-you-go credits, no subscription" },
         ].map((benefit) => (
           <li key={benefit.title} className="flex items-start gap-3">

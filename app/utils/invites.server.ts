@@ -105,10 +105,10 @@ export async function sendInviteEmail({
 }) {
   const url = inviteUrl(request, shareCode);
   const teamList = teamNames.join(", ");
-  const subject = `${inviterName} invited you to coach ${teamNames.length === 1 ? teamNames[0] : "their teams"} on AYSO Game Day`;
+  const subject = `${inviterName} invited you to coach ${teamNames.length === 1 ? teamNames[0] : "their teams"} on BenchTalk`;
 
   const text = [
-    `${inviterName} invited you to help coach on AYSO Game Day.`,
+    `${inviterName} invited you to help coach on BenchTalk.`,
     ``,
     `Team${teamNames.length === 1 ? "" : "s"}: ${teamList}`,
     ``,
@@ -121,7 +121,7 @@ export async function sendInviteEmail({
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #0f172a;">
-      <p>${escapeHtml(inviterName)} invited you to help coach on AYSO Game Day.</p>
+      <p>${escapeHtml(inviterName)} invited you to help coach on BenchTalk.</p>
       <p><strong>Team${teamNames.length === 1 ? "" : "s"}:</strong> ${escapeHtml(teamList)}</p>
       <p>You'll be able to plan lineups, manage the roster, and edit games.</p>
       <p style="margin: 24px 0;">

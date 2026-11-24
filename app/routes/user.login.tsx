@@ -7,8 +7,8 @@ import { EnvelopeSimple } from "@phosphor-icons/react";
 
 export function meta({ }: Route.MetaArgs) {
   return [
-    { title: "Sign in - AYSO Game Day" },
-    { name: "description", content: "Sign in to your AYSO Game Day account" },
+    { title: "Sign in - BenchTalk" },
+    { name: "description", content: "Sign in to your BenchTalk account" },
   ];
 }
 

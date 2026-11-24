@@ -62,7 +62,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `Game day - vs ${data?.game.opponent ?? "game"} - AYSO Game Day` }];
+  return [{ title: `Game day - vs ${data?.game.opponent ?? "game"} - BenchTalk` }];
 }
 
 export default function GameDay({ loaderData }: Route.ComponentProps) {

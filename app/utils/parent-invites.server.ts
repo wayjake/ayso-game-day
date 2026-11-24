@@ -221,7 +221,7 @@ async function sendParentInviteEmail({
   const kids = joinNames(kidNames);
   const subject = `${teamName}: RSVPs and team messages for ${kids}`;
   const text = [
-    `${coachName} added you to ${teamName} on AYSO Game Day.`,
+    `${coachName} added you to ${teamName} on BenchTalk.`,
     ``,
     `Create your account to see the schedule, RSVP ${kids} to games and practices, and message the coaches.`,
     ``,
@@ -232,7 +232,7 @@ async function sendParentInviteEmail({
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #101B2D;">
-      <p>${escapeHtml(coachName)} added you to <strong>${escapeHtml(teamName)}</strong> on AYSO Game Day.</p>
+      <p>${escapeHtml(coachName)} added you to <strong>${escapeHtml(teamName)}</strong> on BenchTalk.</p>
       <p>Create your account to see the schedule, RSVP ${escapeHtml(kids)} to games and practices, and message the coaches.</p>
       <p style="margin: 24px 0;">
         <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Join the team</a>

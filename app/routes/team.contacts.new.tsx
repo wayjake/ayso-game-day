@@ -116,7 +116,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Add Contact - AYSO Game Day" },
+    { title: "Add Contact - BenchTalk" },
     { name: "description", content: "Add a new contact to your team" },
   ];
 }

@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.kind === "team" ? "Team chat" : "Coaches"} - AYSO Game Day` }];
+  return [{ title: `${data?.kind === "team" ? "Team chat" : "Coaches"} - BenchTalk` }];
 }
 
 export default function FamilyThread({ loaderData }: Route.ComponentProps) {

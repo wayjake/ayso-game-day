@@ -35,7 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "AYSO Game Day" }];
+  return [{ title: "BenchTalk" }];
 }
 
 export default function FamilyLayout({ loaderData }: Route.ComponentProps) {

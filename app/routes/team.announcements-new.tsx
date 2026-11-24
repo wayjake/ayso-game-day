@@ -66,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "New announcement - AYSO Game Day" }];
+  return [{ title: "New announcement - BenchTalk" }];
 }
 
 type Audience = "all" | "app" | "email" | "pick";

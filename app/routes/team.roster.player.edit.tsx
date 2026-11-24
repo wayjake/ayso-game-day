@@ -148,7 +148,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
-    { title: `Edit ${loaderData?.player?.name || 'Player'} - AYSO Game Day` },
+    { title: `Edit ${loaderData?.player?.name || 'Player'} - BenchTalk` },
     { name: "description", content: "Edit player information" },
   ];
 }

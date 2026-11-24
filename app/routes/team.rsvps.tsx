@@ -81,7 +81,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "RSVPs - AYSO Game Day" }];
+  return [{ title: "RSVPs - BenchTalk" }];
 }
 
 const order: (RsvpStatus | null)[] = ["yes", "maybe", "no", null];

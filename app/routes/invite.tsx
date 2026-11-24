@@ -86,7 +86,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Coach invite - AYSO Game Day" },
+    { title: "Coach invite - BenchTalk" },
     { name: "robots", content: "noindex" },
   ];
 }
@@ -219,7 +219,7 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
 
   return (
     <div className="flex min-h-dvh flex-col items-center bg-canvas px-4 py-10 text-ink sm:py-16">
-      <a href="/" aria-label="AYSO Game Day home" className="mb-8">
+      <a href="/" aria-label="BenchTalk home" className="mb-8">
         <AppMark />
       </a>
       <Card className="w-full max-w-md">{body}</Card>

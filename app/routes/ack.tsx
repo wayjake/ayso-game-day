@@ -10,7 +10,7 @@ import { CheckCircle, LinkBreak } from "@phosphor-icons/react";
 // can't tap it for the family.
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Got it - AYSO Game Day" }, { name: "robots", content: "noindex" }];
+  return [{ title: "Got it - BenchTalk" }, { name: "robots", content: "noindex" }];
 }
 
 export async function loader({ params }: Route.LoaderArgs) {

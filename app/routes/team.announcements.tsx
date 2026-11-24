@@ -18,7 +18,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Announcements - AYSO Game Day" }];
+  return [{ title: "Announcements - BenchTalk" }];
 }
 
 const askLabel = { none: "Just sharing", ack: "Asked for “Got it”", reply: "Asked for a reply" } as const;

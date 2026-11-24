@@ -16,7 +16,7 @@ import {
 // cookie is already set, so the installed app starts out signed in), and from
 // the bell in the header after that.
 
-const APP_NAME = "Game Day"; // What the Home Screen icon is called (manifest short_name)
+const APP_NAME = "BenchTalk"; // What the Home Screen icon is called (manifest short_name)
 
 type Env = { platform: Platform; standalone: boolean };
 
@@ -81,8 +81,8 @@ export function InstallSheet({
         <>
           <SheetTitle
             id="install-title"
-            icon={<img src="/icons/icon-192.png" alt="" className="size-16 shrink-0 rounded-2xl shadow-raised" />}
-            title={done ? "You're all set" : "Add Game Day to your Home Screen"}
+            icon={<img src="/icons/app-192.png" alt="" className="size-16 shrink-0 rounded-2xl shadow-raised" />}
+            title={done ? "You're all set" : "Add BenchTalk to your Home Screen"}
             subtitle={done ? undefined : "Free, no app store, takes 10 seconds"}
           />
 

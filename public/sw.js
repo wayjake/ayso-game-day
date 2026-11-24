@@ -1,4 +1,4 @@
-// AYSO Game Day service worker. Push notifications only: pages are signed-in
+// BenchTalk service worker. Push notifications only: pages are signed-in
 // and change constantly, so nothing is cached and fetches go straight to the
 // network as if this file didn't exist.
 
@@ -14,9 +14,9 @@ self.addEventListener("push", (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || "AYSO Game Day", {
+    self.registration.showNotification(data.title || "BenchTalk", {
       body: data.body || "",
-      icon: "/icons/icon-192.png",
+      icon: "/icons/app-192.png",
       tag: data.tag,
       renotify: Boolean(data.tag),
       data: { url: data.url || "/dashboard" },

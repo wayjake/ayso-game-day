@@ -60,7 +60,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Families - AYSO Game Day" }];
+  return [{ title: "Families - BenchTalk" }];
 }
 
 const statusBadge = {

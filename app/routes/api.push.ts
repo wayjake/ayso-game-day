@@ -46,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   await sendPush([user.id], {
-    title: "AYSO Game Day",
+    title: "BenchTalk",
     body: "Notifications are working on this device.",
     url: "/family",
     tag: "test",

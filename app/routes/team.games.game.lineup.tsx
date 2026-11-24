@@ -578,7 +578,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
-    { title: `Lineup - ${loaderData?.game?.opponent || 'Game'} - AYSO Game Day` },
+    { title: `Lineup - ${loaderData?.game?.opponent || 'Game'} - BenchTalk` },
     { name: "description", content: "Plan your team lineup and rotations" },
   ];
 }
@@ -1779,7 +1779,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         <li>Pick a quarter tab to plan that quarter's lineup</li>
                         <li><strong className="font-semibold text-ink">Drag</strong> players onto positions, or <strong className="font-semibold text-ink">click</strong> a name or position for a menu</li>
                         <li>Click a player on the field to move them or sit them out</li>
-                        <li>Each player should play at least 2 quarters (AYSO fair play)</li>
+                        <li>Each player should play at least 2 quarters (fair play)</li>
                         <li>No player should sit out more than 1 quarter</li>
                         <li>Changes save as you make them</li>
                         <li>On the day, open <strong className="font-semibold text-ink">Game day</strong> for a sideline view of each quarter's changes</li>
@@ -2129,7 +2129,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <div>
                   <h2 className="font-display text-2xl font-bold tracking-tight">Fair play summary</h2>
                   <p className="mt-1 text-sm text-muted">
-                    Players marked absent or injured in any quarter are exempt from AYSO minimum playing time.
+                    Players marked absent or injured in any quarter are exempt from the minimum playing time.
                   </p>
                 </div>
                 <button
@@ -2243,7 +2243,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 )}
                 
                 <Alert tone="primary">
-                  <h3 className="mb-1.5 font-semibold">AYSO fair play rules</h3>
+                  <h3 className="mb-1.5 font-semibold">Fair-play rules</h3>
                   <ul className="list-disc space-y-1 pl-4 text-xs">
                     <li>Each player must play at least 2 quarters</li>
                     <li>No player should sit out more than 1 quarter</li>

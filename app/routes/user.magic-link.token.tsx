@@ -8,7 +8,7 @@ import { LinkBreak, SignIn } from "@phosphor-icons/react";
 // scanners that fetch every link in an email would otherwise use it up.
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Sign in - AYSO Game Day" }, { name: "robots", content: "noindex" }];
+  return [{ title: "Sign in - BenchTalk" }, { name: "robots", content: "noindex" }];
 }
 
 export async function loader({ params }: Route.LoaderArgs) {

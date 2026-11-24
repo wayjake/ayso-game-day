@@ -80,7 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export function meta({ data }: Route.MetaArgs) {
   return [
-    { title: `${data?.team.name ?? "Team"} - AYSO Game Day` },
+    { title: `${data?.team.name ?? "Team"} - BenchTalk` },
     { name: "description", content: "Team management dashboard" },
   ];
 }

@@ -30,7 +30,7 @@
 	--color-warning-soft: #FCF1E1;
 	--color-danger: #C42B2B;
 	--color-danger-soft: #FCEBEA;
-	--color-brand: #E03131;
+	--color-brand: var(--color-primary); /* BenchTalk: the logo tile is primary. The AYSO-era red #E03131 is retired (it read as an error next to danger) */
 
 	--color-pitch: #2F7D3E;
 	--color-pitch-dark: #276A34;

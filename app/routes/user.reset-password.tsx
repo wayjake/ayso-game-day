@@ -6,7 +6,7 @@ import { Alert, Button, Card, EmptyState, buttonClass, hintClass, inputClass, la
 import { LinkBreak } from "@phosphor-icons/react";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Choose a new password - AYSO Game Day" }];
+  return [{ title: "Choose a new password - BenchTalk" }];
 }
 
 export async function loader({ params }: Route.LoaderArgs) {

@@ -106,7 +106,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Edit practice - AYSO Game Day" }];
+  return [{ title: "Edit practice - BenchTalk" }];
 }
 
 export default function EditPractice({ loaderData, actionData }: Route.ComponentProps) {

@@ -79,7 +79,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Join your team - AYSO Game Day" }, { name: "robots", content: "noindex" }];
+  return [{ title: "Join your team - BenchTalk" }, { name: "robots", content: "noindex" }];
 }
 
 const primaryButton = buttonClass({ size: "lg", className: "w-full" });
@@ -198,7 +198,7 @@ export default function Join({ loaderData, actionData, params }: Route.Component
 
   return (
     <div className="flex min-h-dvh flex-col items-center bg-canvas px-4 py-10 text-ink sm:py-16">
-      <a href="/" aria-label="AYSO Game Day home" className="mb-8">
+      <a href="/" aria-label="BenchTalk home" className="mb-8">
         <AppMark />
       </a>
       <Card className="w-full max-w-md">{body}</Card>

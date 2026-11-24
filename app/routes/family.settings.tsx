@@ -29,7 +29,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Settings - AYSO Game Day" }];
+  return [{ title: "Settings - BenchTalk" }];
 }
 
 export default function FamilySettings({ loaderData, actionData }: Route.ComponentProps) {

@@ -82,7 +82,7 @@ function announcementEmail({
   <h1 style="margin:0 0 18px;font-size:20px;line-height:1.3">${escapeHtml(subject)}</h1>
   ${textToHtml(body)}
   ${button}
-  <p style="margin:28px 0 0;font-size:12px;color:#64748b">Sent by ${escapeHtml(coachName)} with AYSO Game Day. Replies go to the coaches only.</p>
+  <p style="margin:28px 0 0;font-size:12px;color:#64748b">Sent by ${escapeHtml(coachName)} with BenchTalk. Replies go to the coaches only.</p>
 </div>`;
   return { text, html };
 }

@@ -97,7 +97,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.title ?? "Messages"} - AYSO Game Day` }];
+  return [{ title: `${data?.title ?? "Messages"} - BenchTalk` }];
 }
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {

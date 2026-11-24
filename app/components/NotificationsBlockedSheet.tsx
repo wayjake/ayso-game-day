@@ -56,7 +56,7 @@ function Steps({ env: { platform, standalone } }: { env: Env }) {
             Open your iPhone's <strong>Settings</strong> app
           </li>
           <li>
-            Tap <strong>Notifications</strong>, then <strong>Game Day</strong>
+            Tap <strong>Notifications</strong>, then <strong>BenchTalk</strong>
           </li>
           <li>
             Turn on <strong>Allow Notifications</strong>
@@ -64,7 +64,7 @@ function Steps({ env: { platform, standalone } }: { env: Env }) {
           <li>Come back here. The switch will be ready to turn on.</li>
         </List>
         <Note>
-          Not in the list? Remove Game Day from your Home Screen and add it again. That resets its permissions, and
+          Not in the list? Remove BenchTalk from your Home Screen and add it again. That resets its permissions, and
           you'll be asked again.
         </Note>
       </>
@@ -76,7 +76,7 @@ function Steps({ env: { platform, standalone } }: { env: Env }) {
       <>
         <List>
           <li>
-            Long-press the <strong>Game Day</strong> icon on your home screen
+            Long-press the <strong>BenchTalk</strong> icon on your home screen
           </li>
           <li>
             Tap <strong>App info</strong>, then <strong>Notifications</strong>
