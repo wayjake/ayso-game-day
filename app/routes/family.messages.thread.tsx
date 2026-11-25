@@ -1,16 +1,30 @@
 import type { Route } from "./+types/family.messages.thread";
+import { useState } from "react";
 import { Link, data, redirect } from "react-router";
 import { db, teams, users } from "~/db";
 import { eq } from "drizzle-orm";
 import { requireParent } from "~/utils/family.server";
-import { getConversationAccess, getReplies, getThread, latestMessageId, markRead, postMessage, toggleReaction } from "~/utils/messages.server";
+import {
+  getConversationAccess,
+  getReplies,
+  getThread,
+  groupSubtitle,
+  groupTitle,
+  latestMessageId,
+  markRead,
+  postMessage,
+  toggleReaction,
+} from "~/utils/messages.server";
+import { groupView, handleGroupAction } from "~/utils/groups.server";
+import { GroupPanel, type GroupInfo } from "~/components/GroupPanel";
+import { Button } from "~/components/ui";
 import { acknowledgeFromThread, acknowledgedMessageIds } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
 import { StaffBadge } from "~/components/StaffBadge";
 import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { getStaffRoles } from "~/utils/team-access.server";
 import type { StaffRole } from "~/utils/team-roles";
-import { ArrowLeft } from "@phosphor-icons/react";
+import { ArrowLeft, UsersThree } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 
 async function access(request: Request, conversationId: number) {
@@ -28,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const { user, conversation, canPost } = await access(request, Number(params.conversationId));
   // In the team chat, a family's email reply shows as its trimmed text only:
   // the whole email (signature, quoted history) is for the staff
-  const forFamilies = <T extends { fullEmail: string | null }>(m: T) => (conversation.kind === "team" ? { ...m, fullEmail: null } : m);
+  const forFamilies = <T extends { fullEmail: string | null }>(m: T) => (conversation.kind !== "direct" ? { ...m, fullEmail: null } : m);
   const messages = (await getThread(conversation.id, user.id)).map(forFamilies);
   const threadParam = new URL(request.url).searchParams.get("thread");
   const replies = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
@@ -45,11 +59,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     staff = { name, firstName: name.split(" ")[0], role: (await getStaffRoles(conversation.teamId)).get(conversation.staffUserId) ?? null };
   }
 
+  const group: GroupInfo | null = conversation.kind === "group" ? await groupView(conversation, user.id) : null;
+
   return data({
     me: user.id,
     kind: conversation.kind,
     teamName: team?.name ?? "Team",
     staff,
+    group,
+    groupTitle: group ? groupTitle(group.name, group.members, user.id) : null,
+    groupSubtitle: group ? groupSubtitle(group.members) : null,
     canPost,
     messages,
     thread,
@@ -64,6 +83,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const { user, conversation, canPost } = await access(request, Number(params.conversationId));
   const formData = await request.formData();
+  const grouped = await handleGroupAction(formData, conversation, user);
+  if (grouped) {
+    if ("left" in grouped) return redirect("/family/messages");
+    return data(grouped, { status: "error" in grouped ? 400 : 200 });
+  }
   if (formData.get("_action") === "ack") {
     await acknowledgeFromThread(Number(formData.get("messageId")), conversation, user.id);
     return data({ ok: true });
@@ -83,41 +107,65 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.kind === "team" ? "Team chat" : data?.staff?.name ?? "Messages"} - BenchTalk` }];
+  const title = data?.kind === "team" ? "Team chat" : data?.kind === "group" ? data.groupTitle : data?.staff?.name;
+  return [{ title: `${title ?? "Messages"} - BenchTalk` }];
 }
 
 export default function FamilyThread({ loaderData }: Route.ComponentProps) {
-  const { me, kind, teamName, staff, canPost, messages, thread, realtime, acknowledged } = loaderData;
+  const { me, kind, teamName, staff, canPost, messages, thread, realtime, acknowledged, group, groupTitle, groupSubtitle } = loaderData;
   const direct = kind === "direct" && staff;
+  const [showPeople, setShowPeople] = useState(false);
   return (
     <div>
       <div className="sticky top-[calc(3.5rem+var(--safe-top))] z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur">
         <Link to="/family/messages" {...navMotion("back")} className="-ml-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="All messages">
           <ArrowLeft size={20} weight="bold" />
         </Link>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="flex min-w-0 items-center gap-2 font-semibold leading-tight">
-            <span className="truncate">{direct ? staff.name : "Team chat"}</span>
+            <span className="truncate">{group ? groupTitle : direct ? staff.name : "Team chat"}</span>
             {direct && staff.role && <StaffBadge role={staff.role} short />}
           </h1>
           <p className="truncate text-xs text-muted">
-            {direct
-              ? `${teamName} · private: only you and ${staff.firstName}`
-              : `${teamName} · every family and coach can see this`}
+            {group
+              ? `${teamName} · ${groupSubtitle} · only they can see it`
+              : direct
+                ? `${teamName} · private: only you and ${staff.firstName}`
+                : `${teamName} · every family and coach can see this`}
           </p>
         </div>
+        {group && (
+          <Button
+            size="sm"
+            variant={showPeople ? "secondary" : "ghost"}
+            onClick={() => setShowPeople((v) => !v)}
+            aria-expanded={showPeople}
+            aria-controls="group-people"
+          >
+            <UsersThree size={16} />
+            <span className="tabular">{group.members.length}</span>
+            <span className="sr-only">people</span>
+          </Button>
+        )}
       </div>
+      {showPeople && group && (
+        <div id="group-people" className="mt-3 max-h-[60dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line" data-no-pull>
+          <GroupPanel group={group} meId={me} />
+        </div>
+      )}
       <MessageThread
         messages={messages}
         thread={thread}
         realtime={realtime}
         meId={me}
         emptyText={
-          direct
-            ? `Questions about practice, playing time, anything? Only ${staff.firstName} sees what you write here.`
-            : "No messages yet. Say hi to the team."
+          group
+            ? "No messages yet. Only the people in this group see what's written here."
+            : direct
+              ? `Questions about practice, playing time, anything? Only ${staff.firstName} sees what you write here.`
+              : "No messages yet. Say hi to the team."
         }
-        placeholder={direct ? `Message ${staff.firstName}` : "Message the team"}
+        placeholder={group ? "Message the group" : direct ? `Message ${staff.firstName}` : "Message the team"}
         acknowledged={acknowledged ?? undefined}
         readOnly={canPost ? null : `${staff?.firstName ?? "They"} is no longer on the team staff, so you can't send messages here.`}
       />

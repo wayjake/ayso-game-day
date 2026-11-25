@@ -1,5 +1,5 @@
-import { db, contacts, conversations, familyNotes, guardians, parentInvites, players, teamInvites, users } from "~/db";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { db, contacts, conversationMembers, conversations, familyNotes, guardians, parentInvites, players, teamInvites, users } from "~/db";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { createInvites, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
 import { familyDeliveryAddress } from "~/utils/email.server";
 import { listFamilies, type FamilyStatus } from "~/utils/parent-invites.server";
@@ -149,6 +149,21 @@ export async function saveFamily({
     const moving = await db.select({ id: conversations.id, staff: conversations.staffUserId }).from(conversations).where(and(directs, eq(conversations.familyEmail, oldEmail)));
     for (const row of moving) {
       if (!taken.has(row.staff)) await db.update(conversations).set({ familyEmail: email }).where(eq(conversations.id, row.id));
+    }
+    // Groups they were added to before joining the app: the seat moves too
+    const seats = await db
+      .select({ id: conversationMembers.id, conversationId: conversationMembers.conversationId })
+      .from(conversationMembers)
+      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+      .where(and(eq(conversations.teamId, teamId), eq(conversationMembers.familyEmail, oldEmail), isNull(conversationMembers.userId)));
+    for (const seat of seats) {
+      const [already] = await db
+        .select({ id: conversationMembers.id })
+        .from(conversationMembers)
+        .where(and(eq(conversationMembers.conversationId, seat.conversationId), eq(conversationMembers.familyEmail, email), isNull(conversationMembers.userId)))
+        .limit(1);
+      if (already) await db.delete(conversationMembers).where(eq(conversationMembers.id, seat.id));
+      else await db.update(conversationMembers).set({ familyEmail: email }).where(eq(conversationMembers.id, seat.id));
     }
   }
 

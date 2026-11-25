@@ -27,6 +27,7 @@ export default [
     route("feed", "routes/family.feed.tsx"),
     route("feed/:postId", "routes/family.feed.post.tsx"),
     route("messages", "routes/family.messages.tsx"),
+    route("messages/new", "routes/family.messages.new.tsx"),
     route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),

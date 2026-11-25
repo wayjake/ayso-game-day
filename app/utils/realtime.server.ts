@@ -1,6 +1,6 @@
 import { createHttpClient, type PubSubHttpClient } from "@ably/pubsub-server";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, conversations, guardians, teams } from "~/db";
+import { db, conversationMembers, conversations, guardians, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 
 // Realtime through Ably. Turso stays the source of truth: after a write, the
@@ -25,13 +25,13 @@ export function isRealtimeConfigured() {
   return Boolean(process.env.ABLY_API_KEY);
 }
 
-// The team chat lives under team:<id>:, which all staff can read. A direct
-// thread is one-to-one, so it gets a channel outside that namespace (dm:<id>)
-// and only its two people are given it.
-type ConversationRef = { id: number; teamId: number; kind: "team" | "direct" };
+// The team chat lives under team:<id>:, which all staff can read. Direct
+// threads and groups are only for the people in them, so they get a channel
+// outside that namespace (dm:<id>, for either) and only those people are given it.
+type ConversationRef = { id: number; teamId: number; kind: "team" | "direct" | "group" };
 
 export function conversationChannel(conversation: ConversationRef) {
-  return conversation.kind === "direct" ? `dm:${conversation.id}` : `team:${conversation.teamId}:conversation:${conversation.id}`;
+  return conversation.kind === "team" ? `team:${conversation.teamId}:conversation:${conversation.id}` : `dm:${conversation.id}`;
 }
 
 // New posts, likes, comments and deletes on a team's photo feed
@@ -51,7 +51,7 @@ export async function publishFeed(teamId: number, event: FeedEvent) {
   }
 }
 
-export type ConversationEvent = { kind: "message" | "reaction"; threadId?: number | null };
+export type ConversationEvent = { kind: "message" | "reaction" | "members"; threadId?: number | null };
 
 // Awaited by callers (serverless hosts may drop work left after the response).
 // Never throws: a realtime hiccup only means pages catch up on their next poll.
@@ -68,6 +68,7 @@ export async function publishConversation(conversation: ConversationRef, event: 
 // What this person may listen to. Staff: everything under team:<id>: on teams
 // they coach (the team chat and the photo feed), plus their own direct threads
 // there. Parents: the team chat, their own direct threads and the photo feed.
+// Both: the groups they're in.
 async function capabilityFor(userId: number) {
   const capability: Record<string, string[]> = {};
   const allow = ["subscribe", "presence"];
@@ -101,6 +102,16 @@ async function capabilityFor(userId: number) {
       .from(conversations)
       .where(condition);
     for (const c of visible) capability[conversationChannel(c)] = allow;
+  }
+  // Groups they're in, on teams they're on (a join, not an OR)
+  const onTeams = [...coachedIds, ...parentTeamIds];
+  if (onTeams.length > 0) {
+    const groups = await db
+      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind })
+      .from(conversationMembers)
+      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+      .where(and(eq(conversationMembers.userId, userId), eq(conversations.kind, "group"), inArray(conversations.teamId, onTeams)));
+    for (const c of groups) capability[conversationChannel(c)] = allow;
   }
   return capability;
 }

@@ -84,7 +84,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
                 Announcement
               </Link>
               <span className="hidden lg:block">
-                <Link to={`${base}/messages?compose=1`} className={buttonClass({ size: "sm" })} title="Message a family">
+                <Link to={`${base}/messages?compose=1`} className={buttonClass({ size: "sm" })} title="New message">
                   <Plus size={16} weight="bold" />
                   Message
                 </Link>

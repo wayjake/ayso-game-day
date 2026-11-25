@@ -3,8 +3,9 @@ import { useEffect, useRef } from "react";
 import { Form, Link, data, redirect, useNavigation, useSearchParams } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
-import { getOrCreateFamilyConversation } from "~/utils/messages.server";
 import { listFamilies } from "~/utils/parent-invites.server";
+import { pickerOptions, startConversation } from "~/utils/groups.server";
+import { NewMessageForm } from "~/components/PeoplePicker";
 import { familyLabel } from "~/utils/announcements.server";
 import { assignUnmatched, dismissUnmatched, listUnmatched } from "~/utils/inbound-email.server";
 import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
@@ -12,22 +13,21 @@ import { formatMessageTime } from "~/utils/dates";
 import { stripQuotedReply } from "~/utils/email-reply";
 import { PushToggle } from "~/components/PushToggle";
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass, inputClass } from "~/components/ui";
-import { AddressBook, ChatsCircle, EnvelopeSimple, PaperPlaneTilt, Question } from "@phosphor-icons/react";
+import { AddressBook, ChatsCircle, Question } from "@phosphor-icons/react";
 
 // Under the list on phones; the main pane on desktop until a thread is picked.
-// Starting a family thread, sorting stray emails, and push for this device.
+// New message (one family's private thread, or a group chat), sorting stray
+// emails, and push for this device.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const teamId = parseInt(params.teamId);
   await requireTeamAccess(teamId, user.id);
 
-  // Every family with an email, on the app or not, to start a private thread with
-  const families = (await listFamilies(request, teamId)).map((f) => ({
-    email: f.email,
-    label: familyLabel(f),
-    onApp: f.status === "joined",
-  }));
+  // Every family with an email, for sorting stray emails into
+  const families = (await listFamilies(request, teamId)).map((f) => ({ email: f.email, label: familyLabel(f) }));
+  // New message: other staff and every family, on the app or not
+  const people = await pickerOptions(teamId, user.id);
 
   const unmatched = (await listUnmatched(user, teamId)).map((u) => ({
     ...u,
@@ -35,7 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     preview: stripQuotedReply(u.text ?? "").body.slice(0, 280),
   }));
 
-  return data({ teamId, families, unmatched, vapidPublicKey: vapidPublicKey(), notifyPrefs: await getNotifyPrefs(user.id) });
+  return data({ teamId, families, people, unmatched, vapidPublicKey: vapidPublicKey(), notifyPrefs: await getNotifyPrefs(user.id) });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -45,18 +45,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("_action");
 
-  if (intent === "startDirect" || intent === "assign") {
+  if (intent === "start") {
+    // One family: your own private thread with them. More people: a group.
+    const result = await startConversation(teamId, { id: user.id, side: "coach" }, formData.getAll("key").map(String), String(formData.get("name") ?? ""));
+    if ("error" in result) return data({ startError: result.error }, { status: 400 });
+    return redirect(`/dashboard/team/${teamId}/messages/${result.conversationId}`);
+  }
+
+  if (intent === "assign") {
     const email = String(formData.get("familyEmail") ?? "").toLowerCase();
     const family = (await listFamilies(null, teamId)).find((f) => f.email === email);
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
-
-    if (intent === "assign") {
-      const conversation = await assignUnmatched(user, teamId, Number(formData.get("inboundId")), family.email);
-      if (!conversation) return data({ error: "That email is already sorted" }, { status: 404 });
-      return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
-    }
-    // Your own private thread with them
-    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], user.id);
+    const conversation = await assignUnmatched(user, teamId, Number(formData.get("inboundId")), family.email);
+    if (!conversation) return data({ error: "That email is already sorted" }, { status: 404 });
     return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
   }
 
@@ -69,13 +70,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MessagesIndex({ loaderData, actionData }: Route.ComponentProps) {
-  const { teamId, families, unmatched, vapidPublicKey, notifyPrefs } = loaderData;
+  const { teamId, families, people, unmatched, vapidPublicKey, notifyPrefs } = loaderData;
   const base = `/dashboard/team/${teamId}`;
   const navigation = useNavigation();
   const [params] = useSearchParams();
   const composing = params.get("compose") === "1";
   // "+ Message" lands here; the route may already be mounted, so autoFocus won't do
-  const pickerRef = useRef<HTMLSelectElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (composing) pickerRef.current?.focus();
   }, [composing]);
@@ -88,7 +89,7 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
           <ChatsCircle size={26} weight="fill" />
         </span>
         <h2 className="mt-3 font-display text-2xl font-bold">Pick a conversation</h2>
-        <p className="mt-1 text-sm text-muted">Choose one on the left, or start a private thread with a family below.</p>
+        <p className="mt-1 text-sm text-muted">Choose one on the left, or start a new one below: one family, or several for a group chat.</p>
       </div>
 
       {actionData && "error" in actionData && <p className="mt-6 text-sm text-danger">{actionData.error}</p>}
@@ -142,8 +143,8 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
       )}
 
       <Card className="mt-6 p-5 lg:mt-0">
-        <CardHeader title="Message a family" className="mb-3" />
-        {families.length === 0 ? (
+        <CardHeader title="New message" className="mb-1" />
+        {families.length === 0 && people.length === 0 ? (
           <EmptyState
             className="py-6"
             icon={<AddressBook size={24} />}
@@ -154,26 +155,15 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
           </EmptyState>
         ) : (
           <>
-            <Form method="post" className="flex gap-2">
-              <input type="hidden" name="_action" value="startDirect" />
-              <label htmlFor="familyEmail" className="sr-only">Family</label>
-              <select ref={pickerRef} id="familyEmail" name="familyEmail" required className={inputClass}>
-                {families.map((f) => (
-                  <option key={f.email} value={f.email}>
-                    {f.label}
-                    {f.onApp ? "" : " · email"}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" className={buttonClass({ className: "shrink-0" })}>
-                <PaperPlaneTilt size={18} />
-                Open
-              </button>
-            </Form>
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
-              <EnvelopeSimple size={14} />
-              Families not on the app get your messages by email and can reply by email.
+            <p className="mb-3 text-sm text-muted">
+              Pick one family for a private thread, or several people for a group chat. Families not on the app get private messages by email.
             </p>
+            <NewMessageForm
+              ref={pickerRef}
+              options={people}
+              side="coach"
+              error={actionData && "startError" in actionData ? actionData.startError : null}
+            />
           </>
         )}
       </Card>
