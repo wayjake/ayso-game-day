@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Games and practices in your calendar",
+    summary: "Add your team's schedule to your iPhone or Google Calendar once, and it keeps itself up to date.",
+    changes: [
+      { kind: "new", text: "Tap Add to your calendar on the schedule, then iPhone or Mac, or Google Calendar. Every game and practice shows up there, for all your players' teams (and, for coaches, every team you coach)." },
+      { kind: "new", text: "New games, time changes and cancellations reach your calendar on their own. Apple Calendar usually picks them up within a few hours and Google within a day, so BenchTalk still notifies you when something moves." },
+      { kind: "new", text: "Your calendar link is private to you. If you shared it by mistake, Reset link stops the old one working." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Announcements side by side",
     summary: "On a computer, announcements open beside their list, the same way messages do.",
     changes: [

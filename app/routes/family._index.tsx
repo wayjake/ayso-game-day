@@ -109,7 +109,10 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
 
       <h1 className="font-display text-3xl font-bold tracking-tight">Schedule</h1>
       <p className="mt-1 text-muted">
-        {multipleTeams ? "Upcoming games and practices for your players." : `${kids[0].teamName}: upcoming games and practices.`}
+        {multipleTeams ? "Upcoming games and practices for your players." : `${kids[0].teamName}: upcoming games and practices.`}{" "}
+        <Link to="/family/settings#calendar" className="font-medium text-primary hover:underline">
+          Add to your calendar
+        </Link>
       </p>
 
       <FamilyTodo items={tasks} today={today} showTeam={multipleTeams} className="mt-5" />

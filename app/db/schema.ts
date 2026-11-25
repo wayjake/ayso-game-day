@@ -297,6 +297,17 @@ export const loginLinks = sqliteTable('login_links', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('login_links_email_idx').on(t.email)]);
 
+// A person's private calendar feed (/cal/<token>.ics): every game and practice
+// on the teams they coach or have kids on, worked out on each fetch. The token
+// is stored as is, not hashed, because Settings shows the link again whenever
+// they want to add it on another device. Resetting replaces it.
+export const calendarFeeds = sqliteTable('calendar_feeds', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().unique().references(() => users.id),
+  token: text('token').notNull().unique(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Practices. A weekly series is just rows sharing a seriesId, so any single
 // date can be moved or cancelled without touching the rest.
 export const practices = sqliteTable('practices', {

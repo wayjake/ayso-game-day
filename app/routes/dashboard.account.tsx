@@ -7,7 +7,9 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { getLastTeamId } from "~/utils/last-team.server";
 import { coachFromAddress, isOnSendingDomain, sendingDomain } from "~/utils/email.server";
 import { accountAction } from "~/utils/account.server";
-import { LogOutButton, NotificationsCard, ProfileCard, SendingEmailCard } from "~/components/AccountSettings";
+import { calendarLinks, getOrCreateCalendarToken } from "~/utils/calendar-feed.server";
+import { isParent } from "~/utils/family.server";
+import { CalendarCard, LogOutButton, NotificationsCard, ProfileCard, SendingEmailCard } from "~/components/AccountSettings";
 import { Page, PageHeader } from "~/components/ui";
 
 // A coach's own settings, whichever team they're on: name, notifications,
@@ -35,6 +37,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     fromHeader: coachFromAddress(user, team ?? null).header,
     fromTeamName: ownAddress ? null : (team?.name ?? null),
     sendingDomain: sendingDomain(),
+    calendar: calendarLinks(request, await getOrCreateCalendarToken(user.id)),
+    alsoParent: await isParent(user.id),
     back: team ? { to: `/dashboard/team/${team.id}`, label: team.name } : { to: "/dashboard/teams", label: "Teams" },
   });
 }
@@ -54,13 +58,18 @@ export default function Account({ loaderData, actionData }: Route.ComponentProps
   const { me, back } = loaderData;
   return (
     <Page width="narrow" className="space-y-6">
-      <PageHeader title="Account" description="Your name, notifications and email address, on every team." back={back} />
+      <PageHeader title="Account" description="Your name, notifications, calendar and email address, on every team." back={back} />
       <ProfileCard
         me={me}
         nameHint="Printed on game cards and shown to families next to your messages."
         result={actionData}
       />
       <NotificationsCard />
+      <CalendarCard
+        links={loaderData.calendar}
+        covers={`the games and practices of every team you coach${loaderData.alsoParent ? " and your kids' teams" : ""}`}
+        result={actionData}
+      />
       <SendingEmailCard
         me={me}
         fromHeader={loaderData.fromHeader}

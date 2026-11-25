@@ -1,13 +1,14 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, users } from "~/db";
 import { isOnSendingDomain, sendingDomain } from "~/utils/email.server";
+import { resetCalendarToken } from "~/utils/calendar-feed.server";
 
 // Settings that belong to the person, not a team: shared by the coach Account
 // page and the family Settings page.
 
 export type AccountResult = { intent: string; error: string } | { intent: string; success: string };
 
-/** Handles the account forms (`_action` updateName / updateSendingEmail). Null when the intent isn't one of them. */
+/** Handles the account forms (`_action` updateName / updateSendingEmail / resetCalendar). Null when the intent isn't one of them. */
 export async function accountAction(
   user: { id: number; role: string },
   formData: FormData,
@@ -43,6 +44,14 @@ export async function accountAction(
     await db.update(users).set({ sendingEmail: address || null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(users.id, user.id));
     return {
       result: { intent, success: address ? `Announcements now come from ${address}` : "Using the shared address" },
+      status: 200,
+    };
+  }
+
+  if (intent === "resetCalendar") {
+    await resetCalendarToken(user.id);
+    return {
+      result: { intent, success: "New link made. The old one has stopped working, so add your calendar again with the buttons above." },
       status: 200,
     };
   }
