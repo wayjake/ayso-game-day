@@ -35,7 +35,7 @@ This project is an AYSO (American Youth Soccer Organization) team management app
 - Color scheme: Cyan-Blue primary (#0EA5E9), AYSO Red accent (#EF4444)
 
 ### File Uploads & AI
-- **UploadThing** - Image upload and CDN hosting with multi-size support
+- **UploadThing** - Image and video upload and CDN hosting (smaller copies are made in the browser before upload)
 - **OpenAI API** - AI-powered lineup generation and transcription
 - **Anthropic Claude SDK** - Advanced AI assistant features
 
@@ -104,8 +104,8 @@ The application uses Drizzle ORM with 8 main tables:
    - Relationship: One user (coach) can have many teams
 
 3. **players** - Player profiles with photos and preferred positions
-   - Fields: id, teamId, coachId, name, description, profilePicture (legacy), profileImageBase, preferredPositions (JSON array), timestamps
-   - Multi-size image support: `-thumbnail.jpg`, `-medium.jpg`, `-large.jpg`
+   - Fields: id, teamId, coachId, name, description, profilePicture, profileImageBase (unused), preferredPositions (JSON array), timestamps
+   - `profilePicture` is one 320px square JPEG, made in the browser by `ImageUploader` (`makeSquareJpeg`); photos only ever show as squares of 96px or less. Uploads before 2026-11-25 are 150px PNG thumbnails (or one full original).
    - Use `getImageUrl()` helper from `/app/utils/image.ts` for all player images
 
 4. **templateFormations** - Pre-configured formation templates
@@ -356,8 +356,7 @@ Supports 7v7, 9v9, and 11v11 formats:
 - **Server**: `/app/server/uploadthing.ts` - FileRouter configuration
 - **Client**: `/app/components/ImageUploader.tsx` - Upload UI with drag-drop
 - **Utilities**: `/app/utils/image.ts` - URL helpers
-- **Multi-size images**: Base URL in `profileImageBase`, variants auto-generated
-- **Legacy support**: `profilePicture` field for backward compatibility
+- **Sizes are made in the browser before upload** (`utils/media-derivatives.client.ts`, shared with the feed, same as disney-social): player photos are one 320px square JPEG (`makeSquareJpeg`); feed photos get a 1280px and a 400px JPEG, and feed videos a poster from their first frame, shown with `preload="none"` so nothing of the video loads until play. Videos themselves are never re-encoded (decided 2026-11-25). UploadThing URLs are random per file, so sizes can't be found by name: store each URL you need.
 
 ### 5. Position Change Detection (`/app/utils/position-changes.ts`)
 Change types:
@@ -454,7 +453,7 @@ Always use `getImageUrl()` helper for player images:
 import { getImageUrl } from '~/utils/image';
 
 // In component
-const imageUrl = getImageUrl(player, 'medium'); // 'thumbnail', 'medium', or 'large'
+const imageUrl = getImageUrl(player.profilePicture);
 ```
 
 ### 7. CSS Variables

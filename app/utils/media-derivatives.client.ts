@@ -5,7 +5,8 @@
  * - display: 1280px on the long edge, for the feed and post pages
  * - thumb: 400px, for small previews
  *
- * For a video, both come from its frame at 3 s (the middle, for shorter clips).
+ * For a video, both come from its first frame, and the feed shows that as the
+ * poster: nothing of the video downloads until someone presses play.
  * Everything is JPEG: Safari can't reliably encode WebP from a canvas.
  * Any failure (an undecodable HEIC in Chrome, a video codec the browser can't
  * play) resolves to null, and the post simply shows the original.
@@ -15,7 +16,8 @@ const DISPLAY_EDGE = 1280;
 const THUMB_EDGE = 400;
 const DISPLAY_QUALITY = 0.82;
 const THUMB_QUALITY = 0.75;
-const VIDEO_FRAME_AT = 3;
+// Just past 0: the first frame, without relying on a seek to where the video already is
+const VIDEO_FRAME_AT = 0.1;
 // Past this, a phone may refuse to allocate the canvas (iOS caps canvases around 16.7M pixels)
 const MAX_CANVAS_PIXELS = 16_000_000;
 const VIDEO_TIMEOUT_MS = 8_000;
@@ -66,7 +68,7 @@ async function fromVideo(file: File) {
     video.src = url;
     video.load();
     await waitFor(video, "loadedmetadata");
-    // An unknown length (Infinity, e.g. some WebM) still aims for 3 s; a seek past the end stops at the end
+    // An unknown length (Infinity, e.g. some WebM) still aims for the first frame; a very short clip uses its middle
     const at = video.duration > VIDEO_FRAME_AT || !Number.isFinite(video.duration) ? VIDEO_FRAME_AT : video.duration / 2;
     try {
       await seek(video, at);
@@ -84,6 +86,61 @@ async function fromVideo(file: File) {
     video.load(); // lets go of the decoder
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * A square JPEG of a photo, center-cropped, `edge` px on each side: for
+ * avatars (player photos), which are always shown as squares. Unlike
+ * makeDerivatives this throws when the photo can't be read (e.g. HEIC outside
+ * Safari), so the caller can say so instead of uploading an original.
+ */
+export function makeSquareJpeg(file: File, edge: number, quality = 0.82): Promise<File> {
+  const run = queue.then(() =>
+    withTimeout(
+      (async () => {
+        const url = URL.createObjectURL(file);
+        try {
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = () => reject(new Error("That photo couldn't be read. Try a JPG or PNG."));
+            el.src = url;
+          });
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          if (!w || !h) throw new Error("That photo couldn't be read. Try a JPG or PNG.");
+          // Scale so the short side is `edge` (or smaller, for a small photo), then crop the middle
+          const short = Math.min(w, h);
+          const scaled = scaleDown(img, w, h, Math.round(Math.max(w, h) * Math.min(1, edge / short)));
+          try {
+            const side = Math.min(scaled.width, scaled.height);
+            const square = document.createElement("canvas");
+            square.width = side;
+            square.height = side;
+            const ctx = square.getContext("2d");
+            if (!ctx) throw new Error("no 2d canvas");
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, side, side);
+            ctx.drawImage(scaled, (scaled.width - side) / 2, (scaled.height - side) / 2, side, side, 0, 0, side, side);
+            try {
+              const base = file.name.replace(/\.[^.]*$/, "") || "photo";
+              return new File([await toJpeg(square, quality)], `${base}-${side}.jpg`, { type: "image/jpeg" });
+            } finally {
+              release(square);
+            }
+          } finally {
+            release(scaled);
+          }
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      })(),
+      FILE_TIMEOUT_MS
+    )
+  );
+  // Keep the queue going even when this one fails
+  queue = run.catch(() => null);
+  return run;
 }
 
 function seek(video: HTMLVideoElement, at: number) {
