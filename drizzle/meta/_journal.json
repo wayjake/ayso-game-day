@@ -71,6 +71,20 @@
       "when": 1795573211368,
       "tag": "0009_team_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1795621293944,
+      "tag": "0010_direct_messages_one_to_one",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1795623567369,
+      "tag": "0012_announcement_acknowledged_by",
+      "breakpoints": true
     }
   ]
 }

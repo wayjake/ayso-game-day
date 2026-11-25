@@ -28,6 +28,7 @@ import { EmailToggle } from "~/components/EmailToggle";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
+import { ackSummaries } from "~/utils/announcements.server";
 
 async function access(request: Request, teamId: number, conversationId: number) {
   const user = await getUser(request);
@@ -47,7 +48,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
 
   let title = "Team chat";
-  let subtitle = "Every coach and family on the app";
+  let subtitle = "Every coach and family on the app can see this";
   let familyEmail: string | null = null;
   let delivery: FamilyDelivery = { email: null, pushReady: false };
 
@@ -69,7 +70,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const kidNames = (kids.length ? kids : label?.kids ?? []).join(" & ") || "Family";
     delivery = await familyDelivery(conversation);
     title = parent?.name || label?.names[0] || parent?.email || familyEmail || "Family";
-    subtitle = `${kidNames} · ${kids.length ? "private with the coaches" : "by email, not on the app yet"}`;
+    // One-to-one: no other staff member, the team owner included, can read it
+    subtitle = `${kidNames} · ${kids.length ? "private: only you and this family" : "by email, not on the app yet · only you see this"}`;
   }
 
   // The pane beside the thread on wide screens. Loaded on every poll along
@@ -81,9 +83,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const context = family ? await getFamilyContext(conversation.teamId, family, familyEmail ?? family.email) : null;
   const teamContext = conversation.kind === "team" ? await getTeamChatContext(conversation.teamId) : null;
 
+  // Under each announcement that asked for "Got it": who has
+  const ackIds = [...messages, ...(thread ? [thread.root] : [])].filter((m) => m.announcement?.ask === "ack").map((m) => m.id);
+  const acks = await ackSummaries(conversation.teamId, ackIds);
+
   return data({
     me: user.id,
     teamId: conversation.teamId,
+    acks,
     context,
     teamContext,
     title,
@@ -92,7 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     messages,
     thread,
     realtime: isRealtimeConfigured()
-      ? { channel: conversationChannel(conversation.teamId, conversation.id), name: user.name || user.email.split("@")[0] }
+      ? { channel: conversationChannel(conversation), name: user.name || user.email.split("@")[0] }
       : null,
     conversationId: conversation.id,
     needsReply: conversation.needsReply,
@@ -134,7 +141,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
-    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId,
+    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, acks,
   } = loaderData;
   const [showNotes, setShowNotes] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
@@ -222,6 +229,8 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           placeholder={kind === "team" ? "Message every family on the app" : "Message this family"}
           widthClass="max-w-2xl"
           showEmailDetails
+          acks={acks}
+          ackHref={(announcementId) => `/dashboard/team/${teamId}/announcements/${announcementId}`}
           composerExtra={
             delivery.email ? (
               <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />

@@ -4,7 +4,7 @@ import { Form, Link, data, redirect, useNavigate, useNavigation } from "react-ro
 import { getUser } from "~/utils/auth.server";
 import { getStaffRoles, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
 import { StaffBadge } from "~/components/StaffBadge";
-import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
+import { STAFF_ROLES, parseStaffRole, staffRoleLabel } from "~/utils/team-roles";
 import { db, contacts, players } from "~/db";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
 import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
@@ -13,6 +13,7 @@ import { formatMessageTime } from "~/utils/dates";
 import { handleNoteAction } from "~/utils/announcements.server";
 import { getOrCreateFamilyConversation } from "~/utils/messages.server";
 import { findFamily, getFamilyContext } from "~/utils/family-context.server";
+import { groupHouseholds, staffAccountFor } from "~/utils/family-admin.server";
 import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
 import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
@@ -49,14 +50,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const selected = selectedEmail ? findFamily(families, { email: selectedEmail }) : null;
   const panel = selected ? await getFamilyContext(teamId, selected) : null;
 
-  return data({ team, me: user.id, families, missing, panel, isOwner: role === "owner", emailConfigured: isEmailConfigured() });
+  const households = groupHouseholds(families);
+  // ?invited=&linkOnly= after "Save and invite" on the edit page
+  const search = new URL(request.url).searchParams;
+  const invited = { sent: parseInt(search.get("invited") ?? "") || 0, linkOnly: parseInt(search.get("linkOnly") ?? "") || 0 };
+
+  return data({ team, me: user.id, families, households, missing, panel, invited, isOwner: role === "owner", emailConfigured: isEmailConfigured() });
 }
 
-// The family's account that a staff role applies to: the one already on staff,
-// else the first linked one. Null until the family is on the app.
-function staffAccount(userIds: number[], staffRoles: Map<number, StaffRole>) {
-  return userIds.find((id) => staffRoles.has(id)) ?? userIds[0] ?? null;
-}
+const staffAccount = staffAccountFor;
 
 type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | "no-players"; url?: string; linkedCount?: number };
 
@@ -94,7 +96,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "message") {
     const family = findFamily(await listFamilies(null, teamId), { email: String(formData.get("email") ?? "") });
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
-    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0]);
+    // Your own private thread with them
+    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], user.id);
     return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
   }
 
@@ -144,7 +147,7 @@ function CopyLink({ url }: { url: string }) {
 }
 
 export default function Families({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, me, families, missing, panel, isOwner, emailConfigured } = loaderData;
+  const { team, me, families, households, missing, panel, invited, isOwner, emailConfigured } = loaderData;
   const base = `/dashboard/team/${team.id}`;
   const navigate = useNavigate();
   const closePanel = () => navigate(`${base}/families`, { preventScrollReset: true });
@@ -156,7 +159,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
       : null;
   const invitingAll = navigation.state === "submitting" && navigation.formData?.get("_action") === "inviteAll";
   const toInvite = families.filter((f) => f.status === "not-invited" || f.status === "expired").length;
-  const joined = families.filter((f) => f.status === "joined").length;
+  const joined = households.filter((h) => h.some((f) => f.status === "joined")).length;
   const outcomes = actionData && "outcomes" in actionData ? actionData.outcomes : [];
 
   return (
@@ -164,7 +167,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
       <PageHeader
         back={{ to: `${base}/roster`, label: "Roster" }}
         title="Families"
-        description={`${joined} of ${families.length} families are on the app. Parents RSVP their kids to games and practices and get team messages.`}
+        description={`${joined} of ${households.length} families are on the app. Parents RSVP their kids to games and practices and get team messages.`}
         actions={
           <>
             <Link to={`${base}/families/edit`} className={buttonClass({ variant: "secondary" })}>
@@ -176,7 +179,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
                 <input type="hidden" name="_action" value="inviteAll" />
                 <Button type="submit" disabled={invitingAll}>
                   <PaperPlaneTilt size={18} />
-                  {invitingAll ? "Inviting…" : `Invite ${toInvite} ${toInvite === 1 ? "family" : "families"}`}
+                  {invitingAll ? "Inviting…" : `Invite ${toInvite} ${toInvite === 1 ? "parent" : "parents"}`}
                 </Button>
               </Form>
             )}
@@ -191,6 +194,14 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
       )}
       {actionData && "error" in actionData && <Alert className="mb-6">{actionData.error}</Alert>}
       {actionData && "roleChanged" in actionData && <Alert tone="success" className="mb-6">{actionData.roleChanged}</Alert>}
+      {(invited.sent > 0 || invited.linkOnly > 0) && outcomes.length === 0 && (
+        <Alert tone="success" className="mb-6">
+          {summarize([
+            ...Array.from({ length: invited.sent }, () => ({ email: "", result: "sent" as const })),
+            ...Array.from({ length: invited.linkOnly }, () => ({ email: "", result: "link-only" as const })),
+          ])}
+        </Alert>
+      )}
       {outcomes.length > 0 && (
         <Alert tone="success" className="mb-6">
           {summarize(outcomes)}
@@ -212,83 +223,35 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
         <div className="min-w-0">
         <Card>
           <ul className="divide-y divide-line">
-            {families.map((f) => (
-              <li
-                key={f.email}
-                aria-current={panel?.email === f.email ? "true" : undefined}
-                className={cx(
-                  "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-5",
-                  panel?.email === f.email && "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]"
-                )}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link to={panelHref(f.email)} preventScrollReset className="font-semibold hover:text-primary hover:underline">
-                      {f.kids.map((k) => k.name).join(" & ")}
+            {households.map((parents) => {
+              const current = parents.some((f) => f.email === panel?.email);
+              return (
+                <li
+                  key={parents[0].email}
+                  aria-current={current ? "true" : undefined}
+                  className={cx("p-4 sm:px-5", current && "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]")}
+                >
+                  <div className="flex items-center gap-2">
+                    <Link to={panelHref(parents[0].email)} preventScrollReset className="min-w-0 flex-1 truncate font-semibold hover:text-primary hover:underline">
+                      {parents[0].kids.map((k) => k.name).join(" & ")}
                     </Link>
-                    {statusBadge[f.status]}
-                    {f.account?.staffRole && <StaffBadge role={f.account.staffRole} />}
+                    <Link
+                      to={`${base}/families/edit?email=${encodeURIComponent(parents[0].email)}`}
+                      className={buttonClass({ variant: "ghost", size: "sm" })}
+                      aria-label={`Edit ${parents[0].kids.map((k) => k.name).join(" & ")}'s family`}
+                    >
+                      <PencilSimple size={16} />
+                      Edit
+                    </Link>
                   </div>
-                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted">
-                    <EnvelopeSimple size={14} className="shrink-0" />
-                    <span className="truncate">{f.parentNames.join(", ")} · {f.email}</span>
-                  </div>
-                  {f.status === "invited" && f.invitedAt && (
-                    <div className="mt-0.5 text-xs text-subtle">Invited {formatMessageTime(f.invitedAt)}</div>
-                  )}
-                  {f.status === "joined" && f.kids.some((k) => !k.linked) && (
-                    <div className="mt-0.5 text-xs text-warning">
-                      Not linked yet: {f.kids.filter((k) => !k.linked).map((k) => k.name.split(" ")[0]).join(", ")}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-1 sm:justify-end">
-                  {isOwner && f.account && (
-                    <Form method="post">
-                      <input type="hidden" name="_action" value="setRole" />
-                      <input type="hidden" name="email" value={f.email} />
-                      <select
-                        key={f.account.staffRole ?? "parent"}
-                        name="role"
-                        defaultValue={f.account.staffRole ?? "parent"}
-                        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-                        aria-label={`Team role for ${f.parentNames[0] ?? f.email}`}
-                        className={cx(inputClass, "w-auto py-1.5 pr-8")}
-                      >
-                        {!f.account.isOwner && <option value="parent">Parent</option>}
-                        {STAFF_ROLES.map((r) => (
-                          <option key={r} value={r}>{staffRoleLabel(r)}</option>
-                        ))}
-                      </select>
-                    </Form>
-                  )}
-                  <Link
-                    to={`${base}/families/edit?email=${encodeURIComponent(f.email)}`}
-                    className={buttonClass({ variant: "ghost", size: "sm" })}
-                    aria-label={`Edit ${f.parentNames[0] ?? f.email}`}
-                  >
-                    <PencilSimple size={16} />
-                    Edit
-                  </Link>
-                  {f.inviteUrl && <CopyLink url={f.inviteUrl} />}
-                  {(f.status !== "joined" || f.kids.some((k) => !k.linked)) && (
-                    <Form method="post">
-                      <input type="hidden" name="_action" value="invite" />
-                      <input type="hidden" name="email" value={f.email} />
-                      <Button type="submit" size="sm" variant={f.status === "not-invited" ? "primary" : "secondary"} disabled={busyEmail === f.email}>
-                        {busyEmail === f.email
-                          ? "Sending…"
-                          : f.status === "joined"
-                            ? "Link new kids"
-                            : f.status === "not-invited"
-                              ? "Invite"
-                              : "Resend"}
-                      </Button>
-                    </Form>
-                  )}
-                </div>
-              </li>
-            ))}
+                  <ul className="mt-2 space-y-2">
+                    {parents.map((f) => (
+                      <ParentLine key={f.email} f={f} isOwner={isOwner} busy={busyEmail === f.email} panelHref={panelHref(f.email)} />
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
           </ul>
         </Card>
 
@@ -322,6 +285,66 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
         </Card>
       )}
     </Page>
+  );
+}
+
+type FamilyRow = Route.ComponentProps["loaderData"]["families"][number];
+
+// One parent or guardian in a household row: their status, role and invite
+function ParentLine({ f, isOwner, busy, panelHref }: { f: FamilyRow; isOwner: boolean; busy: boolean; panelHref: string }) {
+  return (
+    <li className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <EnvelopeSimple size={14} className="shrink-0 text-muted" />
+          <Link to={panelHref} preventScrollReset className="font-medium hover:text-primary hover:underline">
+            {f.parentNames.join(", ")}
+          </Link>
+          <span className="min-w-0 truncate text-muted">{f.email}</span>
+          {statusBadge[f.status]}
+          {f.account?.staffRole && <StaffBadge role={f.account.staffRole} />}
+        </div>
+        {f.status === "invited" && f.invitedAt && (
+          <div className="mt-0.5 pl-5 text-xs text-subtle">Invited {formatMessageTime(f.invitedAt)}</div>
+        )}
+        {f.status === "joined" && f.kids.some((k) => !k.linked) && (
+          <div className="mt-0.5 pl-5 text-xs text-warning">
+            Not linked yet: {f.kids.filter((k) => !k.linked).map((k) => k.name.split(" ")[0]).join(", ")}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 pl-5 sm:justify-end sm:pl-0">
+        {isOwner && f.account && (
+          <Form method="post">
+            <input type="hidden" name="_action" value="setRole" />
+            <input type="hidden" name="email" value={f.email} />
+            <select
+              key={f.account.staffRole ?? "parent"}
+              name="role"
+              defaultValue={f.account.staffRole ?? "parent"}
+              onChange={(e) => e.currentTarget.form?.requestSubmit()}
+              aria-label={`Team role for ${f.parentNames[0] ?? f.email}`}
+              className={cx(inputClass, "w-auto py-1.5 pr-8")}
+            >
+              {!f.account.isOwner && <option value="parent">Parent</option>}
+              {STAFF_ROLES.map((r) => (
+                <option key={r} value={r}>{staffRoleLabel(r)}</option>
+              ))}
+            </select>
+          </Form>
+        )}
+        {f.inviteUrl && <CopyLink url={f.inviteUrl} />}
+        {(f.status !== "joined" || f.kids.some((k) => !k.linked)) && (
+          <Form method="post">
+            <input type="hidden" name="_action" value="invite" />
+            <input type="hidden" name="email" value={f.email} />
+            <Button type="submit" size="sm" variant={f.status === "not-invited" ? "primary" : "secondary"} disabled={busy}>
+              {busy ? "Sending…" : f.status === "joined" ? "Link new kids" : f.status === "not-invited" ? "Invite" : "Resend"}
+            </Button>
+          </Form>
+        )}
+      </div>
+    </li>
   );
 }
 

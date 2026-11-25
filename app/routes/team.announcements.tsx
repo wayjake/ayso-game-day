@@ -14,7 +14,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const teamId = parseInt(params.teamId);
   const { team } = await requireTeamAccess(teamId, user.id);
   const items = await listAnnouncements(teamId);
-  return data({ team, items, needsReply: await countNeedsReply(teamId) });
+  return data({ team, items, needsReply: await countNeedsReply(teamId, user.id) });
 }
 
 export function meta({}: Route.MetaArgs) {

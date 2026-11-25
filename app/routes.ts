@@ -16,6 +16,7 @@ export default [
   route("api/feed/posts/:postId", "routes/api.feed-post.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
+  route("changelog", "routes/changelog.tsx"),
   route("invite/:code", "routes/invite.tsx"),
   route("join/:code", "routes/join.tsx"),
   route("ack/:token", "routes/ack.tsx"),
@@ -25,6 +26,7 @@ export default [
     route("feed", "routes/family.feed.tsx"),
     route("feed/:postId", "routes/family.feed.post.tsx"),
     route("messages", "routes/family.messages.tsx"),
+    route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
   ]),

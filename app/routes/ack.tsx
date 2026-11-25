@@ -1,6 +1,7 @@
 import type { Route } from "./+types/ack";
 import { Form, data, useNavigation } from "react-router";
-import { acknowledgeRecipient, findRecipientByAckToken } from "~/utils/announcements.server";
+import { acknowledgeRecipient, findRecipientByAckToken, isInRecipientFamily } from "~/utils/announcements.server";
+import { getUser } from "~/utils/auth.server";
 import { AppMark } from "~/components/AppMark";
 import { Button, Card } from "~/components/ui";
 import { CheckCircle, LinkBreak } from "@phosphor-icons/react";
@@ -23,10 +24,13 @@ export async function loader({ params }: Route.LoaderArgs) {
   });
 }
 
-export async function action({ params }: Route.ActionArgs) {
+export async function action({ request, params }: Route.ActionArgs) {
   const found = await findRecipientByAckToken(params.token);
   if (!found) return data({ ok: false }, { status: 404 });
-  await acknowledgeRecipient(found.id);
+  // The link is the family's; name the person only when they're signed in as one of that family
+  const user = await getUser(request, false);
+  const userId = user && (await isInRecipientFamily(found.teamId, found.familyEmail, user.id)) ? user.id : null;
+  await acknowledgeRecipient(found.id, { userId, via: "email" });
   return data({ ok: true });
 }
 

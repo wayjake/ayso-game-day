@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher, useFetchers, useLocation, useRevalidator, useSubmit } from "react-router";
-import { ArrowBendUpLeft, ArrowLeft, ChatCircle, Check, PaperPlaneRight } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowLeft, ChatCircle, Check, CheckCircle, PaperPlaneRight } from "@phosphor-icons/react";
 import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { REACTIONS } from "~/utils/reactions";
 import { Badge, cx } from "~/components/ui";
@@ -69,8 +69,17 @@ export function MessageThread({
   composerExtra,
   realtime = null,
   layout = "window",
+  readOnly = null,
+  acks,
+  ackHref,
 }: {
   layout?: "window" | "pane";
+  /** Staff: under announcements that asked for "Got it", who has (by message id) */
+  acks?: Record<number, AckSummaryView>;
+  /** Staff: the announcement's tracker */
+  ackHref?: (announcementId: number) => string;
+  /** Shown instead of the composer when nobody can write here any more */
+  readOnly?: string | null;
   messages: ThreadMessageView[];
   /** Ably channel for this conversation and my name for typing indicators; null polls instead */
   realtime?: RealtimeConfig;
@@ -149,23 +158,36 @@ export function MessageThread({
             meId={meId}
             showEmailDetails={showEmailDetails}
             acknowledged={acknowledged}
-            canReply
+            canReply={!readOnly}
+            acks={acks}
+            ackHref={ackHref}
           />
         )}
       </div>
 
-      <Composer
-        fetcherKey={MAIN_SEND}
-        placeholder={placeholder}
-        className={cx(
-          "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur",
-          pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
-        )}
-        innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}
-        extra={composerExtra}
-        onTyping={live.setTyping}
-        typists={live.typists.filter((t) => t.where == null)}
-      />
+      {readOnly ? (
+        <p
+          className={cx(
+            "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-muted backdrop-blur",
+            pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
+          )}
+        >
+          {readOnly}
+        </p>
+      ) : (
+        <Composer
+          fetcherKey={MAIN_SEND}
+          placeholder={placeholder}
+          className={cx(
+            "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur",
+            pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
+          )}
+          innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}
+          extra={composerExtra}
+          onTyping={live.setTyping}
+          typists={live.typists.filter((t) => t.where == null)}
+        />
+      )}
 
       {thread && (
         <ThreadPanel
@@ -177,6 +199,9 @@ export function MessageThread({
           widthClass={widthClass}
           onTyping={live.setTyping}
           typists={live.typists.filter((t) => t.where === thread.root.id)}
+          readOnly={readOnly}
+          acks={acks}
+          ackHref={ackHref}
         />
       )}
     </div>
@@ -192,7 +217,12 @@ function ThreadPanel({
   widthClass,
   onTyping,
   typists,
+  readOnly,
+  acks,
+  ackHref,
 }: {
+  acks?: Record<number, AckSummaryView>;
+  ackHref?: (announcementId: number) => string;
   root: ThreadMessageView;
   replies: ThreadMessageView[];
   meId: number;
@@ -200,6 +230,7 @@ function ThreadPanel({
   widthClass: string;
   onTyping: (where: TypingWhere) => void;
   typists: Typist[];
+  readOnly: string | null;
 }) {
   const { pathname } = useLocation();
   const send = useFetcher<{ error?: string }>({ key: THREAD_SEND });
@@ -252,7 +283,7 @@ function ThreadPanel({
 
       <div ref={scroller} className="flex-1 overflow-y-auto overscroll-contain">
         <div className={cx("mx-auto w-full px-4 pb-4 sm:px-6", widthClass)}>
-          <MessageList messages={[root]} meId={meId} showEmailDetails={showEmailDetails} />
+          <MessageList messages={[root]} meId={meId} showEmailDetails={showEmailDetails} acks={acks} ackHref={ackHref} />
           <div className="my-3 flex items-center gap-3 text-xs font-semibold text-subtle">
             <span className="h-px flex-1 bg-line" />
             {replies.length === 0 ? "No replies yet" : replies.length === 1 ? "1 reply" : `${replies.length} replies`}
@@ -262,16 +293,20 @@ function ThreadPanel({
         </div>
       </div>
 
-      <Composer
-        fetcherKey={THREAD_SEND}
-        replyTo={root.id}
-        placeholder="Reply…"
-        autoFocus
-        onTyping={onTyping}
-        typists={typists}
-        className="border-t border-line bg-canvas pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-        innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
-      />
+      {readOnly ? (
+        <p className="border-t border-line bg-canvas px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-muted">{readOnly}</p>
+      ) : (
+        <Composer
+          fetcherKey={THREAD_SEND}
+          replyTo={root.id}
+          placeholder="Reply…"
+          autoFocus
+          onTyping={onTyping}
+          typists={typists}
+          className="border-t border-line bg-canvas pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
+        />
+      )}
     </div>
   );
 }
@@ -283,7 +318,11 @@ function MessageList({
   acknowledged,
   canReply = false,
   after,
+  acks,
+  ackHref,
 }: {
+  acks?: Record<number, AckSummaryView>;
+  ackHref?: (announcementId: number) => string;
   messages: Shown[];
   /** When the list continues from an earlier message (a thread's replies), skip repeating its day */
   after?: string;
@@ -384,11 +423,12 @@ function MessageList({
                       className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-semibold text-white disabled:bg-success-soft disabled:text-success"
                     >
                       <Check size={16} weight="bold" />
-                      {acked ? "Coaches know you've seen it" : "Got it"}
+                      {acked ? "They know you've seen it" : "Got it"}
                     </button>
                   </ackFetcher.Form>
                 )}
               </div>
+              {acks?.[m.id] && ackHref && <AckLine summary={acks[m.id]} href={ackHref(acks[m.id].announcementId)} />}
 
               {isSelected && (
                 <div
@@ -659,4 +699,22 @@ function usePendingReactions() {
   };
 
   return { apply };
+}
+
+export type AckSummaryView = { announcementId: number; total: number; names: string[] };
+
+// Staff, under an announcement that asked for "Got it": who has so far
+function AckLine({ summary, href }: { summary: AckSummaryView; href: string }) {
+  const { names, total } = summary;
+  const shown = names.slice(0, 3).join(", ");
+  const more = names.length > 3 ? ` and ${names.length - 3} more` : "";
+  return (
+    <Link to={href} className="mt-1 flex max-w-[85%] items-center gap-1 px-1 text-xs text-muted hover:text-ink sm:max-w-[70%]">
+      <CheckCircle size={14} weight={names.length ? "fill" : "regular"} className={cx("shrink-0", names.length > 0 && "text-success")} />
+      <span className="truncate">
+        Got it {names.length} of {total}
+        {names.length > 0 && ` · ${shown}${more}`}
+      </span>
+    </Link>
+  );
 }
