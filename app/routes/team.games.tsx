@@ -134,7 +134,14 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
     <Page>
       <PageHeader
         title="Schedule"
-        description={`Your ${team.format} games and practices. Families RSVP to each one from their phones.`}
+        description={
+          <>
+            Your {team.format} games and practices. Families RSVP to each one from their phones.{" "}
+            <Link to="/dashboard/account#calendar" className="font-medium text-primary hover:underline">
+              Add to your calendar
+            </Link>
+          </>
+        }
         actions={
           <>
             {practiceLink}

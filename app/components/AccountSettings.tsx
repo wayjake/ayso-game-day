@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Form, useNavigation } from "react-router";
-import { SignOut } from "@phosphor-icons/react";
+import { AppleLogo, Check, Copy, GoogleLogo, SignOut } from "@phosphor-icons/react";
 import { PersonAvatar } from "~/components/PersonAvatar";
 import { PushControls } from "~/components/PushToggle";
-import { Alert, Button, Card, CardHeader, inputClass, labelClass } from "~/components/ui";
+import { Alert, Button, Card, CardHeader, buttonClass, inputClass, labelClass } from "~/components/ui";
 import { usePushContext } from "~/hooks/usePushContext";
 import type { AccountResult } from "~/utils/account.server";
+import type { CalendarLinks } from "~/utils/calendar-feed.server";
 
 // Cards for the settings that belong to the person rather than a team. The
 // coach Account page and the family Settings page both use them; the forms
@@ -73,6 +75,85 @@ export function NotificationsCard() {
         Turn them on separately on each phone or computer you use. What you choose to get applies to all of them.
       </p>
       <PushControls push={push} onInstall={openInstall} audience={audience} />
+    </Card>
+  );
+}
+
+export function CalendarCard({
+  links,
+  covers,
+  result,
+}: {
+  links: CalendarLinks;
+  /** What the feed holds, e.g. "your players' games and practices" */
+  covers: string;
+  result?: AccountResult | null;
+}) {
+  const resetting = useBusy("resetCalendar");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Card className="scroll-mt-24 p-5 sm:p-6" id="calendar">
+      <CardHeader title="Add to your calendar" />
+      <p className="mt-0.5 text-sm text-muted">
+        See {covers} in your phone's calendar. New games, time changes and cancellations show up there on their own.
+      </p>
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <a href={links.apple} className={buttonClass({ variant: "secondary" })}>
+          <AppleLogo size={18} weight="fill" /> iPhone or Mac
+        </a>
+        <a href={links.google} target="_blank" rel="noreferrer" className={buttonClass({ variant: "secondary" })}>
+          <GoogleLogo size={18} weight="bold" /> Google Calendar
+        </a>
+      </div>
+      <p className="mt-3 text-xs text-muted">
+        Google can take up to a day to pick up a change, so the app still sends you a notification when something moves.
+        Using Outlook or something else? Copy the link and add it as a calendar from the web.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(links.https);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            } catch {
+              window.prompt("Copy this link", links.https);
+            }
+          }}
+        >
+          {copied ? <Check size={16} weight="bold" className="text-success" /> : <Copy size={16} />}
+          {copied ? "Copied" : "Copy link"}
+        </Button>
+        {confirmReset ? (
+          <Form method="post" className="flex flex-wrap items-center gap-2" onSubmit={() => setConfirmReset(false)}>
+            <input type="hidden" name="_action" value="resetCalendar" />
+            <Button type="submit" variant="danger-soft" size="sm" disabled={resetting}>
+              {resetting ? "Resetting…" : "Reset link"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmReset(false)}>
+              Keep it
+            </Button>
+          </Form>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => setConfirmReset(true)}>
+            Reset link
+          </Button>
+        )}
+      </div>
+      {confirmReset && (
+        <p className="mt-2 text-xs text-muted">
+          Anyone with this link can see the schedule. Resetting stops it working everywhere it's been added, so you'll need
+          to add the new one again.
+        </p>
+      )}
+      <div className="mt-4 empty:hidden">
+        <Result result={result} intent="resetCalendar" />
+      </div>
     </Card>
   );
 }
