@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser, getUser } from "~/utils/auth.server";
 import { acceptInvites, getInviteByCode } from "~/utils/invites.server";
+import { staffRoleLabel } from "~/utils/team-roles";
 import { AppMark } from "~/components/AppMark";
 import { Alert, Card, EmptyState, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { CheckCircle, SignIn, UsersThree, WarningCircle } from "@phosphor-icons/react";
@@ -31,6 +32,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     email: found.invite.email!,
     inviterName: found.inviterName,
     teamNames: found.teams.map((t) => t.teamName),
+    role: found.invite.role,
     currentUser: user ? { email: user.email } : null,
     hasAccount: user ? true : Boolean(await findUserByEmail(found.invite.email!)),
   });
@@ -138,15 +140,17 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
       </>
     );
   } else {
-    const { email, inviterName, teamNames, currentUser, hasAccount } = loaderData;
+    const { email, inviterName, teamNames, role, currentUser, hasAccount } = loaderData;
+    const roleLabel = staffRoleLabel(role).toLowerCase();
     const emailMismatch = currentUser && currentUser.email.toLowerCase() !== email.toLowerCase();
 
     body = (
       <div className="space-y-6 p-6 sm:p-8">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Coach invite</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Team staff invite</h1>
           <p className="mt-2 text-muted">
-            <strong className="font-semibold text-ink">{inviterName}</strong> invited you to help coach:
+            <strong className="font-semibold text-ink">{inviterName}</strong> invited you to join as {/^[aeiou]/.test(roleLabel) ? "an" : "a"}{" "}
+            <strong className="font-semibold text-ink">{roleLabel}</strong>:
           </p>
           <ul className="mt-4 space-y-2">
             {teamNames.map((name) => (
@@ -197,7 +201,9 @@ export default function Invite({ loaderData, actionData, params }: Route.Compone
             <div>
               <label htmlFor="name" className={labelClass}>Your name</label>
               <input id="name" name="name" required autoComplete="name" className={inputClass} placeholder="Alex Morgan" />
-              <p className={hintClass}>Printed as the assistant coach on game cards</p>
+              <p className={hintClass}>
+                {role === "team-manager" ? "Shown to families next to your messages" : "Printed on game cards and shown to families next to your messages"}
+              </p>
             </div>
             <div>
               <label htmlFor="password" className={labelClass}>Password</label>

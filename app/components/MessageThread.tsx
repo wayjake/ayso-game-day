@@ -4,6 +4,8 @@ import { ArrowBendUpLeft, ArrowLeft, ChatCircle, Check, PaperPlaneRight } from "
 import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { REACTIONS } from "~/utils/reactions";
 import { Badge, cx } from "~/components/ui";
+import { StaffBadge } from "~/components/StaffBadge";
+import type { StaffRole } from "~/utils/team-roles";
 import { typingLabel, useConversationRealtime, type RealtimeConfig, type Typist, type TypingWhere } from "~/hooks/useConversationRealtime";
 
 // Chat thread shared by the coach dashboard and the family app. The route's
@@ -30,6 +32,7 @@ export type ThreadMessageView = {
   senderId: number | null; // Null for an email reply from a family with no account
   senderName: string;
   senderIsCoach: boolean;
+  senderRole?: StaffRole | null; // Staff role badge; families see it too
   body: string;
   createdAt: string;
   viaEmail?: boolean;
@@ -345,7 +348,7 @@ function MessageList({
               {(!mine || m.viaEmail) && !grouped && (
                 <div className="mb-0.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-muted">
                   {mine ? "You" : m.senderName}
-                  {m.senderIsCoach && <Badge tone="primary">Coach</Badge>}
+                  {m.senderRole ? <StaffBadge role={m.senderRole} short /> : m.senderIsCoach && <Badge tone="primary">Coach</Badge>}
                   {m.viaEmail && <Badge>By email</Badge>}
                 </div>
               )}

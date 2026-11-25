@@ -2,7 +2,9 @@ import type { Route } from "./+types/team.families";
 import { useState } from "react";
 import { Form, Link, data, redirect, useNavigate, useNavigation } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { getStaffRoles, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
+import { StaffBadge } from "~/components/StaffBadge";
+import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 import { db, contacts, players } from "~/db";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
 import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
@@ -12,14 +14,23 @@ import { handleNoteAction } from "~/utils/announcements.server";
 import { getOrCreateFamilyConversation } from "~/utils/messages.server";
 import { findFamily, getFamilyContext } from "~/utils/family-context.server";
 import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
-import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx } from "~/components/ui";
+import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const teamId = parseInt(params.teamId);
-  const { team } = await requireTeamAccess(teamId, user.id);
-  const families = await listFamilies(request, teamId);
+  const { team, role } = await requireTeamAccess(teamId, user.id);
+  const staffRoles = await getStaffRoles(teamId);
+  const families = (await listFamilies(request, teamId)).map((f) => {
+    const account = staffAccount(f.userIds, staffRoles);
+    return {
+      ...f,
+      account: account
+        ? { userId: account, staffRole: staffRoles.get(account) ?? null, isOwner: account === team.coachId }
+        : null,
+    };
+  });
 
   // Players with no family email can't be invited until the coach adds one
   const withEmail = await db
@@ -38,7 +49,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const selected = selectedEmail ? findFamily(families, { email: selectedEmail }) : null;
   const panel = selected ? await getFamilyContext(teamId, selected) : null;
 
-  return data({ team, me: user.id, families, missing, panel, emailConfigured: isEmailConfigured() });
+  return data({ team, me: user.id, families, missing, panel, isOwner: role === "owner", emailConfigured: isEmailConfigured() });
+}
+
+// The family's account that a staff role applies to: the one already on staff,
+// else the first linked one. Null until the family is on the app.
+function staffAccount(userIds: number[], staffRoles: Map<number, StaffRole>) {
+  return userIds.find((id) => staffRoles.has(id)) ?? userIds[0] ?? null;
 }
 
 type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | "no-players"; url?: string; linkedCount?: number };
@@ -49,6 +66,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
+
+  if (intent === "setRole") {
+    const { team } = await requireTeamOwner(teamId, user.id);
+    const email = String(formData.get("email") ?? "");
+    const value = formData.get("role");
+    const staffRole = parseStaffRole(value);
+    if (!staffRole && value !== "parent") return data({ error: "Pick a role" }, { status: 400 });
+
+    const family = (await listFamilies(null, teamId)).find((f) => f.email === email);
+    const userId = family ? staffAccount(family.userIds, await getStaffRoles(teamId)) : null;
+    if (!family || !userId) return data({ error: "That family isn't on the app yet. Invite them first." }, { status: 400 });
+    const who = family.parentNames[0] ?? email;
+
+    if (!staffRole) {
+      if (userId === team.coachId) return data({ error: "You own this team, so you're always on the staff" }, { status: 400 });
+      await removeFromStaff(teamId, userId);
+      return data({ roleChanged: `${who} is a parent only now, without coach access.` });
+    }
+    await setStaffRole(teamId, userId, staffRole, user.id);
+    return data({ roleChanged: `${who} is now ${staffRoleLabel(staffRole).toLowerCase()}. They'll find the coach view from the family app.` });
+  }
 
   const notes = await handleNoteAction(formData, teamId, user.id);
   if (notes) return data(notes);
@@ -106,13 +144,16 @@ function CopyLink({ url }: { url: string }) {
 }
 
 export default function Families({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, me, families, missing, panel, emailConfigured } = loaderData;
+  const { team, me, families, missing, panel, isOwner, emailConfigured } = loaderData;
   const base = `/dashboard/team/${team.id}`;
   const navigate = useNavigate();
   const closePanel = () => navigate(`${base}/families`, { preventScrollReset: true });
   const panelHref = (email: string) => `${base}/families?family=${encodeURIComponent(email)}`;
   const navigation = useNavigation();
-  const busyEmail = navigation.state === "submitting" ? String(navigation.formData?.get("email") ?? "") : null;
+  const busyEmail =
+    navigation.state === "submitting" && navigation.formData?.get("_action") === "invite"
+      ? String(navigation.formData.get("email") ?? "")
+      : null;
   const invitingAll = navigation.state === "submitting" && navigation.formData?.get("_action") === "inviteAll";
   const toInvite = families.filter((f) => f.status === "not-invited" || f.status === "expired").length;
   const joined = families.filter((f) => f.status === "joined").length;
@@ -149,6 +190,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
         </Alert>
       )}
       {actionData && "error" in actionData && <Alert className="mb-6">{actionData.error}</Alert>}
+      {actionData && "roleChanged" in actionData && <Alert tone="success" className="mb-6">{actionData.roleChanged}</Alert>}
       {outcomes.length > 0 && (
         <Alert tone="success" className="mb-6">
           {summarize(outcomes)}
@@ -185,6 +227,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
                       {f.kids.map((k) => k.name).join(" & ")}
                     </Link>
                     {statusBadge[f.status]}
+                    {f.account?.staffRole && <StaffBadge role={f.account.staffRole} />}
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted">
                     <EnvelopeSimple size={14} className="shrink-0" />
@@ -200,6 +243,25 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1 sm:justify-end">
+                  {isOwner && f.account && (
+                    <Form method="post">
+                      <input type="hidden" name="_action" value="setRole" />
+                      <input type="hidden" name="email" value={f.email} />
+                      <select
+                        key={f.account.staffRole ?? "parent"}
+                        name="role"
+                        defaultValue={f.account.staffRole ?? "parent"}
+                        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                        aria-label={`Team role for ${f.parentNames[0] ?? f.email}`}
+                        className={cx(inputClass, "w-auto py-1.5 pr-8")}
+                      >
+                        {!f.account.isOwner && <option value="parent">Parent</option>}
+                        {STAFF_ROLES.map((r) => (
+                          <option key={r} value={r}>{staffRoleLabel(r)}</option>
+                        ))}
+                      </select>
+                    </Form>
+                  )}
                   <Link
                     to={`${base}/families/edit?email=${encodeURIComponent(f.email)}`}
                     className={buttonClass({ variant: "ghost", size: "sm" })}

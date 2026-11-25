@@ -18,6 +18,8 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
+import { getStaffRoles } from "~/utils/team-access.server";
+import type { StaffRole } from "~/utils/team-roles";
 import { sendPush } from "~/utils/push.server";
 import { isReaction } from "~/utils/reactions";
 import { publishConversation } from "~/utils/realtime.server";
@@ -369,7 +371,8 @@ export type ThreadMessage = {
   id: number;
   senderId: number | null;
   senderName: string;
-  senderIsCoach: boolean;
+  senderIsCoach: boolean; // On the team staff (any role)
+  senderRole: StaffRole | null; // Their staff role, shown as a badge
   body: string;
   createdAt: string;
   viaEmail: boolean; // Came in as an email reply
@@ -455,14 +458,16 @@ async function loadMessages(conversationId: number, viewerId: number, where: Ret
   const reactions = await reactionsFor(ids, viewerId);
   const threads = await threadSummaries(rows.filter((r) => r.parentId == null).map((r) => r.id));
 
-  const coachIds = new Set(await getCoachUserIds(conversation.teamId));
+  const staffRoles = await getStaffRoles(conversation.teamId);
   return rows.reverse().map((r) => {
+    const senderRole = r.senderId != null ? staffRoles.get(r.senderId) ?? null : null;
     const full = r.inboundEmailId ? fullById.get(r.inboundEmailId)?.trim() ?? null : null;
     return {
       id: r.id,
       senderId: r.senderId,
       senderName: displayName(r),
-      senderIsCoach: r.senderId != null && coachIds.has(r.senderId),
+      senderIsCoach: senderRole != null,
+      senderRole,
       body: r.body,
       createdAt: r.createdAt,
       viaEmail: r.source === "email",

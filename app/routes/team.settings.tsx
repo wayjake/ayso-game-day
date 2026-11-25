@@ -2,13 +2,15 @@ import type { Route } from "./+types/team.settings";
 import { Form, data, useNavigation } from "react-router";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess, requireTeamOwner } from "~/utils/team-access.server";
+import { getTeamStaff, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
 import { createInvites, inviteUrl, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
 import { coachFromAddress, isEmailConfigured, isOnSendingDomain, sendingDomain } from "~/utils/email.server";
-import { db, teams, users, teamMembers, teamInvites } from "~/db";
+import { db, teams, users, teamInvites } from "~/db";
 import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
-import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, inputClass, labelClass } from "~/components/ui";
+import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, cx, inputClass, labelClass } from "~/components/ui";
 import { APP_TIME_ZONE } from "~/utils/dates";
+import { StaffBadge } from "~/components/StaffBadge";
+import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 import { Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -16,31 +18,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const teamId = parseInt(params.teamId);
   const { team, role } = await requireTeamAccess(teamId, user.id);
 
-  const [owner] = await db
-    .select({ id: users.id, name: users.name, email: users.email })
-    .from(users)
-    .where(eq(users.id, team.coachId))
-    .limit(1);
+  const staff = await getTeamStaff(teamId);
 
-  const members = await db
-    .select({
-      id: teamMembers.id,
-      userId: users.id,
-      name: users.name,
-      email: users.email,
-      joinedAt: teamMembers.joinedAt,
-    })
-    .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.userId, users.id))
-    // Older data has the owner listed as a member of their own team; show them once
-    .where(and(
-      eq(teamMembers.teamId, teamId),
-      eq(teamMembers.status, "active"),
-      ne(teamMembers.userId, team.coachId)
-    ))
-    .orderBy(teamMembers.joinedAt);
-
-  let pendingInvites: { id: number; email: string | null; url: string; expiresAt: string }[] = [];
+  let pendingInvites: { id: number; email: string | null; role: StaffRole; url: string; expiresAt: string }[] = [];
   let ownedTeams: { id: number; name: string }[] = [];
 
   if (role === "owner") {
@@ -55,6 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .map((invite) => ({
         id: invite.id,
         email: invite.email,
+        role: invite.role,
         url: inviteUrl(request, invite.shareCode!),
         expiresAt: invite.expiresAt,
       }));
@@ -72,8 +53,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     me: { id: user.id, name: user.name, email: user.email, sendingEmail: user.sendingEmail, isAdmin: user.role === "admin" },
     sendingDomain: sendingDomain(),
     fromHeader: coachFromAddress(user, team).header,
-    owner,
-    members,
+    staff,
     pendingInvites,
     ownedTeams,
     emailConfigured: isEmailConfigured(),
@@ -143,6 +123,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     await requireTeamOwner(teamId, user.id);
 
     const email = normalizeEmail(text("email"));
+    const role = parseStaffRole(formData.get("role")) ?? "coach";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return data({ intent, error: "Enter a valid email address" }, { status: 400 });
     }
@@ -167,6 +148,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       email,
       teamIds: ownedTeams.map((t) => t.id),
       invitedBy: user.id,
+      role,
     });
 
     const nameFor = (id: number) => ownedTeams.find((t) => t.id === id)?.name ?? "";
@@ -174,7 +156,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     if (created.length === 0) {
       return data(
-        { intent, error: `${email} already coaches ${skippedTeams.join(", ")}` },
+        { intent, error: `${email} is already on the staff of ${skippedTeams.join(", ")}. Change their role in the list above.` },
         { status: 400 }
       );
     }
@@ -189,6 +171,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       inviterName: user.name || user.email,
       inviterEmail: user.email,
       teamNames,
+      role,
     });
 
     return data({
@@ -196,6 +179,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       invite: {
         email,
         url: inviteUrl(request, shareCode),
+        role,
         teamNames,
         skippedTeams,
         emailed: result.sent,
@@ -214,14 +198,23 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ intent, success: "Invite revoked" });
   }
 
+  if (intent === "setRole") {
+    await requireTeamOwner(teamId, user.id);
+    const userId = parseInt(text("userId"));
+    const role = parseStaffRole(formData.get("role"));
+    const member = (await getTeamStaff(teamId)).find((s) => s.userId === userId);
+    if (!member || !role) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
+    await setStaffRole(teamId, userId, role, user.id);
+    return data({ intent, success: `${member.name || member.email} is now ${staffRoleLabel(role).toLowerCase()}` });
+  }
+
   if (intent === "removeMember") {
     await requireTeamOwner(teamId, user.id);
-    const memberId = parseInt(text("memberId"));
-    await db
-      .update(teamMembers)
-      .set({ status: "removed", updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, team.id)));
-    return data({ intent, success: "Coach removed" });
+    const userId = parseInt(text("userId"));
+    const member = (await getTeamStaff(teamId)).find((s) => s.userId === userId);
+    if (!member || member.isOwner) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
+    await removeFromStaff(teamId, userId);
+    return data({ intent, success: `${member.name || member.email} was removed from the staff. If they're a parent on the team, they still have the family app.` });
   }
 
   return data({ intent, error: "Unknown action" }, { status: 400 });
@@ -258,7 +251,8 @@ function CopyButton({ value }: { value: string }) {
 }
 
 export default function TeamSettings({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, role, me, owner, members, pendingInvites, ownedTeams, emailConfigured } = loaderData;
+  const { team, role, me, staff, pendingInvites, ownedTeams, emailConfigured } = loaderData;
+  const myStaffRole = staff.find((s) => s.userId === me.id)?.role ?? "coach";
   const navigation = useNavigation();
   const busy = (intent: string) =>
     navigation.state === "submitting" && navigation.formData?.get("_action") === intent;
@@ -275,11 +269,10 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
   };
 
   const inviteResult = actionData && "invite" in actionData ? actionData.invite : null;
-  const coachCount = (owner ? 1 : 0) + members.length;
 
   return (
     <Page width="narrow" className="space-y-6">
-      <PageHeader title="Settings" description="Team details, your name on game cards, and who coaches this team." />
+      <PageHeader title="Settings" description="Team details, your name on game cards, and who's on the team staff." />
 
       {/* Team details */}
       <Card className="p-5 sm:p-6">
@@ -330,7 +323,9 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
       <Card className="p-5 sm:p-6">
         <CardHeader title="Your name" />
         <p className="mt-0.5 text-sm text-muted">
-          Printed as the {role === "owner" ? "coach" : "assistant coach"} on game cards.
+          {myStaffRole === "team-manager"
+            ? "Shown to families next to your messages."
+            : "Printed on game cards and shown to families next to your messages."}
         </p>
         <Form method="post" className="mt-5 flex flex-col gap-3 sm:flex-row">
           <input type="hidden" name="_action" value="updateName" />
@@ -372,45 +367,57 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
         {message("updateSendingEmail")}
       </Card>
 
-      {/* Coaches */}
+      {/* Team staff */}
       <Card className="p-5 sm:p-6">
-        <CardHeader title="Coaches" count={coachCount} />
+        <CardHeader title="Team staff" count={staff.length} />
+        <p className="mt-0.5 text-sm text-muted">
+          Coaches, assistant coaches, and team managers can all plan lineups, manage the roster, edit games, and message families.
+          Families see each person's role next to their messages.
+        </p>
 
         <ul className="mt-3 divide-y divide-line">
-          {owner && (
-            <li className="flex items-center gap-3 py-3">
-              <PlayerAvatar player={{ name: owner.name || owner.email }} size="md" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">
-                  {owner.name || owner.email}
-                  {owner.id === me.id && <span className="ml-1.5 font-normal text-subtle">(you)</span>}
+          {staff.map((member) => (
+            <li key={member.userId} className="flex flex-wrap items-center gap-3 py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <PlayerAvatar player={{ name: member.name || member.email }} size="md" />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate font-medium">{member.name || member.email}</span>
+                    {member.userId === me.id && <span className="font-normal text-subtle">(you)</span>}
+                    {member.isOwner && (
+                      <Badge className="shrink-0" title="Created the team. Only the owner can invite, remove, or change roles.">
+                        <Crown size={12} weight="fill" />
+                        Owner
+                      </Badge>
+                    )}
+                  </div>
+                  {member.name && <div className="truncate text-sm text-muted">{member.email}</div>}
                 </div>
-                {owner.name && <div className="truncate text-sm text-muted">{owner.email}</div>}
-              </div>
-              <Badge tone="primary" className="shrink-0">
-                <Crown size={12} weight="fill" />
-                Owner
-              </Badge>
-            </li>
-          )}
-          {members.map((member) => (
-            <li key={member.id} className="flex items-center gap-3 py-3">
-              <PlayerAvatar player={{ name: member.name || member.email }} size="md" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">
-                  {member.name || member.email}
-                  {member.userId === me.id && <span className="ml-1.5 font-normal text-subtle">(you)</span>}
-                </div>
-                {member.name && <div className="truncate text-sm text-muted">{member.email}</div>}
               </div>
               {role === "owner" ? (
-                <Form method="post" className="shrink-0">
-                  <input type="hidden" name="_action" value="removeMember" />
-                  <input type="hidden" name="memberId" value={member.id} />
-                  <Button type="submit" variant="danger-soft" size="sm">Remove</Button>
-                </Form>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Form method="post">
+                    <input type="hidden" name="_action" value="setRole" />
+                    <input type="hidden" name="userId" value={member.userId} />
+                    <RoleSelect
+                      key={member.role}
+                      name="role"
+                      defaultValue={member.role}
+                      aria-label={`Role for ${member.name || member.email}`}
+                      onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                      disabled={busy("setRole")}
+                    />
+                  </Form>
+                  {!member.isOwner && (
+                    <Form method="post">
+                      <input type="hidden" name="_action" value="removeMember" />
+                      <input type="hidden" name="userId" value={member.userId} />
+                      <Button type="submit" variant="danger-soft" size="sm">Remove</Button>
+                    </Form>
+                  )}
+                </div>
               ) : (
-                <Badge className="shrink-0">Coach</Badge>
+                <StaffBadge role={member.role} />
               )}
             </li>
           ))}
@@ -424,9 +431,10 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
                   <EnvelopeSimple size={18} />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate font-medium">{invite.email}</span>
                     <Badge tone="warning" className="shrink-0">Invited</Badge>
+                    <StaffBadge role={invite.role} />
                   </div>
                   <div className="text-sm text-muted">
                     Expires {formatInviteExpiry(invite.expiresAt)}
@@ -444,23 +452,30 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
             </li>
           ))}
         </ul>
+        {message("setRole")}
         {message("removeMember")}
         {message("revokeInvite")}
       </Card>
 
-      {/* Invite a coach (owner only) */}
+      {/* Invite to the staff (owner only) */}
       {role === "owner" && (
         <Card className="p-5 sm:p-6">
-          <CardHeader title="Invite a coach" />
+          <CardHeader title="Add to the team staff" />
           <p className="mt-0.5 text-sm text-muted">
             They'll be able to plan lineups, manage the roster, and edit games on the teams you pick.
-            Only you can invite or remove coaches.
+            Only you can invite or remove staff. To give a parent who's already on the app a role, use Families.
           </p>
           <Form method="post" className="mt-5 space-y-4">
             <input type="hidden" name="_action" value="invite" />
-            <div>
-              <label htmlFor="inviteEmail" className={labelClass}>Email</label>
-              <input id="inviteEmail" name="email" type="email" required placeholder="coach@example.com" className={inputClass} />
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+              <div>
+                <label htmlFor="inviteEmail" className={labelClass}>Email</label>
+                <input id="inviteEmail" name="email" type="email" required placeholder="coach@example.com" className={inputClass} />
+              </div>
+              <div>
+                <label htmlFor="inviteRole" className={labelClass}>Role</label>
+                <RoleSelect id="inviteRole" name="role" defaultValue="coach" className="h-[42px]" />
+              </div>
             </div>
             {ownedTeams.length > 1 && (
               <fieldset>
@@ -501,7 +516,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
                     }, so send them this link yourself:`}
               </Alert>
               {inviteResult.skippedTeams.length > 0 && (
-                <p className="text-sm text-muted">Already a coach on {inviteResult.skippedTeams.join(", ")}.</p>
+                <p className="text-sm text-muted">Already on the staff of {inviteResult.skippedTeams.join(", ")}.</p>
               )}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <code className="min-w-0 flex-1 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-ink ring-1 ring-line">
@@ -514,6 +529,16 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
         </Card>
       )}
     </Page>
+  );
+}
+
+function RoleSelect({ className, ...props }: React.ComponentProps<"select">) {
+  return (
+    <select {...props} className={cx(inputClass, "w-auto py-1.5 pr-8", className)}>
+      {STAFF_ROLES.map((r) => (
+        <option key={r} value={r}>{staffRoleLabel(r)}</option>
+      ))}
+    </select>
   );
 }
 
