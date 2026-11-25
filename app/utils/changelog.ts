@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Archive past teams",
+    summary: "Put away a team when its season is over, without losing anything.",
+    changes: [
+      { kind: "new", text: "Archive a team from its Settings page when the season's over. It drops out of the team switcher and your team list for everyone on its staff." },
+      { kind: "new", text: "Archived teams are still one click away under All teams > Archived teams, with everything kept: open one any time, or bring it back." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Games and practices in your calendar",
     summary: "Add your team's schedule to your iPhone or Google Calendar once, and it keeps itself up to date.",
     changes: [
