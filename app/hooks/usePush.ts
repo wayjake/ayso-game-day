@@ -26,7 +26,33 @@ async function post(body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Request failed");
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error ?? "Request failed");
+  return json;
+}
+
+/** What "Send a test" found out: delivered to the push service, or refused and why */
+export type PushTestOutcome =
+  | { delivered: true }
+  | { delivered: false; message: string };
+
+// A subscription is tied to the VAPID public key it was made with. If the
+// server's key has changed since, every push to it is refused (403), so it
+// has to be made again.
+function sameKey(sub: PushSubscription, vapidPublicKey: string) {
+  const current = sub.options.applicationServerKey;
+  if (!current) return true; // Browser doesn't say; assume it's fine
+  const a = new Uint8Array(current);
+  const b = vapidKeyBytes(vapidPublicKey);
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+async function currentSubscription(vapidPublicKey: string) {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub || sameKey(sub, vapidPublicKey)) return sub;
+  await sub.unsubscribe();
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes(vapidPublicKey) });
 }
 
 export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs = {}) {
@@ -45,8 +71,10 @@ export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs
     let cancelled = false;
     const check = async () => {
       if (Notification.permission === "denied") return setStatus("blocked");
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
+      // Permission is already granted here, so a stale subscription can be remade without a tap
+      const sub = Notification.permission === "granted"
+        ? await currentSubscription(vapidPublicKey)
+        : await (await navigator.serviceWorker.ready).pushManager.getSubscription();
       if (cancelled) return;
       if (sub && Notification.permission === "granted") {
         setStatus("on");
@@ -85,7 +113,7 @@ export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs
       }
       const reg = await navigator.serviceWorker.ready;
       const sub =
-        (await reg.pushManager.getSubscription()) ??
+        (await currentSubscription(vapidPublicKey)) ??
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes(vapidPublicKey) }));
       await post({ action: "subscribe", subscription: sub.toJSON() });
       setStatus("on");
@@ -117,20 +145,30 @@ export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs
     }
   }, []);
 
-  /** Resolves to whether the server accepted it. */
-  const sendTest = useCallback(async () => {
+  /** Sends a test to this device only and says what the push service answered. */
+  const sendTest = useCallback(async (): Promise<PushTestOutcome> => {
     setBusy(true);
     setError(null);
     try {
-      await post({ action: "test" });
-      return true;
+      const sub = vapidPublicKey ? await currentSubscription(vapidPublicKey) : null;
+      if (!sub) return { delivered: false, message: "This device isn't subscribed. Turn notifications off and on again." };
+      // Make sure the server has this device on this account before testing it
+      await post({ action: "subscribe", subscription: sub.toJSON() });
+      const { result } = await post({ action: "test", endpoint: sub.endpoint });
+      if (result?.sent > 0) return { delivered: true };
+      const failure = result?.failed?.[0];
+      return {
+        delivered: false,
+        message: failure
+          ? `${failure.service} refused it${failure.status ? ` (${failure.status})` : ""}: ${failure.reason}${failure.status === 403 ? ". Turn notifications off and on again." : ""}`
+          : "Nothing was sent.",
+      };
     } catch (e) {
-      setError((e as Error).message);
-      return false;
+      return { delivered: false, message: (e as Error).message };
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [vapidPublicKey]);
 
   /** Which kinds this account gets, on every device. Saved right away, undone if the save fails. */
   const choose = useCallback(async (kind: NotifyKind, on: boolean) => {
