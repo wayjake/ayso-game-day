@@ -139,16 +139,16 @@ export async function saveFamily({
       .update(familyNotes)
       .set({ familyEmail: email })
       .where(and(eq(familyNotes.teamId, teamId), eq(familyNotes.familyEmail, oldEmail)));
-    const [taken] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(and(eq(conversations.teamId, teamId), eq(conversations.kind, "direct"), eq(conversations.familyEmail, email)))
-      .limit(1);
-    if (!taken) {
-      await db
-        .update(conversations)
-        .set({ familyEmail: email })
-        .where(and(eq(conversations.teamId, teamId), eq(conversations.kind, "direct"), eq(conversations.familyEmail, oldEmail)));
+    // Each staff member has their own thread with the family; move each one
+    // unless that staff member already has a thread at the new address
+    const directs = and(eq(conversations.teamId, teamId), eq(conversations.kind, "direct"));
+    const taken = new Set(
+      (await db.select({ staff: conversations.staffUserId }).from(conversations).where(and(directs, eq(conversations.familyEmail, email))))
+        .map((r) => r.staff)
+    );
+    const moving = await db.select({ id: conversations.id, staff: conversations.staffUserId }).from(conversations).where(and(directs, eq(conversations.familyEmail, oldEmail)));
+    for (const row of moving) {
+      if (!taken.has(row.staff)) await db.update(conversations).set({ familyEmail: email }).where(eq(conversations.id, row.id));
     }
   }
 

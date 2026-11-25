@@ -120,7 +120,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const waiting = (
     await Promise.all(
       recentAsks.map(async (a) => {
-        const tracker = await getAnnouncementTracker(a.id, teamId);
+        const tracker = await getAnnouncementTracker(a.id, teamId, user.id);
         return tracker && tracker.stats.awaiting > 0
           ? { id: a.id, subject: a.subject, ask: a.ask, awaiting: tracker.stats.awaiting, total: tracker.stats.total }
           : null;

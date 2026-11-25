@@ -402,7 +402,7 @@ function TourRunner({
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Where do families' email replies go?",
-    a: "Into that family's private thread in Messages, the same place their app messages go. Other families never see them.",
+    a: "An announcement to every family is posted in the team chat, and replies go under it there, where everyone on the app can see them. Everything else lands in the family's private thread with whoever they're answering, which nobody else sees.",
   },
   {
     q: "Why does it say “Probably opened”?",

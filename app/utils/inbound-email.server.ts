@@ -9,6 +9,7 @@ import {
   messages,
   parentInvites,
   players,
+  teams,
   users,
 } from "~/db";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -23,7 +24,7 @@ import {
   referencedMessageIds,
   stripQuotedReply,
 } from "~/utils/email-reply";
-import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, preview } from "~/utils/messages.server";
+import { MAX_EMAIL_MESSAGE_LENGTH, familyLabels, getOrCreateFamilyConversation, notifyThreadReply, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
@@ -151,6 +152,8 @@ type Match = {
   familyEmail: string;
   recipientId: number | null;
   conversationId: number | null;
+  /** Whose private thread a new one should be, when conversationId is null */
+  staffUserId?: number | null;
   by: "headers" | "sender";
 };
 
@@ -206,17 +209,69 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
   // Most recent announcement to this family picks the team. It only counts as
   // a reply to that announcement when the subject says so ("Re: Picture day").
   const [recent] = await db
-    .select({ teamId: announcementRecipients.teamId, id: announcementRecipients.id, conversationId: announcementRecipients.conversationId, subject: announcements.subject })
+    .select({
+      teamId: announcementRecipients.teamId,
+      id: announcementRecipients.id,
+      conversationId: announcementRecipients.conversationId,
+      subject: announcements.subject,
+      sentBy: announcements.sentBy,
+    })
     .from(announcementRecipients)
     .innerJoin(announcements, eq(announcementRecipients.announcementId, announcements.id))
     .where(and(eq(announcementRecipients.familyEmail, address), inArray(announcementRecipients.teamId, teamIds)))
     .orderBy(desc(announcementRecipients.id))
     .limit(1);
+  const teamId = recent?.teamId ?? teamIds[0];
+
+  // Written to one staff member's own address: it's for them, in their private thread
+  if (ownerUserId && (await getCoachUserIds(teamId)).includes(ownerUserId)) {
+    const answers = recent && recent.sentBy === ownerUserId && baseSubject(subject) === baseSubject(recent.subject);
+    return {
+      teamId,
+      familyEmail: address,
+      recipientId: answers ? recent.id : null,
+      conversationId: recent && recent.sentBy === ownerUserId ? recent.conversationId : null,
+      staffUserId: ownerUserId,
+      by: "sender",
+    };
+  }
   if (recent) {
     const answers = baseSubject(subject) === baseSubject(recent.subject);
-    return { teamId: recent.teamId, familyEmail: address, recipientId: answers ? recent.id : null, conversationId: recent.conversationId, by: "sender" };
+    return { teamId, familyEmail: address, recipientId: answers ? recent.id : null, conversationId: recent.conversationId, by: "sender" };
   }
-  return { teamId: teamIds[0], familyEmail: address, recipientId: null, conversationId: null, by: "sender" };
+  return { teamId, familyEmail: address, recipientId: null, conversationId: null, by: "sender" };
+}
+
+// How a family's email reply is signed in the team chat, where every family
+// can see it: their name from the email, or their kids' names, never an address
+async function publicFamilyName(teamId: number, familyEmail: string, fromName: string | null) {
+  const name = fromName?.trim();
+  if (name && !name.includes("@")) return name;
+  const kids = (await familyLabels(teamId, [familyEmail])).get(familyEmail)?.kids ?? [];
+  return kids.length ? `${kids.join(" & ")}'s family` : "A family";
+}
+
+// Whose private thread a family's email goes to when nothing says: the staff
+// member who wrote to them most recently, else the team owner
+async function defaultStaffFor(teamId: number, familyEmail: string, parentUserId: number | null) {
+  const staff = await getCoachUserIds(teamId);
+  const recent = await db
+    .select({ staffUserId: conversations.staffUserId })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.teamId, teamId),
+        eq(conversations.kind, "direct"),
+        parentUserId
+          ? or(eq(conversations.familyEmail, familyEmail), eq(conversations.parentUserId, parentUserId))
+          : eq(conversations.familyEmail, familyEmail)
+      )
+    )
+    .orderBy(desc(conversations.lastMessageAt));
+  const hit = recent.find((r) => r.staffUserId != null && staff.includes(r.staffUserId));
+  if (hit) return hit.staffUserId!;
+  const [team] = await db.select({ coachId: teams.coachId }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  return team.coachId;
 }
 
 const baseSubject = (subject: string | null) =>
@@ -242,13 +297,44 @@ async function familyUserId(teamId: number, familyEmail: string) {
   return invite?.id ?? null;
 }
 
-// Puts an email into a family's thread and updates the tracker
+// Puts an email into a family's private thread with one staff member and
+// updates the tracker. A thread whose staff member has left the team is
+// nobody's inbox any more, so the email goes to someone who's still there.
 async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match: Omit<Match, "by"> & { by: string }) {
   const userId = await familyUserId(match.teamId, match.familyEmail);
-  const conversation = match.conversationId
-    ? (await db.select().from(conversations).where(eq(conversations.id, match.conversationId)).limit(1))[0] ??
-      (await getOrCreateFamilyConversation(match.teamId, match.familyEmail, userId))
-    : await getOrCreateFamilyConversation(match.teamId, match.familyEmail, userId);
+  const staff = await getCoachUserIds(match.teamId);
+  let conversation: typeof conversations.$inferSelect | undefined = match.conversationId
+    ? (await db.select().from(conversations).where(eq(conversations.id, match.conversationId)).limit(1))[0]
+    : undefined;
+
+  // An announcement sent to everyone lives in the team chat. A real reply to it
+  // goes there too, in the public thread under it. Anything else (an
+  // out-of-office, a fresh email that doesn't answer it) stays private.
+  let rootId: number | null = null;
+  let familyName: string | null = null;
+  let staffUserId = match.staffUserId ?? null;
+  if (conversation?.kind === "team") {
+    const [recipient] = match.recipientId
+      ? await db
+          .select({ messageId: announcementRecipients.messageId, familyLabel: announcementRecipients.familyLabel, sentBy: announcements.sentBy })
+          .from(announcementRecipients)
+          .innerJoin(announcements, eq(announcementRecipients.announcementId, announcements.id))
+          .where(eq(announcementRecipients.id, match.recipientId))
+          .limit(1)
+      : [];
+    if (recipient?.messageId && !inbound.isAutoReply) {
+      rootId = recipient.messageId;
+      familyName = await publicFamilyName(match.teamId, match.familyEmail, inbound.fromName);
+    } else {
+      conversation = undefined;
+      staffUserId ??= recipient?.sentBy ?? null;
+    }
+  }
+
+  if (!rootId && (!conversation || conversation.staffUserId == null || !staff.includes(conversation.staffUserId))) {
+    const owner = staffUserId && staff.includes(staffUserId) ? staffUserId : await defaultStaffFor(match.teamId, match.familyEmail, userId);
+    conversation = await getOrCreateFamilyConversation(match.teamId, match.familyEmail, userId, owner);
+  }
 
   const full = inbound.text ?? "";
   const { body } = stripQuotedReply(full);
@@ -264,30 +350,34 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   const [message] = await db
     .insert(messages)
     .values({
-      conversationId: conversation.id,
+      conversationId: conversation!.id,
       senderId,
       senderEmail: inbound.fromEmail,
-      senderName: inbound.fromName,
+      // In the team chat, a name that can't be their email address
+      senderName: rootId ? familyName : inbound.fromName,
       source: "email",
       body: text,
+      parentId: rootId,
       inboundEmailId: inbound.id,
       emailMessageId: inbound.emailMessageId,
       // Same format as CURRENT_TIMESTAMP, so threads sort and display alike
       createdAt: toDbTimestamp(inbound.receivedAt),
     })
     .returning();
+  conversation = conversation!;
 
+  const shown = rootId ? `↳ ${text}` : text;
   await db
     .update(conversations)
     .set({
       // A late-sorted email can be older than the thread's latest message
       lastMessageAt: sql`max(coalesce(${conversations.lastMessageAt}, ''), ${message.createdAt})`,
-      lastMessagePreview: sql`case when coalesce(${conversations.lastMessageAt}, '') > ${message.createdAt} then ${conversations.lastMessagePreview} else ${preview(text)} end`,
-      // An out-of-office shouldn't flag the thread
-      ...(inbound.isAutoReply ? {} : { needsReply: true }),
+      lastMessagePreview: sql`case when coalesce(${conversations.lastMessageAt}, '') > ${message.createdAt} then ${conversations.lastMessagePreview} else ${preview(shown)} end`,
+      // An out-of-office shouldn't flag the thread, and the team chat has no "Needs reply"
+      ...(inbound.isAutoReply || conversation.kind === "team" ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
-  await publishConversation(match.teamId, conversation.id, { kind: "message" });
+  await publishConversation(conversation, { kind: "message", threadId: rootId });
 
   if (match.recipientId && !inbound.isAutoReply) {
     await db
@@ -302,13 +392,19 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
     .where(eq(inboundEmails.id, inbound.id));
 
   if (!inbound.isAutoReply) {
-    const who = inbound.fromName || inbound.fromEmail;
-    await sendPush(await getCoachUserIds(match.teamId), "chat", {
-      title: `${who} replied by email`,
-      body: preview(text, 180),
-      url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
-      tag: `conversation-${conversation.id}`,
-    });
+    if (rootId) {
+      // Like any reply in a thread: the people in it hear about it
+      await notifyThreadReply(conversation, rootId, senderId, familyName ?? "A family", text);
+    } else {
+      const who = inbound.fromName || inbound.fromEmail;
+      // Only the staff member whose thread it is
+      await sendPush([conversation.staffUserId!], "chat", {
+        title: `${who} replied by email`,
+        body: preview(text, 180),
+        url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
+        tag: `conversation-${conversation.id}`,
+      });
+    }
   }
   return conversation;
 }
@@ -423,7 +519,8 @@ async function unmatchedFor(user: { id: number; role: string }, teamId: number, 
 export async function assignUnmatched(user: { id: number; role: string }, teamId: number, inboundId: number, familyEmail: string) {
   const inbound = await unmatchedFor(user, teamId, inboundId);
   if (!inbound) return null;
-  return fileIntoThread(inbound, { teamId, familyEmail: familyEmail.toLowerCase(), recipientId: null, conversationId: null, by: "coach" });
+  // Whoever sorts it answers it: it goes in their own private thread with the family
+  return fileIntoThread(inbound, { teamId, familyEmail: familyEmail.toLowerCase(), recipientId: null, conversationId: null, staffUserId: user.id, by: "coach" });
 }
 
 export async function dismissUnmatched(user: { id: number; role: string }, teamId: number, inboundId: number) {

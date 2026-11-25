@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7f6b8f07-8e2f-4d9f-8c6a-e00b51831361",
-  "prevId": "921ff84f-6609-4fde-85a3-fe42bd81cf2a",
+  "id": "71be84ba-54a0-4568-b750-985530c34b00",
+  "prevId": "fa81caea-a28f-4336-9eba-551fe1791eac",
   "tables": {
     "announcement_recipients": {
       "name": "announcement_recipients",
@@ -718,6 +718,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "staff_user_id": {
+          "name": "staff_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "parent_user_id": {
           "name": "parent_user_id",
           "type": "integer",
@@ -772,19 +779,21 @@
           "isUnique": true,
           "where": "kind = 'team'"
         },
-        "conversations_direct_idx": {
-          "name": "conversations_direct_idx",
+        "conversations_direct_staff_idx": {
+          "name": "conversations_direct_staff_idx",
           "columns": [
             "team_id",
+            "staff_user_id",
             "parent_user_id"
           ],
           "isUnique": true,
           "where": "kind = 'direct'"
         },
-        "conversations_family_email_idx": {
-          "name": "conversations_family_email_idx",
+        "conversations_family_email_staff_idx": {
+          "name": "conversations_family_email_staff_idx",
           "columns": [
             "team_id",
+            "staff_user_id",
             "family_email"
           ],
           "isUnique": true,
@@ -798,6 +807,19 @@
           "tableTo": "teams",
           "columnsFrom": [
             "team_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "conversations_staff_user_id_users_id_fk": {
+          "name": "conversations_staff_user_id_users_id_fk",
+          "tableFrom": "conversations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "staff_user_id"
           ],
           "columnsTo": [
             "id"

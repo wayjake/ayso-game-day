@@ -17,7 +17,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Owners and invited coaches both get in; role tells child routes which one
   const { team, role } = await requireTeamAccess(teamId, user.id);
-  const unread = await totalUnread(await coachConversationIds(teamId), user.id);
+  const unread = await totalUnread(await coachConversationIds(teamId, user.id), user.id);
 
   return data(
     {

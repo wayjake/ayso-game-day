@@ -15,7 +15,7 @@ import { getConversationAccess, getThread, markRead, postMessage, setNeedsReply 
 import { formatMessageDateTime, formatMessageTime } from "~/utils/dates";
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
-import { Alert, Badge, Button, Card, Page, PageHeader, cx, inputClass } from "~/components/ui";
+import { Alert, Badge, Button, Card, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import {
   ArrowSquareOut,
   BellRinging,
@@ -32,7 +32,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const teamId = parseInt(params.teamId);
   const { team } = await requireTeamAccess(teamId, user.id);
-  const tracker = await getAnnouncementTracker(Number(params.announcementId), teamId);
+  const tracker = await getAnnouncementTracker(Number(params.announcementId), teamId, user.id);
   if (!tracker) throw new Response("Announcement not found", { status: 404 });
 
   // The family panel, opened with ?family=<email>
@@ -40,8 +40,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const selected = familyEmail ? tracker.recipients.find((r) => r.familyEmail === familyEmail) ?? null : null;
   let panel = null;
   if (selected) {
-    const thread = selected.conversationId ? await getThread(selected.conversationId, 30) : [];
-    if (selected.conversationId) await markRead(selected.conversationId, user.id, thread[thread.length - 1]?.id ?? 0);
+    // A private copy: the sender's thread with this family (conversationId is set only for them).
+    // A team chat copy: replies are in the thread under it, linked from the panel.
+    const own = selected.mine && selected.conversationId ? selected.conversationId : null;
+    const thread = own ? await getThread(own, user.id, 30) : [];
+    if (own) await markRead(own, user.id, thread[thread.length - 1]?.id ?? 0);
     panel = { recipient: selected, thread, notes: await familyNotesView(teamId, selected.familyEmail) };
   }
 
@@ -279,7 +282,8 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
             )}
           </Card>
 
-          {stats.awaiting > 0 && (
+          {/* Replies to a reminder land in the sender's private threads, so only they send one */}
+          {stats.awaiting > 0 && announcement.sentBy === me && (
             <Form method="post" className="mt-4">
               <input type="hidden" name="_action" value="remind" />
               <Button type="submit" variant="secondary" disabled={reminding} className="w-full sm:w-auto">
@@ -300,6 +304,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
             key={panel.recipient.id}
             teamId={team.id}
             me={me}
+            senderName={senderName}
             panel={panel}
             opensTracked={opensTracked}
             onClose={closePanel}
@@ -316,7 +321,21 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
 
 type Panel = NonNullable<Route.ComponentProps["loaderData"]["panel"]>;
 
-function FamilyPanel({ teamId, me, panel, opensTracked, onClose }: { teamId: number; me: number; panel: Panel; opensTracked: boolean; onClose: () => void }) {
+function FamilyPanel({
+  teamId,
+  me,
+  senderName,
+  panel,
+  opensTracked,
+  onClose,
+}: {
+  teamId: number;
+  me: number;
+  senderName: string;
+  panel: Panel;
+  opensTracked: boolean;
+  onClose: () => void;
+}) {
   const { recipient: r, thread, notes } = panel;
   const reply = useFetcher<{ error?: string; ok?: boolean }>();
   const done = useFetcher();
@@ -383,7 +402,32 @@ function FamilyPanel({ teamId, me, panel, opensTracked, onClose }: { teamId: num
             {r.error && <li className="w-full text-danger">{r.error}</li>}
           </ol>
 
+          {r.inTeamChat ? (
+            <div className="space-y-2 px-4 py-3 text-sm">
+              {r.lastReply ? (
+                <p className="whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-3 py-2 text-ink">{r.lastReply}</p>
+              ) : (
+                <p className="text-muted">No reply from this family yet.</p>
+              )}
+              <p className="text-muted">This went to every family, so replies are in the team chat, under the announcement.</p>
+              {r.conversationId && r.messageId && (
+                <Link
+                  to={`/dashboard/team/${teamId}/messages/${r.conversationId}?thread=${r.messageId}`}
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
+                >
+                  <ArrowSquareOut size={16} />
+                  Open the replies
+                </Link>
+              )}
+            </div>
+          ) : !r.mine && (
+            <p className="px-4 py-3 text-sm text-muted">
+              What this family writes back goes to {senderName}'s private messages with them, so only {senderName} sees it.
+            </p>
+          )}
+
           {/* Thread */}
+          {r.mine && <>
           <ol ref={listRef} className="space-y-2 px-4 py-3">
             {thread.map((m) => {
               const mine = m.senderId === me;
@@ -464,6 +508,7 @@ function FamilyPanel({ teamId, me, panel, opensTracked, onClose }: { teamId: num
               </div>
             </div>
           </div>
+          </>}
 
           <div className="border-t border-line px-4 py-4">
             <FamilyNotes notes={notes} familyEmail={r.familyEmail} meId={me} />

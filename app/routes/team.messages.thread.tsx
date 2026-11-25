@@ -47,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
 
   let title = "Team chat";
-  let subtitle = "Every coach and family on the app";
+  let subtitle = "Every coach and family on the app can see this";
   let familyEmail: string | null = null;
   let delivery: FamilyDelivery = { email: null, pushReady: false };
 
@@ -69,7 +69,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const kidNames = (kids.length ? kids : label?.kids ?? []).join(" & ") || "Family";
     delivery = await familyDelivery(conversation);
     title = parent?.name || label?.names[0] || parent?.email || familyEmail || "Family";
-    subtitle = `${kidNames} · ${kids.length ? "private with the coaches" : "by email, not on the app yet"}`;
+    // One-to-one: no other staff member, the team owner included, can read it
+    subtitle = `${kidNames} · ${kids.length ? "private: only you and this family" : "by email, not on the app yet · only you see this"}`;
   }
 
   // The pane beside the thread on wide screens. Loaded on every poll along
@@ -98,7 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     messages,
     thread,
     realtime: isRealtimeConfigured()
-      ? { channel: conversationChannel(conversation.teamId, conversation.id), name: user.name || user.email.split("@")[0] }
+      ? { channel: conversationChannel(conversation), name: user.name || user.email.split("@")[0] }
       : null,
     conversationId: conversation.id,
     needsReply: conversation.needsReply,
