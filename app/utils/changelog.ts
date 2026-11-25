@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Delete a message",
+    summary: "Sent something to the wrong family, or said it wrong? Delete it from a private chat.",
+    changes: [
+      { kind: "new", text: "In a private chat, tap one of your own messages and choose Delete. It's removed for both of you; if people replied to it, their replies stay." },
+      { kind: "new", text: "Before you delete, BenchTalk tells you if the message was also emailed, since the email can't be taken back, and that a notification they already got may still show it." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Lighter player photos",
     summary: "Player photos load faster and look sharper, and videos in the feed show their first frame until you press play.",
     changes: [
