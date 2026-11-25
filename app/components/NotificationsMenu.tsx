@@ -5,7 +5,8 @@ import { Bell, BellSlash, DeviceMobile } from "@phosphor-icons/react";
 import { NotificationsBlockedSheet } from "~/components/NotificationsBlockedSheet";
 import { cx } from "~/components/ui";
 import { NotifyCategories } from "~/components/NotifyCategories";
-import type { PushState } from "~/hooks/usePush";
+import type { PushState, PushTestOutcome } from "~/hooks/usePush";
+import { PushTestResult } from "~/components/PushTestResult";
 import { isStandalone, isTouchDevice } from "~/utils/pwa";
 
 // The bell in the family header: one tap shows whether this device gets
@@ -16,7 +17,7 @@ export function NotificationsMenu({ push, onInstall }: { push: PushState; onInst
   const [open, setOpen] = useState(false);
   const [blockedHelp, setBlockedHelp] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
-  const [tested, setTested] = useState(false);
+  const [tested, setTested] = useState<PushTestOutcome | null>(null);
   const [position, setPosition] = useState({ top: 0, right: 12 });
   const trigger = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
@@ -24,7 +25,7 @@ export function NotificationsMenu({ push, onInstall }: { push: PushState; onInst
   useEffect(() => setCanInstall(isTouchDevice() && !isStandalone()), []);
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
-    if (!open) return setTested(false);
+    if (!open) return setTested(null);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setOpen(false);
@@ -135,7 +136,7 @@ function PushRow({
   onInstall,
 }: {
   push: PushState;
-  tested: boolean;
+  tested: PushTestOutcome | null;
   onTest: () => void;
   onBlockedHelp: () => void;
   onInstall: () => void;
@@ -199,7 +200,7 @@ function PushRow({
           {push.status === "on" && (
             <div className="mt-2 pl-8">
               {tested ? (
-                <p className="text-sm text-success">Sent. It should arrive in a few seconds.</p>
+                <PushTestResult outcome={tested} />
               ) : (
                 <button type="button" onClick={onTest} disabled={push.busy} className="text-sm font-semibold text-primary disabled:opacity-50">
                   Send a test

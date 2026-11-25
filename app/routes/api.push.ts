@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.push";
 import { data } from "react-router";
 import { z } from "zod";
 import { getUser } from "~/utils/auth.server";
-import { deleteSubscription, isPushConfigured, saveSubscription, sendPush, setNotifyPref } from "~/utils/push.server";
+import { deleteSubscription, isPushConfigured, saveSubscription, sendPush, sendTestPush, setNotifyPref } from "~/utils/push.server";
 import { isSwitchableKind } from "~/utils/notify";
 import { db, pushSubscriptions } from "~/db";
 import { and, eq } from "drizzle-orm";
@@ -19,7 +19,7 @@ const body = z.discriminatedUnion("action", [
     }),
   }),
   z.object({ action: z.literal("unsubscribe"), endpoint: z.string().max(2000) }),
-  z.object({ action: z.literal("test") }),
+  z.object({ action: z.literal("test"), endpoint: z.string().max(2000).optional() }),
   z.object({ action: z.literal("prefs"), kind: z.string().refine(isSwitchableKind), on: z.boolean() }),
 ]);
 
@@ -55,13 +55,19 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ ok: true });
   }
 
-  await sendPush([user.id], "team", {
+  const test = {
     title: "BenchTalk",
     body: "Notifications are working on this device.",
     url: "/family",
     tag: "test",
-  });
-  return data({ ok: true });
+  };
+  // From one device: just that device, and say what the push service answered
+  if (input.endpoint) {
+    const result = await sendTestPush(user.id, input.endpoint, test);
+    if (!result) return data({ error: "This device isn't registered for notifications on your account. Turn them off and on again." }, { status: 409 });
+    return data({ ok: true, result });
+  }
+  return data({ ok: true, result: await sendPush([user.id], "team", test) });
 }
 
 export function loader() {
