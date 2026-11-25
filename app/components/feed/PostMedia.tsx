@@ -5,6 +5,7 @@ import { cx } from "~/components/ui";
 import { StaffBadge } from "~/components/StaffBadge";
 import { sendPostAction, type FeedAuthor, type FeedMediaItem, type PostStats } from "~/utils/feed";
 import { navMotion } from "~/utils/nav-motion";
+import { haptic } from "~/utils/haptics";
 
 // A post's files (one on its own, several as a swipeable carousel) and the
 // like/comment row under it. Ported from disney-social's PostMedia.
@@ -129,6 +130,7 @@ export function PostActions({
 
   const toggleLike = async () => {
     const liked = !shown.liked;
+    if (liked) haptic();
     const n = ++seq.current;
     setError(null);
     setOptimistic({ ...shown, liked, likes: Math.max(0, shown.likes + (liked ? 1 : -1)) });
@@ -162,7 +164,7 @@ export function PostActions({
           aria-label={shown.liked ? "Unlike" : "Like"}
           className={cx(btn, shown.liked ? "text-coral" : "text-muted")}
         >
-          <Heart size={22} weight={shown.liked ? "fill" : "regular"} className={cx("transition-transform", shown.liked && "scale-110")} />
+          <Heart size={22} weight={shown.liked ? "fill" : "regular"} className={cx("transition-transform", shown.liked && "like-pop scale-110")} />
           <span className="tabular">{shown.likes || ""}</span>
         </button>
         {commentsTo ? (

@@ -16,6 +16,7 @@ import { NotificationsMenu } from "~/components/NotificationsMenu";
 import { NotifyPrompt } from "~/components/NotifyPrompt";
 import { buttonClass, cx } from "~/components/ui";
 import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, ImagesSquare, SignOut } from "@phosphor-icons/react";
+import { PullToRefresh } from "~/components/PullToRefresh";
 
 // The family app: what parents see. Built phone-first, since most open it from
 // a notification or their Home Screen.
@@ -152,6 +153,8 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       </header>
+
+      <PullToRefresh />
 
       <main id="main" className={cx("mx-auto w-full max-w-3xl px-4", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
         <Outlet context={{ push, openInstall } satisfies FamilyContext} />
