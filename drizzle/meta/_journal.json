@@ -78,6 +78,13 @@
       "when": 1795621293944,
       "tag": "0010_direct_messages_one_to_one",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1795623567369,
+      "tag": "0011_announcement_acknowledged_by",
+      "breakpoints": true
     }
   ]
 }

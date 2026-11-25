@@ -27,6 +27,7 @@ import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
+import { ackSummaries } from "~/utils/announcements.server";
 
 async function access(request: Request, teamId: number, conversationId: number) {
   const user = await getUser(request);
@@ -81,9 +82,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const context = family ? await getFamilyContext(conversation.teamId, family, familyEmail ?? family.email) : null;
   const teamContext = conversation.kind === "team" ? await getTeamChatContext(conversation.teamId) : null;
 
+  // Under each announcement that asked for "Got it": who has
+  const ackIds = [...messages, ...(thread ? [thread.root] : [])].filter((m) => m.announcement?.ask === "ack").map((m) => m.id);
+  const acks = await ackSummaries(conversation.teamId, ackIds);
+
   return data({
     me: user.id,
     teamId: conversation.teamId,
+    acks,
     context,
     teamContext,
     title,
@@ -134,7 +140,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
-    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId,
+    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, acks,
   } = loaderData;
   const [showNotes, setShowNotes] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
@@ -221,6 +227,8 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           placeholder={kind === "team" ? "Message every family on the app" : "Message this family"}
           widthClass="max-w-2xl"
           showEmailDetails
+          acks={acks}
+          ackHref={(announcementId) => `/dashboard/team/${teamId}/announcements/${announcementId}`}
           composerExtra={
             delivery.email ? (
               <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />
