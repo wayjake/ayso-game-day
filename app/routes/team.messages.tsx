@@ -70,7 +70,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
       {/* List pane: the whole screen on phones (hidden while a thread is open), a column on desktop */}
       <div
         className={cx(
-          "mx-auto w-full max-w-2xl px-4 pt-6 sm:px-6 sm:pt-8",
+          "mx-auto w-full max-w-2xl px-safe pt-6 sm:pt-8",
           "lg:mx-0 lg:flex lg:w-[340px] lg:max-w-none lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:p-0",
           openId !== null && "hidden"
         )}

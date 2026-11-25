@@ -94,7 +94,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="canvas-top min-h-dvh bg-canvas px-4 pt-24 pb-16">
+    <main className="canvas-top min-h-dvh bg-canvas px-safe pt-24 pb-16">
       <div className="mx-auto max-w-xl">
       <p className="font-display text-7xl font-bold tracking-tight text-line-strong">{message}</p>
       <p className="mt-3 text-lg text-muted">{details}</p>

@@ -27,12 +27,13 @@ const buttonVariants: Record<ButtonVariant, string> = {
   "danger-soft": "text-danger hover:bg-danger-soft",
 };
 
+// On touch screens every size is at least 44px tall (Apple's minimum touch target)
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm",
-  md: "h-10 px-4 text-sm",
+  sm: "h-9 px-3 text-sm pointer-coarse:h-11",
+  md: "h-10 px-4 text-sm pointer-coarse:h-11",
   lg: "h-12 px-5 text-base",
-  "icon-sm": "h-9 w-9 text-sm",
-  icon: "h-10 w-10 text-sm",
+  "icon-sm": "h-9 w-9 text-sm pointer-coarse:h-11 pointer-coarse:w-11",
+  icon: "h-10 w-10 text-sm pointer-coarse:h-11 pointer-coarse:w-11",
 };
 
 export function buttonClass({
@@ -164,7 +165,7 @@ export function Page({
   return (
     <div
       className={cx(
-        "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 sm:pt-8",
+        "mx-auto w-full px-safe pt-6 pb-16 sm:pt-8",
         width === "wide" ? "max-w-7xl" : "max-w-2xl",
         className
       )}

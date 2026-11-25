@@ -1753,7 +1753,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                     ref={instructionsButtonRef}
                     onClick={() => setShowInstructions(!showInstructions)}
                     aria-expanded={showInstructions}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-subtle transition hover:bg-surface-2 hover:text-ink"
+                    className="tap inline-flex h-9 w-9 items-center justify-center rounded-full text-subtle transition hover:bg-surface-2 hover:text-ink"
                     aria-label="How to plan your lineup"
                   >
                     <Question size={20} />
@@ -1769,7 +1769,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                         <h3 className="text-sm font-semibold text-ink">How to plan your lineup</h3>
                         <button
                           onClick={() => setShowInstructions(false)}
-                          className="-mt-1 -mr-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-surface-2 hover:text-ink"
+                          className="tap -mt-1 -mr-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-surface-2 hover:text-ink"
                           aria-label="Close"
                         >
                           <X size={16} weight="bold" />

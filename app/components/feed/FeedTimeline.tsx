@@ -181,7 +181,7 @@ export function PostHeader({
             <button
               type="button"
               onClick={() => setConfirming(true)}
-              className="grid size-9 place-items-center rounded-full text-subtle transition hover:bg-danger-soft hover:text-danger"
+              className="tap grid size-9 place-items-center rounded-full text-subtle transition hover:bg-danger-soft hover:text-danger"
               aria-label="Delete post"
             >
               <Trash size={18} />

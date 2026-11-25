@@ -385,7 +385,7 @@ function FamilyPanel({ panel, teamId, me, onClose }: { panel: Panel; teamId: num
           <button
             type="button"
             onClick={onClose}
-            className="-mr-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            className="tap -mr-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
             aria-label="Close"
           >
             <X size={18} weight="bold" />

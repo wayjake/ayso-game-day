@@ -111,7 +111,7 @@ export function HelpButton({ className }: { className?: string }) {
       data-tour="help-button"
       aria-label="Help and tours"
       className={cx(
-        "flex h-9 w-9 items-center justify-center rounded-full text-muted ring-1 ring-line transition hover:bg-surface-2 hover:text-ink",
+        "tap flex h-9 w-9 items-center justify-center rounded-full text-muted ring-1 ring-line transition hover:bg-surface-2 hover:text-ink",
         className
       )}
     >
@@ -355,7 +355,7 @@ function TourRunner({
             <button
               type="button"
               onClick={leave}
-              className="-mr-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+              className="tap -mr-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
               aria-label="Skip tour"
             >
               <X size={16} weight="bold" />
@@ -454,7 +454,7 @@ function HelpSheet({
       >
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 id="help-title" className="text-lg font-semibold">Help</h2>
-          <button type="button" onClick={onClose} className="-mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
+          <button type="button" onClick={onClose} className="tap -mr-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
             <X size={18} weight="bold" />
           </button>
         </header>

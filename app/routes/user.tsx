@@ -18,7 +18,7 @@ export default function UserLayout() {
         </div>
       </aside>
 
-      <div className="flex min-h-dvh flex-col px-4 pt-[var(--safe-top)] sm:px-6">
+      <div className="flex min-h-dvh flex-col px-safe pt-[var(--safe-top)]">
         <header className="flex h-16 items-center justify-between gap-4">
           <Link to="/" aria-label="BenchTalk home">
             <AppMark />
