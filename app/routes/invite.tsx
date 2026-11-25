@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser, getUser } from "~/utils/auth.server";
 import { acceptInvites, getInviteByCode } from "~/utils/invites.server";
+import { linkFamily } from "~/utils/parent-invites.server";
 import { staffRoleLabel } from "~/utils/team-roles";
 import { AppMark } from "~/components/AppMark";
 import { Alert, Card, EmptyState, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
@@ -79,6 +80,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const teamIds = await acceptInvites(params.code, userId);
+  // A parent on the team who was made a coach is still their kids' parent
+  for (const teamId of teamIds) await linkFamily(teamId, found.invite.email!, userId);
   session.flash("success", "You've joined the team!");
 
   return redirect(teamIds.length === 1 ? `/dashboard/team/${teamIds[0]}` : "/dashboard", {

@@ -214,7 +214,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
           </Card>
 
           {/* Filters */}
-          <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Filter families" data-tour="tracker-filters">
+          <div className="mb-3 flex flex-wrap gap-2" role="tablist" aria-label="Filter families" data-tour="tracker-filters">
             {chips.filter((c) => !c.hidden).map((c) => {
               const next = new URLSearchParams(params);
               next.set("filter", c.value);

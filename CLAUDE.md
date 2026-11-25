@@ -140,6 +140,7 @@ The application uses Drizzle ORM with 8 main tables:
 ### Families (parent accounts, practices, RSVPs, messaging, push)
 11. **guardians** - Links a parent account to a player (userId, playerId, teamId). Being a parent comes only from these rows, never from `users.role` or `team_members`, so parents never get coach access. A coach can also be a parent.
 11b. **Team staff roles** - Coach access comes only from owning the team (`teams.coachId`) or an active `team_members` row. `team_members.role` is the staff role: `coach`, `assistant-coach` or `team-manager` (legacy `owner` rows read as coach; an owner with no row is a coach). All three get the same access; the role is a label shown as `StaffBadge` in messages, Settings and Families (`utils/team-roles.ts`, `getTeamStaff`/`setStaffRole`/`removeFromStaff` in `team-access.server.ts`). Only the owner invites staff (Settings, with a role), gives a parent already on the app a role or takes it away (Families), and changes roles. Game cards print the first coach and the first assistant coach (or a second coach); team managers aren't printed.
+11c. **Households** - A "family" in invites, threads, notes and announcements is still one email. The Edit family page (`team.families.edit.tsx`, `getHousehold`/`saveHousehold`/`setGuardianRole` in `family-admin.server.ts`) edits every email whose kids match exactly as one household: add or remove parents, one shared Players list, and (owner only) each parent's team role. A parent not on the app gets a coach invite for the role; accepting a coach invite also links them to their kids (`routes/invite.tsx`). The Families list groups the same households into one row with a line per parent (`groupHouseholds`). "Save and invite" saves, then invites every parent without a working invite. The parent invite email (`parentInviteEmail` in `parent-invites.server.ts`) explains BenchTalk, the team and its staff, and how to add it to an iPhone or Android home screen; like other family mail it goes to the coach outside production.
 12. **parentInvites** - One invite per family email per team (`/join/:code`). Accepting links every player on the team whose contacts use that email, so siblings come together.
 13. **practices** - One row per practice; a weekly series is rows sharing `seriesId`.
 14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
@@ -249,6 +250,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /api/uploadthing - File upload handler
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)
+/changelog - What's new, linked from the home page footer. Entries live in `app/utils/changelog.ts`
 /dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 /join/:code - Parent invite: sign up or log in, linked to their kids
 /ack/:token - "Got it" from an announcement email (POST to confirm)
@@ -619,13 +621,18 @@ Do feature development in a git worktree, never in the main checkout, so several
 - At the start of a feature session, create a worktree on a new branch (`EnterWorktree`, or `git worktree add .claude/worktrees/<name> -b <branch>`). Quick questions, reviews, and one-line fixes the user asks for in place don't need one.
 - A new worktree has no `node_modules`, `.env`, or `data/`. Run `npm install`, and copy `.env` and `data/dev.db` from the main checkout (copy the db, don't symlink it, so two sessions never write the same SQLite file).
 - Each worktree runs its own dev server, which overrides the general "don't run `npm run dev`" rule. The user's server runs from the main checkout on 5173. Start the worktree's server in the background on the first free port from 5174 up, with `npm run dev -- --port <n> --strictPort`, so every tree keeps its own port. Keep it running for the whole session and tell the user the URL. Cookies are per host, not per port, so a session signed in on 5173 is signed in here too.
-- When the work is done, commit on the worktree's branch and tell the user the branch name. Don't merge into `preview`/`main` unless asked.
+- **When a major change is done, ship it to `preview` without waiting for the user to test it.** "Done" means it typechecks and Claude has checked it in the app. Commit on the worktree's branch, merge it into `preview` (fast-forward or a merge commit, never a force push), push `preview`, then clean up as below. This keeps worktrees and branches from piling up; the user tests on the preview deploy. If the merge conflicts, or the branch needs a migration that isn't additive, stop and ask. Never merge into `main` unless asked.
+- Small or unfinished work stays on its branch: commit it and tell the user the branch name.
 - **Once the branch is merged and pushed, clean up straight away:**
   1. Stop every background task the session started for it: the worktree's dev server and anything else still running (stop the task, or kill whatever listens on its port).
   2. Remove the worktree with `git worktree remove .claude/worktrees/<name>`. That deletes its files, including its `node_modules`, `.env` and `data/dev.db` copies.
   3. Delete the merged branch with `git branch -d <branch>`, and its remote copy with `git push origin --delete <branch>` if it was pushed.
   4. Only clean up what this session created. Leave other sessions' worktrees and dev servers alone.
   5. If either one refuses (the worktree has uncommitted or untracked changes, or the branch isn't merged), stop and tell the user. Don't use `--force` or `-D`.
+
+### Shipping preview to main
+
+Main goes live through a PR from `preview` to `main`, which the user merges. Before opening it, add a release to the top of `app/utils/changelog.ts` covering everything in `main..preview`, written for coaches and families (what they can do now, not how it was built), and ship that to `preview` first.
 
 ### After every push, update the local checkout
 
