@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
-import { db, contacts, guardians, parentInvites, players, teams, users } from "~/db";
+import { db, contacts, guardians, parentInvites, players, teamInvites, teams, users } from "~/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { escapeHtml, familyDeliveryAddress, sendEmail } from "~/utils/email.server";
 import { getTeamStaff } from "~/utils/team-access.server";
 import { staffRoleLabel, type StaffRole } from "~/utils/team-roles";
-import { normalizeEmail } from "~/utils/invites.server";
+import { inviteUrl as staffInviteUrl, normalizeEmail } from "~/utils/invites.server";
 import { claimFamilyConversation } from "~/utils/messages.server";
 
 // Parent invites go out per family: one email address per team, covering every
@@ -38,6 +38,11 @@ export type Family = {
   status: FamilyStatus;
   invitedAt: string | null;
   inviteUrl: string | null;
+  // Set when the invite they're waiting on is a coach invite (a parent given a
+  // staff role before joining). Accepting it links them to their kids too, so
+  // it counts as their invite: inviting them again as a parent would send a
+  // second email.
+  staffInvite: StaffRole | null;
   userIds: number[]; // Parent accounts that belong to this family email
 };
 
@@ -69,13 +74,19 @@ export async function listFamilies(request: Request | null, teamId: number): Pro
     .where(eq(parentInvites.teamId, teamId))
     .orderBy(desc(parentInvites.createdAt), desc(parentInvites.id));
 
+  const coachInvites = await db
+    .select()
+    .from(teamInvites)
+    .where(and(eq(teamInvites.teamId, teamId), eq(teamInvites.status, "pending")))
+    .orderBy(desc(teamInvites.createdAt), desc(teamInvites.id));
+
   const families = new Map<string, Family>();
   for (const row of rows) {
     const email = normalizeEmail(row.email);
     if (!email) continue;
     let family = families.get(email);
     if (!family) {
-      family = { email, parentNames: [], kids: [], status: "not-invited", invitedAt: null, inviteUrl: null, userIds: [] };
+      family = { email, parentNames: [], kids: [], status: "not-invited", invitedAt: null, inviteUrl: null, staffInvite: null, userIds: [] };
       families.set(email, family);
     }
     if (!family.parentNames.includes(row.contactName)) family.parentNames.push(row.contactName);
@@ -98,10 +109,20 @@ export async function listFamilies(request: Request | null, teamId: number): Pro
 
     if (family.kids.some((k) => k.linked)) {
       family.status = "joined";
-    } else if (latest?.status === "pending") {
-      family.status = isExpired(latest) ? "expired" : "invited";
-      family.invitedAt = latest.createdAt;
-      family.inviteUrl = isExpired(latest) || !request ? null : parentInviteUrl(request, latest.shareCode);
+      continue;
+    }
+    // Whichever invite went out last is the one they're waiting on
+    const parent = latest?.status === "pending" ? latest : null;
+    const coach = coachInvites.find((i) => i.email === family.email && i.shareCode) ?? null;
+    if (coach && (!parent || coach.createdAt >= parent.createdAt)) {
+      family.status = isExpired(coach) ? "expired" : "invited";
+      family.invitedAt = coach.createdAt;
+      family.inviteUrl = isExpired(coach) || !request ? null : staffInviteUrl(request, coach.shareCode!);
+      family.staffInvite = coach.role;
+    } else if (parent) {
+      family.status = isExpired(parent) ? "expired" : "invited";
+      family.invitedAt = parent.createdAt;
+      family.inviteUrl = isExpired(parent) || !request ? null : parentInviteUrl(request, parent.shareCode);
     }
   }
 

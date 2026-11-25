@@ -92,6 +92,13 @@
       "when": 1795623567369,
       "tag": "0012_announcement_acknowledged_by",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1795627435838,
+      "tag": "0013_group_chats",
+      "breakpoints": true
     }
   ]
 }

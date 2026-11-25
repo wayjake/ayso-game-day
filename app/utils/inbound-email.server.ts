@@ -374,7 +374,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       lastMessageAt: sql`max(coalesce(${conversations.lastMessageAt}, ''), ${message.createdAt})`,
       lastMessagePreview: sql`case when coalesce(${conversations.lastMessageAt}, '') > ${message.createdAt} then ${conversations.lastMessagePreview} else ${preview(shown)} end`,
       // An out-of-office shouldn't flag the thread, and the team chat has no "Needs reply"
-      ...(inbound.isAutoReply || conversation.kind === "team" ? {} : { needsReply: true }),
+      ...(inbound.isAutoReply || conversation.kind !== "direct" ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
   await publishConversation(conversation, { kind: "message", threadId: rootId });

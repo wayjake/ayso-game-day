@@ -334,12 +334,16 @@ export const rsvps = sqliteTable('rsvps', {
   index('rsvps_team_idx').on(t.teamId),
 ]);
 
-// A team chat (every coach and parent on the team) or a private thread between
-// one parent and the team's coaching staff.
+// A team chat (every coach and parent on the team), a private thread between
+// one family and one staff member, or a group chat (only its members).
 export const conversations = sqliteTable('conversations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
-  kind: text('kind', { enum: ['team', 'direct'] }).notNull(),
+  kind: text('kind', { enum: ['team', 'direct', 'group'] }).notNull(),
+  // Groups: an optional name (otherwise titled by its members) and who started
+  // it. Anyone on the team can start one; members are in conversationMembers.
+  name: text('name'),
+  createdBy: integer('created_by').references(() => users.id),
   // A 'direct' thread is one-to-one: one staff member (staffUserId) and one
   // family. Only those two can read it; other staff can't. The family side is a
   // parent account, a family email, or both. A family that isn't on the app yet
@@ -383,6 +387,25 @@ export const messages = sqliteTable('messages', {
   index('messages_parent_idx').on(t.parentId, t.id),
   index('messages_resend_email_idx').on(t.resendEmailId),
   index('messages_email_message_idx').on(t.emailMessageId),
+]);
+
+// Who is in a group chat. Only members can read it, whoever owns the team. A
+// member is an account (staff or parent), or a family email for a family not
+// on the app yet: they see the group once they join (claimFamilyConversation
+// fills in userId). Being a member counts only while that person is still on
+// the team (staff, or a guardian there).
+export const conversationMembers = sqliteTable('conversation_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
+  userId: integer('user_id').references(() => users.id),
+  familyEmail: text('family_email'), // Lowercased. Set for families, picked by email or not
+  addedBy: integer('added_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('conversation_members_user_idx').on(t.conversationId, t.userId).where(sql`user_id is not null`),
+  uniqueIndex('conversation_members_email_idx').on(t.conversationId, t.familyEmail).where(sql`user_id is null`),
+  index('conversation_members_user_lookup_idx').on(t.userId),
+  index('conversation_members_email_lookup_idx').on(t.familyEmail),
 ]);
 
 // One emoji reaction per person per message per emoji, from a fixed set (utils/reactions.ts).

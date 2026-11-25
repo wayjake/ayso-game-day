@@ -1,5 +1,5 @@
-import { db, contacts, conversations, familyNotes, guardians, parentInvites, players, teamInvites, users } from "~/db";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { db, contacts, conversationMembers, conversations, familyNotes, guardians, parentInvites, players, teamInvites, users } from "~/db";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { createInvites, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
 import { familyDeliveryAddress } from "~/utils/email.server";
 import { listFamilies, type FamilyStatus } from "~/utils/parent-invites.server";
@@ -149,6 +149,21 @@ export async function saveFamily({
     const moving = await db.select({ id: conversations.id, staff: conversations.staffUserId }).from(conversations).where(and(directs, eq(conversations.familyEmail, oldEmail)));
     for (const row of moving) {
       if (!taken.has(row.staff)) await db.update(conversations).set({ familyEmail: email }).where(eq(conversations.id, row.id));
+    }
+    // Groups they were added to before joining the app: the seat moves too
+    const seats = await db
+      .select({ id: conversationMembers.id, conversationId: conversationMembers.conversationId })
+      .from(conversationMembers)
+      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+      .where(and(eq(conversations.teamId, teamId), eq(conversationMembers.familyEmail, oldEmail), isNull(conversationMembers.userId)));
+    for (const seat of seats) {
+      const [already] = await db
+        .select({ id: conversationMembers.id })
+        .from(conversationMembers)
+        .where(and(eq(conversationMembers.conversationId, seat.conversationId), eq(conversationMembers.familyEmail, email), isNull(conversationMembers.userId)))
+        .limit(1);
+      if (already) await db.delete(conversationMembers).where(eq(conversationMembers.id, seat.id));
+      else await db.update(conversationMembers).set({ familyEmail: email }).where(eq(conversationMembers.id, seat.id));
     }
   }
 
@@ -312,6 +327,8 @@ export async function saveHousehold({
   return { ok: true };
 }
 
+export type GuardianRoleChange = { note: string; invite?: "sent" | "link-only" };
+
 // Gives a guardian a staff role, or takes it away. On the app: changes their
 // account's role. Not on the app yet: sends (or cancels) a coach invite, and
 // accepting it also links them to their kids.
@@ -327,38 +344,58 @@ export async function setGuardianRole({
   guardian: { email: string; name?: string; userId: number | null; staffRole: StaffRole | null; staffInvite: StaffRole | null };
   role: StaffRole | null;
   owner: { id: number; name: string | null; email: string };
-}): Promise<string | null> {
+}): Promise<GuardianRoleChange | null> {
   const who = guardian.name?.trim() || guardian.email;
   if (guardian.userId) {
     if (role === guardian.staffRole) return null;
     if (!role) {
       if (guardian.userId === team.coachId) return null;
       await removeFromStaff(team.id, guardian.userId);
-      return `${who} is a parent only now, without coach access.`;
+      return { note: `${who} is a parent only now, without coach access.` };
     }
     await setStaffRole(team.id, guardian.userId, role, owner.id);
-    return `${who} is now ${staffRoleLabel(role).toLowerCase()}.`;
+    return { note: `${who} is now ${staffRoleLabel(role).toLowerCase()}.` };
   }
 
   if (role === guardian.staffInvite) return null;
   if (!role) {
     await revokeCoachInvites(team.id, guardian.email);
-    return `Cancelled the coach invite to ${who}.`;
+    return { note: `Cancelled the coach invite to ${who}.` };
   }
-  const { created } = await createInvites({ email: guardian.email, teamIds: [team.id], invitedBy: owner.id, role });
+  const invite = await sendCoachInvite({ request, team, email: guardian.email, role, owner });
+  if (!invite) return null;
+  const label = staffRoleLabel(role).toLowerCase();
+  return invite === "sent"
+    ? { note: `Emailed ${who} an invite to join as ${label}.`, invite }
+    : { note: `Invited ${who} as ${label}, but the email didn't go out. Copy their invite link from Settings.`, invite };
+}
+
+// Sends a new coach invite for this role (the old link stops working).
+// Null when they're already on this team's staff.
+export async function sendCoachInvite({
+  request,
+  team,
+  email,
+  role,
+  owner,
+}: {
+  request: Request;
+  team: { id: number; name: string };
+  email: string;
+  role: StaffRole;
+  owner: { id: number; name: string | null; email: string };
+}): Promise<"sent" | "link-only" | null> {
+  const { created } = await createInvites({ email, teamIds: [team.id], invitedBy: owner.id, role });
   if (created.length === 0) return null;
   const result = await sendInviteEmail({
     request,
     // Outside production this goes to the coach instead, like all family mail
-    to: familyDeliveryAddress(guardian.email, owner.email),
+    to: familyDeliveryAddress(email, owner.email),
     shareCode: created[0].shareCode,
     inviterName: owner.name || owner.email,
     inviterEmail: owner.email,
     teamNames: [team.name],
     role,
   });
-  const label = staffRoleLabel(role).toLowerCase();
-  return result.sent
-    ? `Emailed ${who} an invite to join as ${label}.`
-      : `Invited ${who} as ${label}, but the email didn't go out. Copy their invite link from Settings.`;
+  return result.sent ? "sent" : "link-only";
 }
