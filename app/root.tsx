@@ -54,6 +54,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
       </head>
       <body>
+        {/* Solid cover for the status bar area (app.css, .status-strip) */}
+        <div aria-hidden className="status-strip" />
         {children}
         <ScrollRestoration />
         <Scripts />
