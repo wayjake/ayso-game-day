@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Cancel a practice your way",
+    summary: "When you cancel or restore a practice, you choose whether families hear about it, and see exactly what they'll get.",
+    changes: [
+      { kind: "improved", text: "Cancelling or restoring a practice asks first, and lets you choose whether to notify families. If you don't, it just shows as cancelled on the schedule." },
+      { kind: "new", text: "Edit the notification's title and message before it goes out, with a preview of how it looks on a phone, and see how many parents will get it." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Your account, one tap away",
     summary: "A round avatar with your initials at the top of the app opens your account, and coaches can now choose which notifications they get.",
     changes: [
