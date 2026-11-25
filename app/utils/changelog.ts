@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Announcements side by side",
+    summary: "On a computer, announcements open beside their list, the same way messages do.",
+    changes: [
+      { kind: "improved", text: "On a computer, the announcements list stays on the left and the one you open, or a new one you're writing, fills the rest of the screen, just like the Inbox." },
+      { kind: "fixed", text: "The Inbox and Announcements switch is split evenly, so the one you're on fills its half." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Cancel a practice your way",
     summary: "When you cancel or restore a practice, you choose whether families hear about it, and see exactly what they'll get.",
     changes: [
