@@ -9,26 +9,40 @@ CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 SRC="file://$(pwd)/scripts/launch-images/launch.html"
 mkdir -p public/launch
 
-# width height ratio
-while read -r W H R; do
-  [ -z "$W" ] && continue
-  OUT="public/launch/launch-$((W * R))x$((H * R)).png"
+render() { # css-width css-height ratio
+  OUT="public/launch/launch-$(($1 * $3))x$(($2 * $3)).png"
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --no-first-run \
-    --force-device-scale-factor="$R" --window-size="$W,$H" \
-    --virtual-time-budget=4000 --screenshot="$OUT" "$SRC?w=$W&h=$H" >/dev/null 2>&1
+    --force-device-scale-factor="$3" --window-size="$1,$2" \
+    --virtual-time-budget=4000 --screenshot="$OUT" "$SRC?w=$1&h=$2" >/dev/null 2>&1
   echo "$OUT $(sips -g pixelWidth -g pixelHeight "$OUT" | awk '/pixel/ {printf "%s ", $2}')"
+}
+
+# width height ratio orientations: p (portrait) for iPhones, pl (both) for iPads
+while read -r W H R O; do
+  [ -z "$W" ] && continue
+  render "$W" "$H" "$R"
+  case "$O" in *l*) render "$H" "$W" "$R" ;; esac
 done <<SCREENS
-440 956 3
-420 912 3
-402 874 3
-430 932 3
-393 852 3
-428 926 3
-390 844 3
-375 812 3
-414 896 3
-414 896 2
-414 736 3
-375 667 2
-320 568 2
+440 956 3 p
+420 912 3 p
+402 874 3 p
+430 932 3 p
+393 852 3 p
+428 926 3 p
+390 844 3 p
+375 812 3 p
+414 896 3 p
+414 896 2 p
+414 736 3 p
+375 667 2 p
+320 568 2 p
+1032 1376 2 pl
+1024 1366 2 pl
+834 1210 2 pl
+834 1194 2 pl
+820 1180 2 pl
+834 1112 2 pl
+810 1080 2 pl
+744 1133 2 pl
+768 1024 2 pl
 SCREENS

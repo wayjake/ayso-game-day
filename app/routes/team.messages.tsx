@@ -102,7 +102,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search families or kids"
-              className="block h-9 w-full rounded-lg border border-line-strong bg-canvas pr-3 pl-9 text-sm text-ink placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="block h-9 w-full rounded-lg border border-field bg-canvas pr-3 pl-9 text-sm text-ink placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
 

@@ -231,7 +231,7 @@ function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
 
             <fieldset>
               <legend className={labelClass}>Players</legend>
-              <div className="grid gap-1 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                 {roster.map((p) => (
                   <label key={p.id} className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg px-2 text-sm hover:bg-surface-2">
                     <input type="checkbox" name="playerId" value={p.id} defaultChecked={selected.has(p.id)} className="h-4 w-4 shrink-0 accent-primary" />
@@ -364,7 +364,7 @@ function GuardianCard({
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label htmlFor={id("name")} className={labelClass}>Name</label>
           <input id={id("name")} name={field("name")} type="text" required defaultValue={g?.name ?? ""} className={inputClass} placeholder="e.g. Sarah Johnson" />

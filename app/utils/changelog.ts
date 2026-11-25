@@ -13,6 +13,18 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Follows your text size",
+    summary: "BenchTalk on iPhone and iPad now follows your Text Size setting, and forms are easier to see.",
+    changes: [
+      { kind: "improved", text: "On iPhone and iPad, text follows the size you've picked in Settings, from smaller to the largest accessibility sizes, and pages reflow to fit." },
+      { kind: "improved", text: "Text boxes and checkboxes have clearer edges, so empty ones are easy to spot." },
+      { kind: "improved", text: "The smallest labels, like positions on the lineup field, are larger, and email addresses, phone numbers, map links and photo arrows are easier to tap." },
+      { kind: "new", text: "BenchTalk on iPad opens with its logo instead of a blank screen, in either orientation." },
+      { kind: "fixed", text: "The team overview no longer runs off the side of a phone screen." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Easier to tap",
     summary: "Buttons, checkboxes and links are easier to hit on a phone, and BenchTalk fills the screen sideways.",
     changes: [

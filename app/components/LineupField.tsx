@@ -99,7 +99,7 @@ export function FieldPlayer({
         >
           <span>{player.jerseyNumber ?? position.abbreviation}</span>
           {player.jerseyNumber != null && (
-            <span className="mt-0.5 font-sans text-[9px] font-semibold tracking-wide text-muted">{position.abbreviation}</span>
+            <span className="mt-0.5 font-sans text-[11px] font-semibold tracking-wide text-muted">{position.abbreviation}</span>
           )}
         </div>
         <div
@@ -231,7 +231,7 @@ export function QuarterBar({ current, onChange }: { current: number; onChange: (
               >
                 {isActive && <span className="absolute inset-x-5 top-0 h-[3px] rounded-b-full bg-primary" aria-hidden />}
                 <span className="font-display text-xl font-bold leading-none tabular">Q{quarter}</span>
-                <span className={`mt-1 text-[10px] font-semibold uppercase tracking-wider ${isActive ? "text-primary" : "text-subtle"}`}>
+                <span className={`mt-1 text-[11px] font-semibold uppercase tracking-wider ${isActive ? "text-primary" : "text-subtle"}`}>
                   Quarter
                 </span>
               </button>

@@ -116,7 +116,7 @@ export default function NewTeam({ actionData }: Route.ComponentProps) {
             <p className={hintClass}>Choose the game format for your team's age group.</p>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             {/* Age group */}
             <div>
               <label htmlFor="ageGroup" className={labelClass}>

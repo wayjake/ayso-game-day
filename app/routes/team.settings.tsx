@@ -284,7 +284,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
             <label htmlFor="name" className={labelClass}>Team name</label>
             <input id="name" name="name" required defaultValue={team.name} className={inputClass} />
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label htmlFor="region" className={labelClass}>Region</label>
               <input id="region" name="region" defaultValue={team.region ?? ""} placeholder="254" className={inputClass} />
@@ -298,7 +298,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
               <input id="teamNumber" name="teamNumber" defaultValue={team.teamNumber ?? ""} placeholder="4" className={inputClass} />
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="season" className={labelClass}>Season</label>
               <input id="season" name="season" defaultValue={team.season ?? ""} placeholder="Fall 2026" className={inputClass} />
@@ -467,7 +467,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
           </p>
           <Form method="post" className="mt-5 space-y-4">
             <input type="hidden" name="_action" value="invite" />
-            <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
               <div>
                 <label htmlFor="inviteEmail" className={labelClass}>Email</label>
                 <input id="inviteEmail" name="email" type="email" required placeholder="coach@example.com" className={inputClass} />

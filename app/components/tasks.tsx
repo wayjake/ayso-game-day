@@ -63,7 +63,7 @@ export function TaskForm({
             placeholder="Venmo @thunder-u10 or cash at practice"
           />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="link" className={labelClass}>
               Link <span className="font-normal text-muted">(optional)</span>

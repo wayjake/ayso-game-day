@@ -243,7 +243,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <p className="mt-3 text-lg text-muted">No plans and no subscription. AI is optional and you only pay for what you use.</p>
           </div>
 
-          <div className="mt-10 grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <div className="flex flex-col rounded-2xl bg-surface p-6 shadow-raised ring-2 ring-primary sm:p-8">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-semibold">Coaching</h3>
@@ -251,7 +251,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               </div>
               <div className="mt-4 font-display text-6xl font-bold tracking-tight">Free</div>
               <p className="mt-1 text-muted">Every schedule, message and game day feature.</p>
-              <ul className="mt-6 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">
+              <ul className="mt-6 grid grid-cols-1 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">
                 {[
                   "Unlimited teams and families",
                   "Games, practices and RSVPs",
@@ -300,7 +300,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <section id="faq" className="scroll-mt-14 border-t border-line bg-surface py-16 sm:py-24">
         <div className={container}>
           <h2 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Questions coaches ask</h2>
-          <dl className="mt-10 grid gap-x-12 gap-y-8 md:grid-cols-2">
+          <dl className="mt-10 grid grid-cols-1 gap-x-12 gap-y-8 md:grid-cols-2">
             {faqs.map((faq) => (
               <div key={faq.question}>
                 <dt className="text-lg font-semibold">{faq.question}</dt>
@@ -331,7 +331,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                 <label htmlFor="cta-email" className={labelClass}>Email</label>
                 <input id="cta-email" name="email" type="email" className={inputClass} placeholder="coach@club.org" />
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label htmlFor="cta-team" className={labelClass}>Team name</label>
                   <input id="cta-team" name="teamName" className={inputClass} placeholder="U12 Spartans" />
@@ -465,7 +465,7 @@ function Feature({ icon, title, ai = false, children }: { icon: ReactNode; title
 function DateBlock({ month, day }: { month: string; day: string }) {
   return (
     <div className="flex w-12 shrink-0 flex-col items-center rounded-lg bg-surface-2 py-1 ring-1 ring-line">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">{month}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{month}</span>
       <span className="font-display text-xl font-bold leading-none tabular">{day}</span>
     </div>
   );
