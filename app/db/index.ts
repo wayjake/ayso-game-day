@@ -6,7 +6,7 @@ import * as schema from './schema';
 const useTurso = process.env.TURSO_URL && process.env.TURSO_TOKEN;
 
 const client = createClient({
-  url: useTurso ? process.env.TURSO_URL! : (process.env.DATABASE_URL || 'file:./local.db'),
+  url: useTurso ? process.env.TURSO_URL! : (process.env.DATABASE_URL || 'file:./data/dev.db'),
   authToken: useTurso ? process.env.TURSO_TOKEN : undefined,
 });
 

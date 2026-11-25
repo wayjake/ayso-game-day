@@ -12,7 +12,7 @@ const config: Config = {
     url: process.env.TURSO_URL!,
     authToken: process.env.TURSO_TOKEN!,
   } : {
-    url: process.env.DATABASE_URL || 'file:./local.db',
+    url: process.env.DATABASE_URL || 'file:./data/dev.db',
   },
 };
 

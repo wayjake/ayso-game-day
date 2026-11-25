@@ -17,3 +17,6 @@
 
 # Claude Code worktrees
 /.claude/worktrees/
+
+# Stale local database; dev uses data/dev.db
+/local.db

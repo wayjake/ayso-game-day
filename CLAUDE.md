@@ -19,7 +19,7 @@ This project is an AYSO (American Youth Soccer Organization) team management app
 - **Turso/LibSQL** - Cloud-based SQLite for staging and production
 - **SQLite** - Local development fallback
 - **Database environments**:
-  - **Local**: SQLite at `data/dev.db` (`DATABASE_URL=file:./data/dev.db`), for quick test data. `data/` is ignored by git and Syncthing. `local.db` in the repo is a stale copy; don't use it.
+  - **Local**: SQLite at `data/dev.db` (`DATABASE_URL=file:./data/dev.db`), for quick test data. `data/` is ignored by git and Syncthing (`~/Work/.stignore`), and so are `.claude/worktrees/`. `local.db` is a stale copy, no longer tracked; don't use it.
     - Leave `TURSO_URL`/`TURSO_TOKEN` unset locally. When they're set, both the app and drizzle-kit use them instead, so placeholder values crash the app (`URL_INVALID`) and make drizzle-kit write to a file named after the placeholder.
     - Scripts run with `tsx` (e.g. `npm run db:seed`) don't load `.env`. Prefix them with `DATABASE_URL=file:./data/dev.db` or they write to `local.db`.
     - `npm run db:push` currently fails on this schema: drizzle-kit mishandles the partial unique indexes from 0003 ("no such index") and applies nothing. Apply new migration SQL to `data/dev.db` directly with `sqlite3`.
