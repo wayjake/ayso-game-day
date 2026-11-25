@@ -1,7 +1,7 @@
 import type { Route } from "./+types/dashboard._index";
 import { redirect } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { activeTeams, canAccessTeam } from "~/utils/team-access.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 import { getLastTeamId } from "~/utils/last-team.server";
 import { isParent } from "~/utils/family.server";
 import { db, teams } from "~/db";
