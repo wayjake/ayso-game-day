@@ -28,6 +28,7 @@ import { EmailToggle } from "~/components/EmailToggle";
 import { taskDraftFor } from "~/utils/tasks.server";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
+import { ackSummaries } from "~/utils/announcements.server";
 
 async function access(request: Request, teamId: number, conversationId: number) {
   const user = await getUser(request);
@@ -88,9 +89,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? await taskDraftFor(request, conversation.teamId, familyEmail, Boolean(conversation.parentUserId))
       : null;
 
+  // Under each announcement that asked for "Got it": who has
+  const ackIds = [...messages, ...(thread ? [thread.root] : [])].filter((m) => m.announcement?.ask === "ack").map((m) => m.id);
+  const acks = await ackSummaries(conversation.teamId, ackIds);
+
   return data({
     me: user.id,
     teamId: conversation.teamId,
+    acks,
     context,
     teamContext,
     title,
@@ -142,7 +148,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
-    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft,
+    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft, acks,
   } = loaderData;
   // The draft is in the box now; drop it from the URL so a reload doesn't bring it back
   const [searchParams, setSearchParams] = useSearchParams();
@@ -238,6 +244,8 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           widthClass="max-w-2xl"
           initialDraft={draft}
           showEmailDetails
+          acks={acks}
+          ackHref={(announcementId) => `/dashboard/team/${teamId}/announcements/${announcementId}`}
           composerExtra={
             delivery.email ? (
               <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />

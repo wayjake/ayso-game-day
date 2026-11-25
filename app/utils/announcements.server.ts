@@ -14,7 +14,7 @@ import {
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { getCoachUserIds } from "~/utils/family.server";
 import { listFamilies, type Family } from "~/utils/parent-invites.server";
-import { getOrCreateFamilyConversation, getOrCreateTeamConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
+import { familyLabels, getOrCreateFamilyConversation, getOrCreateTeamConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
 import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, escapeHtml, familyDeliveryAddress, sendEmail, textToHtml } from "~/utils/email.server";
@@ -345,6 +345,8 @@ export async function findRecipientByAckToken(token: string) {
   const [row] = await db
     .select({
       id: announcementRecipients.id,
+      teamId: announcementRecipients.teamId,
+      familyEmail: announcementRecipients.familyEmail,
       acknowledgedAt: announcementRecipients.acknowledgedAt,
       subject: announcements.subject,
       teamName: teams.name,
@@ -358,11 +360,74 @@ export async function findRecipientByAckToken(token: string) {
   return row ?? null;
 }
 
-export async function acknowledgeRecipient(recipientId: number) {
+// The first "Got it" counts: its time, who (a parent account, when we know
+// one) and where (the app, or the email's link)
+export async function acknowledgeRecipient(recipientId: number, by: { userId: number | null; via: "app" | "email" }) {
+  const first = sql`${announcementRecipients.acknowledgedAt} is null`;
   await db
     .update(announcementRecipients)
-    .set({ acknowledgedAt: sql`coalesce(${announcementRecipients.acknowledgedAt}, ${new Date().toISOString()})` })
+    .set({
+      acknowledgedAt: sql`coalesce(${announcementRecipients.acknowledgedAt}, ${new Date().toISOString()})`,
+      acknowledgedBy: sql`case when ${first} then ${by.userId} else ${announcementRecipients.acknowledgedBy} end`,
+      acknowledgedVia: sql`case when ${first} then ${by.via} else ${announcementRecipients.acknowledgedVia} end`,
+    })
     .where(eq(announcementRecipients.id, recipientId));
+}
+
+/** Whether this signed-in person is one of the family an announcement row was sent to */
+export async function isInRecipientFamily(teamId: number, familyEmail: string, userId: number) {
+  const family = (await listFamilies(null, teamId)).find((f) => f.email === familyEmail);
+  return Boolean(family?.userIds.includes(userId));
+}
+
+// Display names for "Got it": the parent account that tapped it, or for a tap
+// on the email's link without one, the family contact the email went to
+async function acknowledgerNames(
+  teamId: number,
+  rows: { id: number; familyEmail: string; acknowledgedAt: string | null; acknowledgedBy: number | null }[]
+) {
+  const result = new Map<number, string>();
+  const acked = rows.filter((r) => r.acknowledgedAt);
+  if (acked.length === 0) return result;
+  const userIds = [...new Set(acked.flatMap((r) => (r.acknowledgedBy ? [r.acknowledgedBy] : [])))];
+  const people = userIds.length
+    ? new Map((await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))).map((u) => [u.id, u.name || u.email]))
+    : new Map<number, string>();
+  const anonymous = acked.filter((r) => !r.acknowledgedBy || !people.has(r.acknowledgedBy)).map((r) => r.familyEmail);
+  const labels = await familyLabels(teamId, [...new Set(anonymous)]);
+  for (const r of acked) {
+    result.set(r.id, (r.acknowledgedBy && people.get(r.acknowledgedBy)) || labels.get(r.familyEmail)?.names[0] || r.familyEmail);
+  }
+  return result;
+}
+
+export type AckSummary = { announcementId: number; total: number; names: string[] };
+
+/** Staff, under announcement copies that asked for "Got it": who has, by name, and out of how many */
+export async function ackSummaries(teamId: number, messageIds: number[]) {
+  const result: Record<number, AckSummary> = {};
+  if (messageIds.length === 0) return result;
+  const rows = await db
+    .select({
+      id: announcementRecipients.id,
+      messageId: announcementRecipients.messageId,
+      announcementId: announcementRecipients.announcementId,
+      familyEmail: announcementRecipients.familyEmail,
+      acknowledgedAt: announcementRecipients.acknowledgedAt,
+      acknowledgedBy: announcementRecipients.acknowledgedBy,
+    })
+    .from(announcementRecipients)
+    .innerJoin(announcements, eq(announcementRecipients.announcementId, announcements.id))
+    .where(and(eq(announcementRecipients.teamId, teamId), inArray(announcementRecipients.messageId, messageIds), eq(announcements.ask, "ack")))
+    .orderBy(asc(announcementRecipients.acknowledgedAt));
+  const names = await acknowledgerNames(teamId, rows);
+  for (const r of rows) {
+    const entry = (result[r.messageId!] ??= { announcementId: r.announcementId, total: 0, names: [] });
+    entry.total += 1;
+    const name = names.get(r.id);
+    if (name && !entry.names.includes(name)) entry.names.push(name);
+  }
+  return result;
 }
 
 // The announcement rows that are this parent's in a conversation. In their
@@ -383,7 +448,7 @@ export async function acknowledgeFromThread(messageId: number, conversation: typ
     .select({ id: announcementRecipients.id })
     .from(announcementRecipients)
     .where(and(eq(announcementRecipients.messageId, messageId), await parentRecipients(conversation, userId)));
-  for (const r of rows) await acknowledgeRecipient(r.id);
+  for (const r of rows) await acknowledgeRecipient(r.id, { userId, via: "app" });
   return rows.length > 0;
 }
 
@@ -430,6 +495,9 @@ export type RecipientView = {
   openedAt: string | null;
   repliedAt: string | null;
   acknowledgedAt: string | null;
+  /** Who tapped "Got it": a parent's name, or the family contact the email went to */
+  acknowledgedBy: string | null;
+  acknowledgedVia: "app" | "email" | null;
   remindedAt: string | null;
   bouncedAt: string | null;
 };
@@ -569,6 +637,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
   }
 
   const withPush = await usersWithPush(rows.flatMap((x) => (x.currentParent ? [x.currentParent] : [])));
+  const ackNames = await acknowledgerNames(teamId, rows.map((x) => x.r));
   const now = Date.now();
   const recipients: RecipientView[] = rows.map(({ r: row, kind, needsReply, currentParent, staffUserId, lastRead }) => {
     const inTeamChat = kind === "team";
@@ -611,6 +680,8 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
       openedAt: r.openedAt,
       repliedAt: r.repliedAt,
       acknowledgedAt: r.acknowledgedAt,
+      acknowledgedBy: ackNames.get(r.id) ?? null,
+      acknowledgedVia: r.acknowledgedVia,
       remindedAt: r.remindedAt,
       bouncedAt: r.bouncedAt,
     };

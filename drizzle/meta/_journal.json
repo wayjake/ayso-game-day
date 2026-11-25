@@ -85,6 +85,13 @@
       "when": 1795622502629,
       "tag": "0011_family_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1795623567369,
+      "tag": "0012_announcement_acknowledged_by",
+      "breakpoints": true
     }
   ]
 }

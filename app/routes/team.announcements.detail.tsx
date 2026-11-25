@@ -272,6 +272,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
                       {r.lastReply ? `“${r.lastReply.replace(/\s+/g, " ")}”`
                         : r.needsYouReason ? r.needsYouReason
                         : r.state === "bounced" ? r.bounceReason
+                        : r.acknowledgedAt ? `Got it from ${r.acknowledgedBy ?? "this family"} · ${formatMessageTime(r.acknowledgedAt)}`
                         : r.sentAt ? `Sent ${formatMessageTime(r.sentAt)}${r.remindedAt ? ` · reminded ${formatMessageTime(r.remindedAt)}` : ""}`
                         : r.error ?? "Sending…"}
                     </p>
@@ -362,7 +363,10 @@ function FamilyPanel({
     ["Sent", r.sentAt],
     ["Delivered", r.deliveredAt],
     [r.seenInApp && !r.openedAt ? "Seen in app" : "Opened", r.openedAt],
-    ["Got it", r.acknowledgedAt],
+    [
+      `Got it${r.acknowledgedBy ? ` from ${r.acknowledgedBy}` : ""}${r.acknowledgedVia === "email" ? " (email link)" : r.acknowledgedVia === "app" ? " (in the app)" : ""}`,
+      r.acknowledgedAt,
+    ],
     ["Replied", r.repliedAt],
     ["Bounced", r.bouncedAt],
   ];

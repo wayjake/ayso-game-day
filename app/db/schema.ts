@@ -446,6 +446,10 @@ export const announcementRecipients = sqliteTable('announcement_recipients', {
   complainedAt: text('complained_at'),
   repliedAt: text('replied_at'),
   acknowledgedAt: text('acknowledged_at'),
+  // Who tapped "Got it" first, and where: in the app (a parent account) or the
+  // email's link (an account only when they were signed in as one of the family)
+  acknowledgedBy: integer('acknowledged_by').references(() => users.id),
+  acknowledgedVia: text('acknowledged_via', { enum: ['app', 'email'] }),
   remindedAt: text('reminded_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
