@@ -4,6 +4,7 @@ import {
   announcementRecipients,
   announcements,
   contacts,
+  conversationMembers,
   conversations,
   conversationReads,
   guardians,
@@ -16,19 +17,24 @@ import {
   users,
 } from "~/db";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { getTeamForUser } from "~/utils/team-access.server";
+import { canAccessTeam, getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
 import { getStaffRoles, getTeamStaff } from "~/utils/team-access.server";
 import type { StaffRole } from "~/utils/team-roles";
+import type { GroupMember } from "~/utils/groups";
 import { sendPush } from "~/utils/push.server";
 import { isReaction } from "~/utils/reactions";
 import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail, textToHtml, escapeHtml } from "~/utils/email.server";
 
-// Two kinds of conversation per team:
+// Three kinds of conversation per team:
 //   team   - every staff member and every linked parent
 //   direct - one-to-one: one staff member (staffUserId) and one family. Only
 //            those two can read it. Other staff, the team owner included, can't.
+//   group  - only its members (conversationMembers), staff or families, started
+//            by anyone on the team. Nobody else can read it, the owner included.
+//            Never emailed; families not on the app see it once they join.
+//            Starting, naming and membership live in groups.server.ts.
 //
 // The family side of a direct thread is a parent account (parentUserId), a
 // family email (familyEmail), or both. Families who aren't on the app yet have
@@ -186,6 +192,26 @@ export async function claimFamilyConversation(teamId: number, rawEmail: string, 
       await db.update(conversations).set({ parentUserId: userId }).where(eq(conversations.id, byEmail.id));
     }
   }
+  await claimGroupMemberships(teamId, familyEmail, userId);
+}
+
+// Groups this family was added to before they were on the app become theirs.
+// Where the account is already a member, the email-only row just goes.
+async function claimGroupMemberships(teamId: number, familyEmail: string, userId: number) {
+  const pending = await db
+    .select({ id: conversationMembers.id, conversationId: conversationMembers.conversationId })
+    .from(conversationMembers)
+    .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+    .where(and(eq(conversations.teamId, teamId), eq(conversationMembers.familyEmail, familyEmail), isNull(conversationMembers.userId)));
+  for (const row of pending) {
+    const [already] = await db
+      .select({ id: conversationMembers.id })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, row.conversationId), eq(conversationMembers.userId, userId)))
+      .limit(1);
+    if (already) await db.delete(conversationMembers).where(eq(conversationMembers.id, row.id));
+    else await db.update(conversationMembers).set({ userId }).where(eq(conversationMembers.id, row.id));
+  }
 }
 
 async function isGuardianOnTeam(userId: number, teamId: number) {
@@ -197,8 +223,52 @@ async function isGuardianOnTeam(userId: number, teamId: number) {
   return Boolean(row);
 }
 
+// Which side of the team someone is on right now: staff wins over parent
+async function teamSide(teamId: number, userId: number) {
+  if (await getTeamForUser(teamId, userId)) return "coach" as const;
+  if (await isGuardianOnTeam(userId, teamId)) return "parent" as const;
+  return null;
+}
+
+/** A group's member accounts who are still on its team: the people who can read it */
+export async function activeGroupMemberIds(conversation: { id: number; teamId: number }) {
+  const rows = await db
+    .select({ userId: conversationMembers.userId })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversation.id), sql`${conversationMembers.userId} is not null`))
+    .orderBy(conversationMembers.id);
+  if (rows.length === 0) return [];
+  const [staff, parents] = await Promise.all([getCoachUserIds(conversation.teamId), getParentUserIds(conversation.teamId)]);
+  const onTeam = new Set([...staff, ...parents]);
+  return rows.map((r) => r.userId!).filter((id) => onTeam.has(id));
+}
+
+/** Group ids on these teams that list this account as a member (callers pass teams they're on) */
+export async function groupIdsFor(userId: number, teamIds: number[]) {
+  if (teamIds.length === 0) return [];
+  const rows = await db
+    .select({ id: conversations.id })
+    .from(conversationMembers)
+    .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+    .where(and(eq(conversationMembers.userId, userId), eq(conversations.kind, "group"), inArray(conversations.teamId, teamIds)));
+  return rows.map((r) => r.id);
+}
+
+// Everyone who can read this conversation right now. Pushes go only to them,
+// so a removed member or a family that left the team hears nothing more.
+export async function conversationReaderIds(conversation: typeof conversations.$inferSelect) {
+  if (conversation.kind === "group") return activeGroupMemberIds(conversation);
+  const [staff, parents] = await Promise.all([getCoachUserIds(conversation.teamId), getParentUserIds(conversation.teamId)]);
+  if (conversation.kind === "team") return [...new Set([...staff, ...parents])];
+  return [
+    ...(conversation.staffUserId != null && staff.includes(conversation.staffUserId) ? [conversation.staffUserId] : []),
+    ...(conversation.parentUserId != null && parents.includes(conversation.parentUserId) ? [conversation.parentUserId] : []),
+  ];
+}
+
 // Who may read and post here, and as what. The team chat: all staff and the
-// team's parents. A direct thread: its staff member, while they're still on
+// team's parents. A group: its members while they're on the team (staff see it
+// in the dashboard, parents in the family app). A direct thread: its staff member, while they're still on
 // the team staff, and its parent. Nobody else, other staff and the owner
 // included. An email-only thread (no parentUserId) is its staff member's only.
 // `canPost` is false for a parent whose staff member has left the team: they
@@ -208,6 +278,17 @@ export async function getConversationAccess(conversationId: number, userId: numb
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!conversation) return null;
   const onStaff = (id: number | null) => (id == null ? Promise.resolve(false) : getTeamForUser(conversation.teamId, id).then(Boolean));
+
+  if (conversation.kind === "group") {
+    const [member] = await db
+      .select({ id: conversationMembers.id })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, conversation.id), eq(conversationMembers.userId, userId)))
+      .limit(1);
+    if (!member) return null;
+    const side = await teamSide(conversation.teamId, userId);
+    return side ? { conversation, viewer: side, canPost: true } : null;
+  }
 
   if (conversation.kind === "team") {
     if (await onStaff(userId)) return { conversation, viewer: "coach" as const, canPost: true };
@@ -260,36 +341,48 @@ export async function totalUnread(conversationIds: number[], userId: number) {
   return total;
 }
 
-// Conversation ids a staff member can see on a team: the team chat and their own direct threads.
-// Two queries on purpose: Turso's planner fails ("internal query planner error")
-// on the OR of the two over this table's partial indexes.
+// Conversation ids a staff member can see on a team: the team chat, their own
+// direct threads and the groups they're in.
+// Separate queries on purpose: Turso's planner fails ("internal query planner
+// error") on an OR of them over this table's partial indexes.
 export async function coachConversationIds(teamId: number, userId: number) {
-  const [team, directs] = await Promise.all([
+  const [team, directs, groups] = await Promise.all([
     db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.teamId, teamId), eq(conversations.kind, "team"))),
     db.select({ id: conversations.id }).from(conversations).where(staffDirects(teamId, userId)),
+    groupIdsFor(userId, [teamId]),
   ]);
-  return [...team, ...directs].map((r) => r.id);
+  return [...team.map((r) => r.id), ...directs.map((r) => r.id), ...groups];
+}
+
+// Teams this account coaches, among these. Their groups there open in the
+// dashboard, so the family app leaves them out (and doesn't count them twice).
+async function coachedAmong(userId: number, teamIds: number[]) {
+  if (teamIds.length === 0) return new Set<number>();
+  const rows = await db.select({ id: teams.id }).from(teams).where(and(inArray(teams.id, teamIds), canAccessTeam(userId)));
+  return new Set(rows.map((r) => r.id));
 }
 
 // Conversation ids a parent can see across their teams
 export async function parentConversationIds(userId: number, teamIds: number[]) {
   if (teamIds.length === 0) return [];
+  const coached = await coachedAmong(userId, teamIds);
   // Separate queries, not an OR (see coachConversationIds)
-  const [team, directs] = await Promise.all([
+  const [team, directs, groups] = await Promise.all([
     db.select({ id: conversations.id }).from(conversations).where(and(inArray(conversations.teamId, teamIds), eq(conversations.kind, "team"))),
     db
       .select({ id: conversations.id })
       .from(conversations)
       .where(and(inArray(conversations.teamId, teamIds), eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId))),
+    groupIdsFor(userId, teamIds.filter((id) => !coached.has(id))),
   ]);
-  return [...team, ...directs].map((r) => r.id);
+  return [...team.map((r) => r.id), ...directs.map((r) => r.id), ...groups];
 }
 
 export type ConversationSummary = {
   id: number;
   teamId: number;
   teamName: string;
-  kind: "team" | "direct";
+  kind: "team" | "direct" | "group";
   title: string;
   subtitle: string;
   lastMessageAt: string | null;
@@ -301,6 +394,8 @@ export type ConversationSummary = {
   staffRole?: StaffRole | null;
   /** Family app: where the row opens, when that isn't the thread itself (no thread with them yet) */
   href?: string;
+  /** Sort key when it differs from lastMessageAt (an empty group sorts by when it was made) */
+  sortAt?: string | null;
 };
 
 // Kids' first names per parent on a team: "Ricardo & Christian"
@@ -363,23 +458,11 @@ export async function listCoachConversations(teamId: number, userId: number): Pr
   const linked = new Set(
     (await db.selectDistinct({ userId: guardians.userId }).from(guardians).where(eq(guardians.teamId, teamId))).map((r) => r.userId)
   );
-  const unread = await unreadCounts([team.id, ...directs.map((d) => d.id)], userId);
+  const groups = await groupSummaries(teamId, await groupIdsFor(userId, [teamId]), userId);
+  const unread = await unreadCounts([team.id, ...directs.map((d) => d.id), ...groups.map((g) => g.id)], userId);
   const teamName = teamRow?.name ?? "Team";
 
-  return [
-    {
-      id: team.id,
-      teamId,
-      teamName,
-      kind: "team",
-      title: "Team chat",
-      subtitle: "Coaches and all families on the app",
-      lastMessageAt: team.lastMessageAt,
-      lastMessagePreview: team.lastMessagePreview,
-      unread: unread.get(team.id) ?? 0,
-      needsReply: false,
-      emailOnly: false,
-    },
+  const rest: ConversationSummary[] = [
     // Threads with no messages yet are noise for coaches
     ...directs
       .filter((d) => d.lastMessageAt)
@@ -400,6 +483,39 @@ export async function listCoachConversations(teamId: number, userId: number): Pr
           emailOnly: !d.parentUserId || !linked.has(d.parentUserId),
         };
       }),
+    // Groups show from the start: everyone in one was added on purpose
+    ...groups.map((g): ConversationSummary => ({
+      id: g.id,
+      teamId,
+      teamName,
+      kind: "group",
+      title: g.title,
+      subtitle: g.subtitle,
+      lastMessageAt: g.lastMessageAt,
+      lastMessagePreview: g.lastMessagePreview,
+      unread: unread.get(g.id) ?? 0,
+      needsReply: false,
+      emailOnly: false,
+      sortAt: g.lastMessageAt ?? g.createdAt,
+    })),
+  ];
+  rest.sort((a, b) => (b.sortAt ?? b.lastMessageAt ?? "").localeCompare(a.sortAt ?? a.lastMessageAt ?? ""));
+
+  return [
+    {
+      id: team.id,
+      teamId,
+      teamName,
+      kind: "team",
+      title: "Team chat",
+      subtitle: "Coaches and all families on the app",
+      lastMessageAt: team.lastMessageAt,
+      lastMessagePreview: team.lastMessagePreview,
+      unread: unread.get(team.id) ?? 0,
+      needsReply: false,
+      emailOnly: false,
+    },
+    ...rest,
   ];
 }
 
@@ -418,6 +534,7 @@ export async function listParentConversations(
   const directs: ConversationSummary[] = [];
   const unstarted: ConversationSummary[] = [];
   const ids: number[] = [];
+  const coached = await coachedAmong(userId, teamList.map((t) => t.teamId));
 
   for (const { teamId, teamName } of teamList) {
     const chat = await getOrCreateTeamConversation(teamId);
@@ -483,11 +600,133 @@ export async function listParentConversations(
         staffRole: null,
       });
     }
+    // Groups they're in. On a team they also coach, groups open in the dashboard instead.
+    if (!coached.has(teamId)) {
+      for (const g of await groupSummaries(teamId, await groupIdsFor(userId, [teamId]), userId)) {
+        ids.push(g.id);
+        directs.push({
+          id: g.id,
+          teamId,
+          teamName,
+          kind: "group",
+          title: g.title,
+          subtitle: `${teamName} · ${g.subtitle.toLowerCase()}`,
+          lastMessageAt: g.lastMessageAt,
+          lastMessagePreview: g.lastMessagePreview,
+          unread: 0,
+          needsReply: false,
+          emailOnly: false,
+          sortAt: g.lastMessageAt ?? g.createdAt,
+        });
+      }
+    }
   }
 
   const unread = await unreadCounts(ids, userId);
-  directs.sort((a, b) => (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? ""));
+  directs.sort((a, b) => (b.sortAt ?? b.lastMessageAt ?? "").localeCompare(a.sortAt ?? a.lastMessageAt ?? ""));
   return [...teamChats, ...directs, ...unstarted].map((c) => (c.id ? { ...c, unread: unread.get(c.id) ?? 0 } : c));
+}
+
+// ---------------------------------------------------------------------------
+// Groups: who's in them and what they're called
+
+
+// Members of these groups who are still on the team, oldest first. People who
+// have left the team (or a family whose contacts were removed) drop out.
+export async function loadGroupMembers(teamId: number, conversationIds: number[]) {
+  const result = new Map<number, GroupMember[]>();
+  if (conversationIds.length === 0) return result;
+  const rows = await db
+    .select({
+      id: conversationMembers.id,
+      conversationId: conversationMembers.conversationId,
+      userId: conversationMembers.userId,
+      familyEmail: conversationMembers.familyEmail,
+      name: users.name,
+      email: users.email,
+    })
+    .from(conversationMembers)
+    .leftJoin(users, eq(conversationMembers.userId, users.id))
+    .where(inArray(conversationMembers.conversationId, conversationIds))
+    .orderBy(conversationMembers.id);
+  const userIds = [...new Set(rows.flatMap((r) => (r.userId ? [r.userId] : [])))];
+  const [roles, parents, kids, labels] = await Promise.all([
+    getStaffRoles(teamId),
+    getParentUserIds(teamId).then((ids) => new Set(ids)),
+    kidsByParent(teamId, userIds),
+    familyLabels(teamId, rows.flatMap((r) => (!r.userId && r.familyEmail ? [r.familyEmail] : []))),
+  ]);
+
+  for (const r of rows) {
+    let member: GroupMember | null = null;
+    if (r.userId) {
+      const role = roles.get(r.userId) ?? null;
+      if (role || parents.has(r.userId)) {
+        const kidNames = kids.get(r.userId);
+        member = {
+          id: r.id,
+          userId: r.userId,
+          name: r.name || r.email?.split("@")[0] || "Someone",
+          detail: !role && kidNames ? `${kidNames}'s family` : "",
+          role,
+          pending: false,
+        };
+      }
+    } else if (r.familyEmail) {
+      const label = labels.get(r.familyEmail);
+      if (label) {
+        member = {
+          id: r.id,
+          userId: null,
+          name: label.names[0] || `${label.kids.join(" & ")}'s family`,
+          detail: `${label.kids.join(" & ")}'s family`,
+          role: null,
+          pending: true,
+        };
+      }
+    }
+    if (member) result.set(r.conversationId, [...(result.get(r.conversationId) ?? []), member]);
+  }
+  return result;
+}
+
+/** Who can rename the group and add or remove people: whoever started it, or if they've gone, the longest-standing member */
+export function groupManagerId(conversation: { createdBy: number | null }, members: GroupMember[]) {
+  const accounts = members.filter((m) => m.userId != null);
+  if (conversation.createdBy != null && accounts.some((m) => m.userId === conversation.createdBy)) return conversation.createdBy;
+  return accounts[0]?.userId ?? null;
+}
+
+/** "Maria, Chen & Priya", "Maria, Chen, Priya +2": everyone in it but the viewer */
+export function groupTitle(name: string | null, members: GroupMember[], viewerId: number) {
+  if (name) return name;
+  const others = members.filter((m) => m.userId !== viewerId).map((m) => m.name.split(" ")[0]);
+  if (others.length === 0) return "Just you";
+  if (others.length <= 3) return others.length === 1 ? others[0] : `${others.slice(0, -1).join(", ")} & ${others.at(-1)}`;
+  return `${others.slice(0, 3).join(", ")} +${others.length - 3}`;
+}
+
+export function groupSubtitle(members: GroupMember[]) {
+  return `Group · ${members.length} ${members.length === 1 ? "person" : "people"}`;
+}
+
+async function groupSummaries(teamId: number, ids: number[], viewerId: number) {
+  if (ids.length === 0) return [];
+  const [rows, members] = await Promise.all([
+    db.select().from(conversations).where(inArray(conversations.id, ids)),
+    loadGroupMembers(teamId, ids),
+  ]);
+  return rows.map((c) => {
+    const list = members.get(c.id) ?? [];
+    return {
+      id: c.id,
+      title: groupTitle(c.name, list, viewerId),
+      subtitle: groupSubtitle(list),
+      lastMessageAt: c.lastMessageAt,
+      lastMessagePreview: c.lastMessagePreview,
+      createdAt: c.createdAt,
+    };
+  });
 }
 
 export type ThreadMessage = {
@@ -837,9 +1076,8 @@ export async function postMessage(
     rootId = parent.parentId ?? parent.id;
   }
 
-  const coachIds = await getCoachUserIds(conversation.teamId);
-  // In a direct thread the staff side is its one staff member
-  const senderIsCoach = conversation.kind === "direct" ? sender.id === conversation.staffUserId : coachIds.includes(sender.id);
+  // Only a direct thread's staff member can email the family; groups are never emailed
+  const senderIsCoach = conversation.kind === "direct" && sender.id === conversation.staffUserId;
   const delivery = senderIsCoach && options.email === true && !rootId ? await familyDelivery(conversation) : null;
   const emailTo = delivery?.email ?? null;
 
@@ -868,14 +1106,15 @@ export async function postMessage(
   if (rootId) {
     await notifyThreadReply(conversation, rootId, sender.id, senderName, text);
   } else {
-    // A direct thread notifies only the other person in it
-    const everyone = (
-      conversation.kind === "team"
-        ? [...coachIds, ...(await getParentUserIds(conversation.teamId))]
-        : [conversation.staffUserId, conversation.parentUserId].filter((id): id is number => id != null)
-    ).filter((id) => id !== sender.id);
+    // Everyone who can read it but the sender: a direct thread's other person, a group's members
+    const everyone = (await conversationReaderIds(conversation)).filter((id) => id !== sender.id);
     await pushToConversation(conversation, everyone, "chat", {
-      title: conversation.kind === "team" ? `${teamName} · ${senderName}` : `${senderName} (${teamName})`,
+      title:
+        conversation.kind === "team"
+          ? `${teamName} · ${senderName}`
+          : conversation.kind === "group"
+            ? `${senderName} · ${conversation.name || `Group (${teamName})`}`
+            : `${senderName} (${teamName})`,
       body: preview(text, 180),
       tag: `conversation-${conversation.id}`,
     });
@@ -899,9 +1138,12 @@ export async function notifyThreadReply(
     .selectDistinct({ id: messages.senderId })
     .from(messages)
     .where(sql`(${messages.id} = ${rootId} or ${messages.parentId} = ${rootId}) and ${messages.senderId} is not null`);
-  const ids = people.map((p) => p.id!).filter((id) => id !== senderId);
+  // Only people who can still read the conversation
+  const readers = new Set(await conversationReaderIds(conversation));
+  const ids = people.map((p) => p.id!).filter((id) => id !== senderId && readers.has(id));
+  const where = conversation.kind === "team" ? team?.name ?? "Team" : conversation.kind === "group" ? conversation.name || "Group" : null;
   await pushToConversation(conversation, ids, "replies", {
-    title: `${senderName} replied${conversation.kind === "team" ? ` · ${team?.name ?? "Team"}` : ""}`,
+    title: `${senderName} replied${where ? ` · ${where}` : ""}`,
     body: preview(text, 180),
     tag: `thread-${rootId}`,
     threadId: rootId,
@@ -934,7 +1176,7 @@ export async function toggleReaction(
   await db.insert(messageReactions).values({ messageId, userId: user.id, emoji }).onConflictDoNothing();
   await publishConversation(conversation, { kind: "reaction", threadId: message.parentId });
 
-  if (message.senderId && message.senderId !== user.id) {
+  if (message.senderId && message.senderId !== user.id && (await conversationReaderIds(conversation)).includes(message.senderId)) {
     const name = user.name || user.email.split("@")[0];
     await pushToConversation(conversation, [message.senderId], "reactions", {
       title: `${name} reacted ${emoji}`,
@@ -948,7 +1190,8 @@ export async function toggleReaction(
 
 // Staff open a conversation in the dashboard, parents in the family app. Who
 // is which comes from the conversation: in a direct thread, its staff member is
-// staff and its parent is a parent (even a parent who coaches another team).
+// staff and its parent is a parent (even a parent who coaches another team). In
+// the team chat and groups, anyone on the team staff is staff.
 async function pushToConversation(
   conversation: typeof conversations.$inferSelect,
   userIds: number[],

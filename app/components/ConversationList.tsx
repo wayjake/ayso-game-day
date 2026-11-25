@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ChatsCircle, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
+import { ChatsCircle, EnvelopeSimple, UserCircle, UsersThree } from "@phosphor-icons/react";
 import { formatMessageTime } from "~/utils/dates";
 import { Badge, Card, cx } from "~/components/ui";
 import { navMotion } from "~/utils/nav-motion";
@@ -8,7 +8,7 @@ import type { StaffRole } from "~/utils/team-roles";
 
 export type ConversationListItem = {
   id: number;
-  kind: "team" | "direct";
+  kind: "team" | "direct" | "group";
   title: string;
   subtitle: string;
   lastMessageAt: string | null;
@@ -61,7 +61,15 @@ export function ConversationList({
                   c.kind === "team" ? "bg-primary-soft text-primary" : "bg-surface-2 text-muted"
                 )}
               >
-                {c.kind === "team" ? <ChatsCircle size={24} weight="fill" /> : c.emailOnly ? <EnvelopeSimple size={22} weight="fill" /> : <UserCircle size={24} weight="fill" />}
+                {c.kind === "team" ? (
+                  <ChatsCircle size={24} weight="fill" />
+                ) : c.kind === "group" ? (
+                  <UsersThree size={24} weight="fill" />
+                ) : c.emailOnly ? (
+                  <EnvelopeSimple size={22} weight="fill" />
+                ) : (
+                  <UserCircle size={24} weight="fill" />
+                )}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline justify-between gap-3">

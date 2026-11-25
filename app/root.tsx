@@ -10,6 +10,7 @@ import {
 import { useEffect } from "react";
 import type { Route } from "./+types/root";
 import "./app.css";
+import { launchImageLinks } from "./utils/launch-images";
 import { useNavMotion } from "./utils/nav-motion";
 
 export const links: Route.LinksFunction = () => [
@@ -17,6 +18,8 @@ export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml", sizes: "any" },
   { rel: "manifest", href: "/manifest.webmanifest" },
   { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
+  // What iOS shows while the installed app opens, instead of a blank screen
+  ...launchImageLinks,
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -51,6 +54,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
       </head>
       <body>
+        {/* Solid cover for the status bar area (app.css, .status-strip) */}
+        <div aria-hidden className="status-strip" />
         {children}
         <ScrollRestoration />
         <Scripts />

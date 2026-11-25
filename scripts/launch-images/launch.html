@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- The iPhone launch image: what the installed app shows while the first page loads.
+     Rendered at every screen size by scripts/launch-images/build.sh. Same white as the top bar,
+     the logo tile and wordmark from app/components/AppMark.tsx. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@700&display=block">
+<style>
+  html { background: #FFFFFF; }
+  /* Sized from ?w=&h= (build.sh): headless Chrome lays out wider than its window, so don't center on the viewport */
+  body { margin: 0; position: absolute; top: 0; left: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding-bottom: 6vh; box-sizing: border-box; }
+  svg { width: 88px; height: 88px; }
+  .word { font: 700 34px/1 "Barlow Semi Condensed", sans-serif; letter-spacing: -0.02em; color: #101B2D; }
+  .word span { color: #2251C4; }
+</style>
+</head>
+<body>
+  <svg viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="16" fill="#2251C4"/>
+    <path fill="#fff" fill-rule="evenodd" transform="translate(6.779 6.385) scale(0.788)" d="M16 7L48 7Q56 7 56 15L56 24Q56 32 48 32Q44 36 38 39L55 39Q59 39 59 43Q59 47 55 47L52 47L52 54Q52 58 48 58Q44 58 44 54L44 47L20 47L20 54Q20 58 16 58Q12 58 12 54L12 47L9 47Q5 47 5 43Q5 39 9 39L10 39L14 32Q8 30 8 24L8 15Q8 7 16 7ZM22 32L18 39L31 39Q35 36 35 32Z"/>
+  </svg>
+  <div class="word">Bench<span>Talk</span></div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    document.body.style.width = q.get("w") + "px";
+    document.body.style.height = q.get("h") + "px";
+  </script>
+</body>
+</html>

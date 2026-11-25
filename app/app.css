@@ -82,6 +82,27 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+/*
+ * iOS 26 blurs whatever sits under the status bar, unless the page has an
+ * opaque fixed or sticky element touching the top (most of the width, over
+ * 4px tall); then it fills the status bar with that element's color instead.
+ * Our top bars don't qualify (the coach one scrolls away, the family one is
+ * translucent), so this strip does: as tall as the status bar, zero elsewhere.
+ * It must stay opaque, with no backdrop-filter.
+ */
+.status-strip {
+	position: fixed;
+	inset-inline: 0;
+	top: 0;
+	height: var(--safe-top);
+	z-index: 40;
+	pointer-events: none;
+	background-color: var(--color-surface);
+}
+html:has(.canvas-top) .status-strip {
+	background-color: var(--color-canvas);
+}
+
 html:has(.canvas-top),
 html:has(.canvas-top) body {
 	background-color: var(--color-canvas);

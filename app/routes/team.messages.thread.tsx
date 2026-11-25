@@ -1,6 +1,6 @@
 import type { Route } from "./+types/team.messages.thread";
 import { useEffect, useState } from "react";
-import { Link, data, useFetcher, useLocation, useSearchParams } from "react-router";
+import { Link, data, redirect, useFetcher, useLocation, useSearchParams } from "react-router";
 import { db, guardians, players, users } from "~/db";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "~/utils/auth.server";
@@ -11,6 +11,8 @@ import {
   getConversationAccess,
   getReplies,
   getThread,
+  groupSubtitle,
+  groupTitle,
   latestMessageId,
   markRead,
   postMessage,
@@ -26,8 +28,10 @@ import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.serv
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
 import { taskDraftFor } from "~/utils/tasks.server";
+import { groupView, handleGroupAction } from "~/utils/groups.server";
+import { GroupPanel, type GroupInfo } from "~/components/GroupPanel";
 import { Button, cx } from "~/components/ui";
-import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
+import { ArrowLeft, Check, NotePencil, SidebarSimple, UsersThree } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 import { ackSummaries } from "~/utils/announcements.server";
 
@@ -52,6 +56,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let subtitle = "Every coach and family on the app can see this";
   let familyEmail: string | null = null;
   let delivery: FamilyDelivery = { email: null, pushReady: false };
+  let group: GroupInfo | null = null;
+
+  if (conversation.kind === "group") {
+    group = await groupView(conversation, user.id);
+    title = groupTitle(group.name, group.members, user.id);
+    subtitle = `${groupSubtitle(group.members)} · only they can see it`;
+  }
 
   if (conversation.kind === "direct") {
     const parent = conversation.parentUserId
@@ -102,6 +113,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teamContext,
     title,
     subtitle,
+    group,
     kind: conversation.kind,
     messages,
     thread,
@@ -124,6 +136,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const notes = await handleNoteAction(formData, conversation.teamId, user.id);
   if (notes) return data(notes);
+
+  const grouped = await handleGroupAction(formData, conversation, user);
+  if (grouped) {
+    if ("left" in grouped) return redirect(`/dashboard/team/${conversation.teamId}/messages`);
+    return data(grouped, { status: "error" in grouped ? 400 : 200 });
+  }
 
   if (intent === "done" || intent === "undone") {
     await setNeedsReply(conversation.id, intent === "undone");
@@ -149,7 +167,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
-    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft, acks,
+    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft, acks, group,
   } = loaderData;
   // The draft is in the box now; drop it from the URL so a reload doesn't bring it back
   const [searchParams, setSearchParams] = useSearchParams();
@@ -160,12 +178,13 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
     setSearchParams(next, { replace: true, preventScrollReset: true });
   }, [searchParams, setSearchParams]);
   const [showNotes, setShowNotes] = useState(false);
+  const [showPeople, setShowPeople] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
   const location = useLocation();
   const done = useFetcher();
   const pending = done.formData?.get("_action");
   const flagged = pending ? pending === "undone" : needsReply;
-  const hasDetails = Boolean(context || teamContext);
+  const hasDetails = Boolean(context || teamContext || group);
 
   return (
     // Phones: a page of its own, as before. lg: fills the pane beside the list. xl: plus the family details.
@@ -211,6 +230,21 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
                 )}
               </>
             )}
+            {group && (
+              // The member list lives in the details pane on wide screens
+              <Button
+                size="sm"
+                variant={showPeople ? "secondary" : "ghost"}
+                onClick={() => setShowPeople((v) => !v)}
+                aria-expanded={showPeople}
+                aria-controls="group-people"
+                className={cx(showDetails && "xl:hidden")}
+              >
+                <UsersThree size={16} />
+                <span className="hidden sm:inline">People</span>
+                <span className="tabular text-muted">{group.members.length}</span>
+              </Button>
+            )}
             {hasDetails && (
               <span className="hidden xl:block">
               <Button
@@ -219,6 +253,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
                 onClick={() => {
                   setShowDetails((v) => !v);
                   setShowNotes(false);
+                  setShowPeople(false);
                 }}
                 aria-pressed={showDetails}
                 title={showDetails ? "Hide details" : "Show details"}
@@ -229,6 +264,11 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
               </span>
             )}
           </div>
+          {showPeople && group && (
+            <div id="group-people" className={cx("mt-3 max-h-[60dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line", showDetails && "xl:hidden")}>
+              <GroupPanel group={group} meId={me} />
+            </div>
+          )}
           {showNotes && familyEmail && (
             <div id="thread-notes" className="mt-3 max-h-[50dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line">
               <FamilyNotes notes={notes} familyEmail={familyEmail} meId={me} />
@@ -241,8 +281,14 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           thread={thread}
           realtime={realtime}
           meId={me}
-          emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
-          placeholder={kind === "team" ? "Message every family on the app" : "Message this family"}
+          emptyText={
+            kind === "team"
+              ? "No messages yet. Post something for every family on the team."
+              : kind === "group"
+                ? "No messages yet. Only the people in this group see what's written here."
+                : "No messages yet."
+          }
+          placeholder={kind === "team" ? "Message every family on the app" : kind === "group" ? "Message the group" : "Message this family"}
           widthClass="max-w-2xl"
           initialDraft={draft}
           showEmailDetails
@@ -258,11 +304,12 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
 
       {hasDetails && showDetails && (
         <aside
-          aria-label={kind === "team" ? "About the team chat" : "About this family"}
+          aria-label={kind === "team" ? "About the team chat" : kind === "group" ? "People in this group" : "About this family"}
           className="hidden min-h-0 w-[320px] shrink-0 overflow-y-auto border-l border-line bg-surface xl:block"
         >
           {context && <FamilyContext family={context} teamId={teamId} meId={me} showNotes={!showNotes} />}
           {teamContext && <TeamChatContext context={teamContext} teamId={teamId} />}
+          {group && <GroupPanel group={group} meId={me} className="p-4" />}
         </aside>
       )}
     </div>
