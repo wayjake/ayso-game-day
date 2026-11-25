@@ -16,6 +16,7 @@ export default [
   route("api/feed/posts/:postId", "routes/api.feed-post.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
+  route("changelog", "routes/changelog.tsx"),
   route("invite/:code", "routes/invite.tsx"),
   route("join/:code", "routes/join.tsx"),
   route("ack/:token", "routes/ack.tsx"),
