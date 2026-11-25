@@ -618,7 +618,12 @@ Do feature development in a git worktree, never in the main checkout, so several
 - At the start of a feature session, create a worktree on a new branch (`EnterWorktree`, or `git worktree add .claude/worktrees/<name> -b <branch>`). Quick questions, reviews, and one-line fixes the user asks for in place don't need one.
 - A new worktree has no `node_modules`, `.env`, or `data/`. Run `npm install`, and copy `.env` and `data/dev.db` from the main checkout (copy the db, don't symlink it, so two sessions never write the same SQLite file).
 - Each worktree runs its own dev server, which overrides the general "don't run `npm run dev`" rule. The user's server runs from the main checkout on 5173. Start the worktree's server in the background on the first free port from 5174 up, with `npm run dev -- --port <n> --strictPort`, so every tree keeps its own port. Keep it running for the whole session and tell the user the URL. Cookies are per host, not per port, so a session signed in on 5173 is signed in here too.
-- When the work is done, commit on the worktree's branch and tell the user the branch name. Don't merge into `preview`/`main` or remove the worktree unless asked.
+- When the work is done, commit on the worktree's branch and tell the user the branch name. Don't merge into `preview`/`main` unless asked.
+- **Once the branch is merged and pushed, clean up straight away:**
+  1. Stop every background task the session started for it: the worktree's dev server and anything else still running (stop the task, or kill whatever listens on its port).
+  2. Remove the worktree with `git worktree remove .claude/worktrees/<name>`. That deletes its files, including its `node_modules`, `.env` and `data/dev.db` copies.
+  3. Only clean up what this session created. Leave other sessions' worktrees and dev servers alone.
+  4. If `git worktree remove` refuses because of uncommitted or untracked changes, stop and tell the user. Don't use `--force`.
 
 ### After every push, update the local checkout
 
