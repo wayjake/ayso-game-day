@@ -20,14 +20,21 @@ function asked() {
   }
 }
 
-export function NotifyPrompt({ push }: { push: PushState }) {
+export function NotifyPrompt({ push, audience = "family" }: { push: PushState; audience?: "family" | "coach" }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (push.status !== "off" || !isTouchDevice()) return;
+    let retry = 0;
     const show = () => {
-      // Another sheet is up (the install sheet after signing in): wait for it
-      if (asked() || document.querySelector("dialog[open]")) return;
+      if (asked()) return;
+      // Something else is up: a sheet (install, after signing in) or a guided
+      // tour, which is a plain role="dialog" with no close event. Look again shortly.
+      if (document.querySelector('dialog[open], [role="dialog"]')) {
+        window.clearTimeout(retry);
+        retry = window.setTimeout(show, 1500);
+        return;
+      }
       try {
         localStorage.setItem(ASKED_KEY, String(Date.now()));
       } catch {}
@@ -40,6 +47,7 @@ export function NotifyPrompt({ push }: { push: PushState }) {
     const timer = window.setTimeout(show, 600);
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(retry);
       document.removeEventListener("close", onDialogClose, true);
     };
   }, [push.status]);
@@ -63,11 +71,15 @@ export function NotifyPrompt({ push }: { push: PushState }) {
           <ul className="mt-5 space-y-2.5 text-[15px]">
             <li className="flex gap-3">
               <ChatsCircle size={20} weight="fill" className="mt-0.5 shrink-0 text-pitch" aria-hidden />
-              New messages from the coaches and the team
+              {audience === "coach"
+                ? "Messages and email replies from families"
+                : "New messages from the coaches and the team"}
             </li>
             <li className="flex gap-3">
               <CalendarX size={20} weight="fill" className="mt-0.5 shrink-0 text-brand" aria-hidden />
-              New, moved or cancelled games and practices
+              {audience === "coach"
+                ? "Players who can't make a game or practice"
+                : "New, moved or cancelled games and practices"}
             </li>
           </ul>
           <p className="mt-4 text-sm text-muted">Change this anytime from the bell at the top of the app.</p>

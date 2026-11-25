@@ -196,7 +196,7 @@ export default function NewAnnouncement({ loaderData, actionData }: Route.Compon
               {!hasOwnAddress && (
                 <>
                   {" · "}
-                  <Link to={`${base}/settings#your-email`} className="font-medium text-primary hover:underline">Use your own address</Link>
+                  <Link to="/dashboard/account#your-email" className="font-medium text-primary hover:underline">Use your own address</Link>
                 </>
               )}
             </p>

@@ -5,7 +5,8 @@ import { formatMessageTime } from "~/utils/dates";
 import { likedByLabel, MAX_COMMENT, sendPostAction, type FeedPost, type Liker, type PostComment, type PostStats } from "~/utils/feed";
 import { useRealtimeEvents } from "~/hooks/useConversationRealtime";
 import { Card, EmptyState, buttonClass, cx } from "~/components/ui";
-import { AuthorName, PersonAvatar, PostActions, PostMedia } from "~/components/feed/PostMedia";
+import { AuthorName, PostActions, PostMedia } from "~/components/feed/PostMedia";
+import { PersonAvatar } from "~/components/PersonAvatar";
 import { PostHeader } from "~/components/feed/FeedTimeline";
 import { setNavMotion } from "~/utils/nav-motion";
 

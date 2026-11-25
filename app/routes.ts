@@ -47,6 +47,7 @@ export default [
     route("", "routes/dashboard._index.tsx"),
     route("teams", "routes/dashboard.teams.tsx"),
     route("teams/new", "routes/dashboard.teams.new.tsx"),
+    route("account", "routes/dashboard.account.tsx"),
     route("team/:teamId", "routes/team.tsx", [
       route("", "routes/team._index.tsx"),
       route("roster", "routes/team.roster.tsx"),

@@ -10,6 +10,7 @@ import {
   getThread,
   groupSubtitle,
   groupTitle,
+  deleteMessage,
   postMessage,
   toggleReaction,
 } from "~/utils/messages.server";
@@ -92,6 +93,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     await acknowledgeFromThread(Number(formData.get("messageId")), conversation, user.id);
     return data({ ok: true });
   }
+  // Your own messages can be deleted even once the thread is read-only
+  if (formData.get("_action") === "delete") {
+    const deleted = await deleteMessage(conversation, user.id, Number(formData.get("messageId")));
+    return deleted ? data({ ok: true }) : data({ error: "That message can't be deleted" }, { status: 400 });
+  }
   // Their staff member has left the team: the history stays, but nobody's there to read new messages
   if (!canPost) return data({ error: "They're no longer on the team staff" }, { status: 403 });
   if (formData.get("_action") === "react") {
@@ -159,6 +165,7 @@ export default function FamilyThread({ loaderData }: Route.ComponentProps) {
         realtime={realtime}
         meId={me}
         receipts={receipts}
+        canDelete={kind === "direct"}
         emptyText={
           group
             ? "No messages yet. Only the people in this group see what's written here."

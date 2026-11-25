@@ -8,16 +8,14 @@ import { pickerOptions, startConversation } from "~/utils/groups.server";
 import { NewMessageForm } from "~/components/PeoplePicker";
 import { familyLabel } from "~/utils/announcements.server";
 import { assignUnmatched, dismissUnmatched, listUnmatched } from "~/utils/inbound-email.server";
-import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { formatMessageTime } from "~/utils/dates";
 import { stripQuotedReply } from "~/utils/email-reply";
-import { PushToggle } from "~/components/PushToggle";
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass, inputClass } from "~/components/ui";
 import { AddressBook, ChatsCircle, Question } from "@phosphor-icons/react";
 
 // Under the list on phones; the main pane on desktop until a thread is picked.
 // New message (one family's private thread, or a group chat), sorting stray
-// emails, and push for this device.
+// emails.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -35,7 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     preview: stripQuotedReply(u.text ?? "").body.slice(0, 280),
   }));
 
-  return data({ teamId, families, people, unmatched, vapidPublicKey: vapidPublicKey(), notifyPrefs: await getNotifyPrefs(user.id) });
+  return data({ teamId, families, people, unmatched });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -70,7 +68,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MessagesIndex({ loaderData, actionData }: Route.ComponentProps) {
-  const { teamId, families, people, unmatched, vapidPublicKey, notifyPrefs } = loaderData;
+  const { teamId, families, people, unmatched } = loaderData;
   const base = `/dashboard/team/${teamId}`;
   const navigation = useNavigation();
   const [params] = useSearchParams();
@@ -166,12 +164,6 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
             />
           </>
         )}
-      </Card>
-
-      <Card className="mt-6 p-5">
-        <CardHeader title="Notifications on this device" className="mb-1" />
-        <p className="mb-4 text-sm text-muted">Get new messages, email replies and "can't make it" RSVPs as push notifications.</p>
-        <PushToggle vapidPublicKey={vapidPublicKey} notifyPrefs={notifyPrefs} />
       </Card>
 
       <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-subtle">

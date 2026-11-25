@@ -1,6 +1,6 @@
 import type { Route } from "./+types/family";
 import { useCallback, useEffect, useState } from "react";
-import { Form, Link, NavLink, Outlet, data, useMatches, useNavigation, useSearchParams } from "react-router";
+import { Link, NavLink, Outlet, data, useMatches, useNavigation, useSearchParams } from "react-router";
 import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { requireParent } from "~/utils/family.server";
@@ -9,13 +9,14 @@ import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
 import { navMotion } from "~/utils/nav-motion";
 import { usePush } from "~/hooks/usePush";
-import type { FamilyContext } from "~/hooks/useFamily";
 import { AppMark } from "~/components/AppMark";
 import { InstallSheet } from "~/components/InstallSheet";
+import { AccountMenu } from "~/components/AccountMenu";
 import { NotificationsMenu } from "~/components/NotificationsMenu";
 import { NotifyPrompt } from "~/components/NotifyPrompt";
 import { buttonClass, cx } from "~/components/ui";
-import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, ImagesSquare, SignOut } from "@phosphor-icons/react";
+import { PushContext } from "~/hooks/usePushContext";
+import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, ImagesSquare } from "@phosphor-icons/react";
 import { PullToRefresh } from "~/components/PullToRefresh";
 
 // The family app: what parents see. Built phone-first, since most open it from
@@ -42,7 +43,8 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
-  const { unread, isCoach } = loaderData;
+  const { unread, isCoach, user } = loaderData;
+  const audience = isCoach ? "coach" : "family";
   // A chat thread takes the whole screen on phones, with its own back link
   const inThread = useMatches().some((m) => m.id === "routes/family.messages.thread");
 
@@ -108,14 +110,67 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   ];
 
   return (
-    <div className="min-h-dvh bg-canvas text-ink">
-      <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-safe">
-          <Link to="/family" aria-label="Schedule">
-            <AppMark />
-          </Link>
+    <PushContext.Provider value={{ push, openInstall, audience }}>
+      <div className="min-h-dvh bg-canvas text-ink">
+        <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
+          <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-safe">
+            <Link to="/family" aria-label="Schedule">
+              <AppMark />
+            </Link>
 
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Family">
+            <nav className="hidden items-center gap-1 sm:flex" aria-label="Family">
+              {tabs.map(({ label, to, end, icon: Icon, badge }) => (
+                <NavLink
+                  key={label}
+                  to={to}
+                  end={end}
+                  prefetch="intent"
+                  {...navMotion("tab")}
+                  className={(state) =>
+                    cx(
+                      "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
+                      lit(state) ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
+                    )
+                  }
+                >
+                  <Icon size={18} />
+                  {label}
+                  {badge > 0 && <UnreadDot count={badge} />}
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="flex items-center gap-1">
+              <NotificationsMenu push={push} onInstall={openInstall} audience={audience} />
+              {isCoach && (
+                <Link to="/dashboard" className={buttonClass({ variant: "ghost", size: "sm" })}>
+                  <ClipboardText size={18} />
+                  <span className="hidden md:inline">Coach view</span>
+                </Link>
+              )}
+              <AccountMenu me={user} settingsTo="/family/settings" />
+            </div>
+          </div>
+        </header>
+
+        <PullToRefresh />
+
+        <main id="main" className={cx("mx-auto w-full max-w-3xl px-safe", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
+          <Outlet />
+        </main>
+
+        {install && (
+          <InstallSheet platform={loaderData.platform} openOnLoad={install.openOnLoad} onClose={() => setInstall(null)} />
+        )}
+        {/* Once per phone, as soon as it can say yes (on iPhone: first launch from the Home Screen) */}
+        <NotifyPrompt push={push} audience={audience} />
+
+        {/* Phone tab bar */}
+        {!inThread && (
+          <nav
+            className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] backdrop-blur sm:hidden"
+            aria-label="Family"
+          >
             {tabs.map(({ label, to, end, icon: Icon, badge }) => (
               <NavLink
                 key={label}
@@ -125,81 +180,26 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
                 {...navMotion("tab")}
                 className={(state) =>
                   cx(
-                    "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
-                    lit(state) ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
+                    "group relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150",
+                    lit(state) ? "text-primary" : "text-muted",
                   )
                 }
               >
-                <Icon size={18} />
-                {label}
-                {badge > 0 && <UnreadDot count={badge} />}
+                {(state) => (
+                  <>
+                    <span className="relative transition-transform duration-150 ease-out group-active:scale-85">
+                      <Icon size={24} weight={lit(state) ? "fill" : "regular"} />
+                      {badge > 0 && <UnreadDot count={badge} className="absolute -top-1.5 -right-3" />}
+                    </span>
+                    {label}
+                  </>
+                )}
               </NavLink>
             ))}
           </nav>
-
-          <div className="flex items-center gap-1">
-            <NotificationsMenu push={push} onInstall={openInstall} />
-            {isCoach && (
-              <Link to="/dashboard" className={buttonClass({ variant: "ghost", size: "sm" })}>
-                <ClipboardText size={18} />
-                <span className="hidden md:inline">Coach view</span>
-              </Link>
-            )}
-            <Form action="/user/logout" method="post" className="hidden sm:block">
-              <button type="submit" className={buttonClass({ variant: "ghost", size: "sm" })} aria-label="Log out">
-                <SignOut size={18} />
-              </button>
-            </Form>
-          </div>
-        </div>
-      </header>
-
-      <PullToRefresh />
-
-      <main id="main" className={cx("mx-auto w-full max-w-3xl px-safe", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
-        <Outlet context={{ push, openInstall } satisfies FamilyContext} />
-      </main>
-
-      {install && (
-        <InstallSheet platform={loaderData.platform} openOnLoad={install.openOnLoad} onClose={() => setInstall(null)} />
-      )}
-      {/* Once per phone, as soon as it can say yes (on iPhone: first launch from the Home Screen) */}
-      <NotifyPrompt push={push} />
-
-      {/* Phone tab bar */}
-      {!inThread && (
-        <nav
-          className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] backdrop-blur sm:hidden"
-          aria-label="Family"
-        >
-          {tabs.map(({ label, to, end, icon: Icon, badge }) => (
-            <NavLink
-              key={label}
-              to={to}
-              end={end}
-              prefetch="intent"
-              {...navMotion("tab")}
-              className={(state) =>
-                cx(
-                  "group relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150",
-                  lit(state) ? "text-primary" : "text-muted",
-                )
-              }
-            >
-              {(state) => (
-                <>
-                  <span className="relative transition-transform duration-150 ease-out group-active:scale-85">
-                    <Icon size={24} weight={lit(state) ? "fill" : "regular"} />
-                    {badge > 0 && <UnreadDot count={badge} className="absolute -top-1.5 -right-3" />}
-                  </span>
-                  {label}
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
-      )}
-    </div>
+        )}
+      </div>
+    </PushContext.Provider>
   );
 }
 

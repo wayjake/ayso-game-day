@@ -1,20 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher, useFetchers, useLocation, useRevalidator, useSubmit } from "react-router";
-import { ArrowBendUpLeft, ArrowLeft, CaretDown, ChatCircle, Check, CheckCircle, Checks, PaperPlaneRight } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowLeft, CaretDown, ChatCircle, Check, CheckCircle, Checks, EnvelopeSimple, PaperPlaneRight, Trash } from "@phosphor-icons/react";
 import { formatMessageDateTime, formatMessageTime, formatReadTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { readersOf, type MessageReader, type ReadReceipts } from "~/utils/read-receipts";
 import { REACTIONS } from "~/utils/reactions";
-import { Badge, cx } from "~/components/ui";
+import { Badge, Button, cx } from "~/components/ui";
+import { Sheet, SheetTitle } from "~/components/Sheet";
 import { StaffBadge } from "~/components/StaffBadge";
 import type { StaffRole } from "~/utils/team-roles";
 import { typingLabel, useConversationRealtime, type RealtimeConfig, type Typist, type TypingWhere } from "~/hooks/useConversationRealtime";
 
 // Chat thread shared by the coach dashboard and the family app. The route's
 // action handles `_action=send` (a `body`, and `replyTo` for a thread reply)
-// and `_action=react` (`messageId`, `emoji`; toggles). Its loader marks the
+// and `_action=react` (`messageId`, `emoji`; toggles), and with canDelete
+// `_action=delete` (`messageId`). Its loader marks the
 // conversation read, so polling it while open keeps the read marker current.
 //
-// Tap a message to react or reply. Replies live in a thread under the message
+// Tap a message to react or reply, or (canDelete: direct threads) delete your own. Replies live in a thread under the message
 // (one level deep), opened with ?thread=<id> so a notification can link to it.
 //
 // With realtime set up (Ably), new messages and reactions arrive the moment
@@ -42,6 +44,8 @@ export type ThreadMessageView = {
   announcement?: { id: number; subject: string; ask: "none" | "ack" | "reply" } | null;
   reactions?: ReactionView[];
   thread?: { count: number; lastAt: string; names: string[] } | null;
+  /** Deleted by its sender: a placeholder, still holding the replies under it */
+  deleted?: boolean;
 };
 
 type Shown = ThreadMessageView & { pending?: boolean };
@@ -75,9 +79,12 @@ export function MessageThread({
   acks,
   ackHref,
   receipts = null,
+  canDelete = false,
 }: {
   /** Who has read how far (read receipts). Main list only; thread replies don't show them. */
   receipts?: ReadReceipts | null;
+  /** Offer Delete on your own messages (direct threads; the server checks too) */
+  canDelete?: boolean;
   layout?: "window" | "pane";
   /** Text to start the main composer with, e.g. a drafted task reminder. Fills the box each time it changes. */
   initialDraft?: string | null;
@@ -104,6 +111,10 @@ export function MessageThread({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const revalidator = useRevalidator();
   const reactions = usePendingReactions();
+  const deletes = usePendingDeletes();
+  const optimistic = (m: ThreadMessageView) => deletes.apply(reactions.apply(m));
+  // A deleted message stays as a placeholder only while replies hang under it
+  const kept = (m: ThreadMessageView) => !m.deleted || Boolean(m.thread);
   const mainSend = useFetcher<{ error?: string }>({ key: MAIN_SEND });
   const pendingBody = pendingSendBody(mainSend);
 
@@ -164,8 +175,9 @@ export function MessageThread({
           <p className="py-16 text-center text-sm text-muted">{emptyText}</p>
         ) : (
           <MessageList
-            messages={shown.map(reactions.apply)}
+            messages={shown.map(optimistic).filter(kept)}
             meId={meId}
+            canDelete={canDelete}
             showEmailDetails={showEmailDetails}
             acknowledged={acknowledged}
             canReply={!readOnly}
@@ -204,9 +216,10 @@ export function MessageThread({
       {thread && (
         <ThreadPanel
           key={thread.root.id}
-          root={reactions.apply(thread.root)}
-          replies={thread.replies.map(reactions.apply)}
+          root={optimistic(thread.root)}
+          replies={thread.replies.map(optimistic).filter((m) => !m.deleted)}
           meId={meId}
+          canDelete={canDelete}
           showEmailDetails={showEmailDetails}
           widthClass={widthClass}
           onTyping={live.setTyping}
@@ -232,9 +245,11 @@ function ThreadPanel({
   readOnly,
   acks,
   ackHref,
+  canDelete,
 }: {
   acks?: Record<number, AckSummaryView>;
   ackHref?: (announcementId: number) => string;
+  canDelete: boolean;
   root: ThreadMessageView;
   replies: ThreadMessageView[];
   meId: number;
@@ -295,13 +310,15 @@ function ThreadPanel({
 
       <div ref={scroller} className="flex-1 overflow-y-auto overscroll-contain">
         <div className={cx("mx-auto w-full px-safe pb-4", widthClass)}>
-          <MessageList messages={[root]} meId={meId} showEmailDetails={showEmailDetails} acks={acks} ackHref={ackHref} />
+          <MessageList messages={[root]} meId={meId} showEmailDetails={showEmailDetails} acks={acks} ackHref={ackHref} canDelete={canDelete} />
           <div className="my-3 flex items-center gap-3 text-xs font-semibold text-subtle">
             <span className="h-px flex-1 bg-line" />
             {replies.length === 0 ? "No replies yet" : replies.length === 1 ? "1 reply" : `${replies.length} replies`}
             <span className="h-px flex-1 bg-line" />
           </div>
-          {shown.length > 0 && <MessageList messages={shown} meId={meId} showEmailDetails={showEmailDetails} after={root.createdAt} />}
+          {shown.length > 0 && (
+            <MessageList messages={shown} meId={meId} showEmailDetails={showEmailDetails} after={root.createdAt} canDelete={canDelete} />
+          )}
         </div>
       </div>
 
@@ -333,8 +350,11 @@ function MessageList({
   acks,
   ackHref,
   receipts = null,
+  canDelete = false,
 }: {
   receipts?: ReadReceipts | null;
+  /** Offer Delete on your own messages */
+  canDelete?: boolean;
   acks?: Record<number, AckSummaryView>;
   ackHref?: (announcementId: number) => string;
   messages: Shown[];
@@ -349,6 +369,7 @@ function MessageList({
   const ackFetcher = useFetcher();
   const submit = useSubmit();
   const [selected, setSelected] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<Shown | null>(null);
 
   // Tap anywhere else, or Esc, to put the reaction bar away
   useEffect(() => {
@@ -372,179 +393,273 @@ function MessageList({
     );
   };
 
+  const remove = (messageId: number) => {
+    submit({ _action: "delete", messageId: String(messageId) }, { method: "post", navigate: false, fetcherKey: `delete-${messageId}` });
+  };
+
   const sameSender = (a?: ThreadMessageView, b?: ThreadMessageView) =>
     Boolean(a && b && a.senderId === b.senderId && (a.senderId != null || a.senderName === b.senderName));
 
   return (
-    <ol className="space-y-1 pb-2" aria-live="polite">
-      {messages.map((m, i) => {
-        const prev = messages[i - 1];
-        const next = messages[i + 1];
-        const mine = m.senderId != null && m.senderId === meId;
-        const prevDay = prev?.createdAt ?? after;
-        const newDay = !prevDay || dayLabel(prevDay) !== dayLabel(m.createdAt);
-        // Reactions or a thread under the previous message break the run
-        const prevHasExtras = Boolean(prev?.reactions?.length || (canReply && prev?.thread));
-        const grouped = !newDay && sameSender(prev, m) && !prevHasExtras;
-        const hasExtras = Boolean(m.reactions?.length || (canReply && m.thread));
-        const announcementBody = m.announcement ? m.body.slice(m.announcement.subject.length).trim() : m.body;
-        const ackPending = ackFetcher.formData?.get("messageId") === String(m.id);
-        const showAck = acknowledged && m.announcement?.ask === "ack";
-        const acked = acknowledged?.includes(m.id) || ackPending;
-        const isSelected = selected === m.id;
-        // Read receipts: only where someone else on the app could read it
-        const showReceipts = Boolean(receipts && receipts.participants > 1 && !m.pending && m.id > 0);
-        const readers = showReceipts ? readersOf(receipts, m.id, m.senderId) : [];
-        // A direct thread has one other reader, so only your own messages say anything
-        const readInfo = showReceipts && receipts && (receipts.kind !== "direct" || mine);
-        return (
-          <li key={m.id} data-message={m.id}>
-            {newDay && (
-              <div className="py-3 text-center text-xs font-semibold uppercase tracking-wider text-subtle">{dayLabel(m.createdAt)}</div>
-            )}
-            <div className={cx("flex flex-col", mine ? "items-end" : "items-start", !grouped && "mt-2")}>
-              {(!mine || m.viaEmail) && !grouped && (
-                <div className="mb-0.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-muted">
-                  {mine ? "You" : m.senderName}
-                  {m.senderRole ? <StaffBadge role={m.senderRole} short /> : m.senderIsCoach && <Badge tone="primary">Coach</Badge>}
-                  {m.viaEmail && <Badge>By email</Badge>}
+    <>
+      <ol className="space-y-1 pb-2" aria-live="polite">
+        {messages.map((m, i) => {
+          const prev = messages[i - 1];
+          const next = messages[i + 1];
+          const mine = m.senderId != null && m.senderId === meId;
+          const prevDay = prev?.createdAt ?? after;
+          const newDay = !prevDay || dayLabel(prevDay) !== dayLabel(m.createdAt);
+          // Reactions or a thread under the previous message break the run
+          const prevHasExtras = Boolean(prev?.reactions?.length || (canReply && prev?.thread));
+          const grouped = !newDay && sameSender(prev, m) && !prevHasExtras;
+          const hasExtras = Boolean(m.reactions?.length || (canReply && m.thread));
+          const announcementBody = m.announcement ? m.body.slice(m.announcement.subject.length).trim() : m.body;
+          const ackPending = ackFetcher.formData?.get("messageId") === String(m.id);
+          const showAck = acknowledged && m.announcement?.ask === "ack";
+          const acked = acknowledged?.includes(m.id) || ackPending;
+          const isSelected = selected === m.id;
+          // Read receipts: only where someone else on the app could read it
+          const showReceipts = Boolean(receipts && receipts.participants > 1 && !m.pending && m.id > 0);
+          const readers = showReceipts ? readersOf(receipts, m.id, m.senderId) : [];
+          // A direct thread has one other reader, so only your own messages say anything
+          const readInfo = showReceipts && receipts && (receipts.kind !== "direct" || mine);
+          const deletable = canDelete && mine && !m.pending && !m.deleted && !m.announcement && !m.viaEmail && m.id > 0;
+          if (m.deleted) {
+            return (
+              <li key={m.id} data-message={m.id}>
+                {newDay && (
+                  <div className="py-3 text-center text-xs font-semibold uppercase tracking-wider text-subtle">{dayLabel(m.createdAt)}</div>
+                )}
+                <div className={cx("flex flex-col", mine ? "items-end" : "items-start", !grouped && "mt-2")}>
+                  <div className="flex items-center gap-1.5 rounded-2xl px-3.5 py-2 text-sm italic text-muted ring-1 ring-line ring-inset">
+                    <Trash size={14} aria-hidden />
+                    {mine ? "You deleted this message" : "This message was deleted"}
+                  </div>
+                  {canReply && m.thread && <ThreadLink m={m} />}
                 </div>
+              </li>
+            );
+          }
+          return (
+            <li key={m.id} data-message={m.id}>
+              {newDay && (
+                <div className="py-3 text-center text-xs font-semibold uppercase tracking-wider text-subtle">{dayLabel(m.createdAt)}</div>
               )}
-              <div
-                // Tapping the bubble shows the reaction bar; buttons inside (Got it) keep working
-                onClick={(e) => {
-                  if (m.pending || (e.target as Element).closest("button, a, summary")) return;
-                  if (window.getSelection()?.toString()) return; // Selecting text, not tapping
-                  setSelected(isSelected ? null : m.id);
-                }}
-                className={cx(
-                  "max-w-[85%] cursor-pointer whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[15px] leading-snug transition sm:max-w-[70%]",
-                  mine ? "bg-primary text-white" : "bg-surface text-ink ring-1 ring-line",
-                  m.pending && "cursor-default opacity-60",
-                  isSelected && "ring-2 ring-primary/40 ring-offset-2 ring-offset-canvas"
+              <div className={cx("flex flex-col", mine ? "items-end" : "items-start", !grouped && "mt-2")}>
+                {(!mine || m.viaEmail) && !grouped && (
+                  <div className="mb-0.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-muted">
+                    {mine ? "You" : m.senderName}
+                    {m.senderRole ? <StaffBadge role={m.senderRole} short /> : m.senderIsCoach && <Badge tone="primary">Coach</Badge>}
+                    {m.viaEmail && <Badge>By email</Badge>}
+                  </div>
                 )}
-                title={m.pending ? "Sending…" : formatMessageDateTime(m.createdAt)}
-              >
-                {m.announcement && (
-                  <span className={cx("mb-1 block text-[11px] font-semibold uppercase tracking-wider", mine ? "text-white/70" : "text-muted")}>
-                    Announcement
-                  </span>
-                )}
-                {m.announcement && <strong className="mb-1 block">{m.announcement.subject}</strong>}
-                {announcementBody}
-                {showAck && (
-                  <ackFetcher.Form method="post" className="mt-2">
-                    <input type="hidden" name="_action" value="ack" />
-                    <input type="hidden" name="messageId" value={m.id} />
-                    <button
-                      type="submit"
-                      disabled={acked}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-semibold text-white disabled:bg-success-soft disabled:text-success"
-                    >
-                      <Check size={16} weight="bold" />
-                      {acked ? "They know you've seen it" : "Got it"}
-                    </button>
-                  </ackFetcher.Form>
-                )}
-              </div>
-              {acks?.[m.id] && ackHref && <AckLine summary={acks[m.id]} href={ackHref(acks[m.id].announcementId)} />}
-
-              {isSelected && (
                 <div
-                  role="toolbar"
-                  aria-label="React or reply"
-                  className="mt-1.5 flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-overlay ring-1 ring-line"
+                  // Tapping the bubble shows the reaction bar; buttons inside (Got it) keep working
+                  onClick={(e) => {
+                    if (m.pending || (e.target as Element).closest("button, a, summary")) return;
+                    if (window.getSelection()?.toString()) return; // Selecting text, not tapping
+                    setSelected(isSelected ? null : m.id);
+                  }}
+                  className={cx(
+                    "max-w-[85%] cursor-pointer whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[15px] leading-snug transition sm:max-w-[70%]",
+                    mine ? "bg-primary text-white" : "bg-surface text-ink ring-1 ring-line",
+                    m.pending && "cursor-default opacity-60",
+                    isSelected && "ring-2 ring-primary/40 ring-offset-2 ring-offset-canvas"
+                  )}
+                  title={m.pending ? "Sending…" : formatMessageDateTime(m.createdAt)}
                 >
-                  {REACTIONS.map((emoji) => {
-                    const on = m.reactions?.some((r) => r.emoji === emoji && r.mine);
-                    return (
+                  {m.announcement && (
+                    <span className={cx("mb-1 block text-[11px] font-semibold uppercase tracking-wider", mine ? "text-white/70" : "text-muted")}>
+                      Announcement
+                    </span>
+                  )}
+                  {m.announcement && <strong className="mb-1 block">{m.announcement.subject}</strong>}
+                  {announcementBody}
+                  {showAck && (
+                    <ackFetcher.Form method="post" className="mt-2">
+                      <input type="hidden" name="_action" value="ack" />
+                      <input type="hidden" name="messageId" value={m.id} />
                       <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => {
-                          react(m.id, emoji);
-                          setSelected(null);
-                        }}
-                        aria-label={on ? `Remove ${emoji}` : `React ${emoji}`}
-                        aria-pressed={on}
-                        className={cx(
-                          "flex size-10 items-center justify-center rounded-full text-xl transition hover:scale-110 hover:bg-surface-2",
-                          on && "bg-primary-soft"
-                        )}
+                        type="submit"
+                        disabled={acked}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-semibold text-white disabled:bg-success-soft disabled:text-success"
                       >
-                        {emoji}
+                        <Check size={16} weight="bold" />
+                        {acked ? "They know you've seen it" : "Got it"}
                       </button>
-                    );
-                  })}
-                  {canReply && (
-                    <Link
-                      to={`?thread=${m.id}`}
-                      preventScrollReset
-                      onClick={() => setSelected(null)}
-                      className="ml-1 flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-primary hover:bg-surface-2"
-                    >
-                      <ArrowBendUpLeft size={16} weight="bold" /> Reply
-                    </Link>
+                    </ackFetcher.Form>
                   )}
                 </div>
-              )}
-              {isSelected && readInfo && receipts && <ReadInfo kind={receipts.kind} readers={readers} />}
+                {acks?.[m.id] && ackHref && <AckLine summary={acks[m.id]} href={ackHref(acks[m.id].announcementId)} />}
 
-              {m.reactions && m.reactions.length > 0 && (
-                <div className={cx("mt-1 flex flex-wrap gap-1 px-1", mine && "justify-end")}>
-                  {m.reactions.map((r) => (
-                    <button
-                      key={r.emoji}
-                      type="button"
-                      onClick={() => react(m.id, r.emoji)}
-                      title={r.names.join(", ")}
-                      aria-label={`${r.emoji} ${r.count}: ${r.names.join(", ")}${r.mine ? ". Tap to remove yours" : ". Tap to add yours"}`}
-                      aria-pressed={r.mine}
-                      className={cx(
-                        "flex h-7 items-center gap-1 rounded-full px-2 text-sm ring-1 transition",
-                        r.mine ? "bg-primary-soft text-primary-ink ring-primary/40" : "bg-surface text-muted ring-line hover:bg-surface-2"
-                      )}
-                    >
-                      <span>{r.emoji}</span>
-                      <span className="tabular text-xs font-semibold">{r.count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                {isSelected && (
+                  <div
+                    role="toolbar"
+                    aria-label="React or reply"
+                    className="mt-1.5 flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-overlay ring-1 ring-line"
+                  >
+                    {REACTIONS.map((emoji) => {
+                      const on = m.reactions?.some((r) => r.emoji === emoji && r.mine);
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            react(m.id, emoji);
+                            setSelected(null);
+                          }}
+                          aria-label={on ? `Remove ${emoji}` : `React ${emoji}`}
+                          aria-pressed={on}
+                          className={cx(
+                            "flex size-10 items-center justify-center rounded-full text-xl transition hover:scale-110 hover:bg-surface-2",
+                            on && "bg-primary-soft"
+                          )}
+                        >
+                          {emoji}
+                        </button>
+                      );
+                    })}
+                    {canReply && (
+                      <Link
+                        to={`?thread=${m.id}`}
+                        preventScrollReset
+                        onClick={() => setSelected(null)}
+                        className="ml-1 flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-primary hover:bg-surface-2"
+                      >
+                        <ArrowBendUpLeft size={16} weight="bold" /> Reply
+                      </Link>
+                    )}
+                  </div>
+                )}
+                {isSelected && readInfo && receipts && <ReadInfo kind={receipts.kind} readers={readers} />}
+                {isSelected && deletable && (
+                  <Button
+                    variant="danger-soft"
+                    size="sm"
+                    className="mt-1"
+                    onClick={() => {
+                      setSelected(null);
+                      setConfirming(m);
+                    }}
+                  >
+                    <Trash size={16} weight="bold" /> Delete
+                  </Button>
+                )}
 
-              {canReply && m.thread && (
-                <Link
-                  to={`?thread=${m.id}`}
-                  preventScrollReset
-                  className="mt-1 flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-xs font-semibold text-primary hover:underline"
-                >
-                  <ChatCircle size={14} weight="fill" />
-                  {m.thread.count === 1 ? "1 reply" : `${m.thread.count} replies`}
-                  <span className="font-normal text-muted">
-                    · {m.thread.names.slice(0, 3).join(", ")}
-                    {m.thread.names.length > 3 && ` +${m.thread.names.length - 3}`} · {formatMessageTime(m.thread.lastAt)}
+                {m.reactions && m.reactions.length > 0 && (
+                  <div className={cx("mt-1 flex flex-wrap gap-1 px-1", mine && "justify-end")}>
+                    {m.reactions.map((r) => (
+                      <button
+                        key={r.emoji}
+                        type="button"
+                        onClick={() => react(m.id, r.emoji)}
+                        title={r.names.join(", ")}
+                        aria-label={`${r.emoji} ${r.count}: ${r.names.join(", ")}${r.mine ? ". Tap to remove yours" : ". Tap to add yours"}`}
+                        aria-pressed={r.mine}
+                        className={cx(
+                          "flex h-7 items-center gap-1 rounded-full px-2 text-sm ring-1 transition",
+                          r.mine ? "bg-primary-soft text-primary-ink ring-primary/40" : "bg-surface text-muted ring-line hover:bg-surface-2"
+                        )}
+                      >
+                        <span>{r.emoji}</span>
+                        <span className="tabular text-xs font-semibold">{r.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {canReply && m.thread && <ThreadLink m={m} />}
+
+                {showEmailDetails && m.fullEmail && (
+                  <details className="mt-1 max-w-[85%] px-1 text-xs text-muted sm:max-w-[70%]">
+                    <summary className="cursor-pointer">Show the full email</summary>
+                    <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-2 font-sans">{m.fullEmail}</pre>
+                  </details>
+                )}
+                {!m.pending && (!sameSender(next, m) || hasExtras || i === messages.length - 1) && (
+                  <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-subtle">
+                    {formatMessageTime(m.createdAt)}
+                    {showEmailDetails && m.emailedTo && ` · emailed to ${m.emailedTo}`}
+                    {mine && showReceipts && <Ticks read={readers.length > 0} />}
                   </span>
-                </Link>
-              )}
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {confirming && <DeleteSheet message={confirming} onDelete={() => remove(confirming.id)} onClose={() => setConfirming(null)} />}
+    </>
+  );
+}
 
-              {showEmailDetails && m.fullEmail && (
-                <details className="mt-1 max-w-[85%] px-1 text-xs text-muted sm:max-w-[70%]">
-                  <summary className="cursor-pointer">Show the full email</summary>
-                  <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-2 font-sans">{m.fullEmail}</pre>
-                </details>
-              )}
-              {!m.pending && (!sameSender(next, m) || hasExtras || i === messages.length - 1) && (
-                <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-subtle">
-                  {formatMessageTime(m.createdAt)}
-                  {showEmailDetails && m.emailedTo && ` · emailed to ${m.emailedTo}`}
-                  {mine && showReceipts && <Ticks read={readers.length > 0} />}
-                </span>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+function ThreadLink({ m }: { m: ThreadMessageView }) {
+  if (!m.thread) return null;
+  return (
+    <Link
+      to={`?thread=${m.id}`}
+      preventScrollReset
+      className="mt-1 flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-xs font-semibold text-primary hover:underline"
+    >
+      <ChatCircle size={14} weight="fill" />
+      {m.thread.count === 1 ? "1 reply" : `${m.thread.count} replies`}
+      <span className="font-normal text-muted">
+        · {m.thread.names.slice(0, 3).join(", ")}
+        {m.thread.names.length > 3 && ` +${m.thread.names.length - 3}`} · {formatMessageTime(m.thread.lastAt)}
+      </span>
+    </Link>
+  );
+}
+
+// Deleting takes it out of the app, nowhere else: say so before asking
+function DeleteSheet({ message, onDelete, onClose }: { message: ThreadMessageView; onDelete: () => void; onClose: () => void }) {
+  return (
+    <Sheet labelledBy="delete-message-title" onClose={onClose}>
+      {(close) => (
+        <>
+          <SheetTitle
+            id="delete-message-title"
+            icon={
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-danger-soft text-danger" aria-hidden>
+                <Trash size={28} weight="fill" />
+              </span>
+            }
+            title="Delete this message?"
+            subtitle="It's removed from this chat for both of you"
+          />
+          <blockquote className="mt-5 line-clamp-4 whitespace-pre-wrap break-words rounded-xl bg-surface-2 px-3.5 py-2.5 text-[15px] leading-snug text-ink">
+            {message.body}
+          </blockquote>
+          {message.emailedTo && (
+            <p className="mt-4 flex gap-3 rounded-xl bg-warning-soft p-3 text-sm text-ink">
+              <EnvelopeSimple size={20} weight="fill" className="mt-0.5 shrink-0 text-warning" aria-hidden />
+              <span>
+                This was also emailed to <strong className="break-all">{message.emailedTo}</strong>. Deleting it here won't unsend
+                the email: they keep it in their inbox.
+              </span>
+            </p>
+          )}
+          <p className="mt-4 text-sm text-muted">
+            If they've already seen it, it can stay in a notification on their phone, or on their screen until the app refreshes.
+          </p>
+          <div className="mt-6 flex flex-col gap-2">
+            <Button
+              variant="danger"
+              size="lg"
+              onClick={() => {
+                onDelete();
+                close();
+              }}
+            >
+              Delete message
+            </Button>
+            <Button variant="secondary" size="lg" onClick={close}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -726,6 +841,18 @@ function usePendingReactions() {
     return { ...m, reactions };
   };
 
+  return { apply };
+}
+
+// A deleted message turns into its placeholder (or goes) the moment Delete is tapped
+function usePendingDeletes() {
+  const ids = new Set(
+    useFetchers()
+      .filter((f) => f.state !== "idle" && f.formData?.get("_action") === "delete")
+      .map((f) => Number(f.formData!.get("messageId")))
+  );
+  const apply = <T extends ThreadMessageView>(m: T): T =>
+    ids.has(m.id) ? { ...m, deleted: true, body: "", reactions: [], emailedTo: null } : m;
   return { apply };
 }
 
