@@ -650,6 +650,7 @@ Any time Claude pushes (a merge to `preview` or `main`, or a feature branch), br
   1. Generate the migration with `npm run db:generate -- --name <name>`.
   2. Apply its SQL with `sqlite3` to both the worktree's `data/dev.db` and the main checkout's `data/dev.db`, because `db:push` is broken.
   3. Run `npm run db:prod:migrate`.
+- **Number clashes between branches:** two worktrees can each generate the same next number. Drizzle decides what to run on prod by each journal entry's `when` (newer than the last applied `created_at`), not by number or tag, so a migration that's already on prod must keep its `when` and never be regenerated. On a clash, the one not yet on prod moves: rename its SQL and snapshot to the next number and fix `idx`/`tag` in the journal, keeping its SQL and `when`. When merging, keep both journal entries, and afterwards `npm run db:generate` should report no changes (if the two snapshots share a parent, regenerate the later snapshot on top of the earlier one).
 - **This only covers additive migrations:** new tables, new nullable or defaulted columns, and new indexes. Anything that drops, renames, or rewrites columns or data needs the user's OK first.
 - **Read production data freely when it helps** (for example to check real data before a change). Use `TURSO_PROD_URL`/`TURSO_PROD_TOKEN` from `.env`, either from a throwaway `tsx` script or `npm run db:prod:studio`.
 - **Ask before writing anything to production.** Inserts, updates, deletes and backfills all need a yes first, with what will change and how many rows.
