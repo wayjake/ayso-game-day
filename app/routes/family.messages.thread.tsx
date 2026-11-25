@@ -70,7 +70,7 @@ export default function FamilyThread({ loaderData }: Route.ComponentProps) {
   const { me, kind, teamName, messages, thread, realtime, acknowledged } = loaderData;
   return (
     <div>
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur">
+      <div className="sticky top-[calc(3.5rem+var(--safe-top))] z-20 -mx-4 flex items-center gap-3 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur">
         <Link to="/family/messages" className="-ml-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="All messages">
           <ArrowLeft size={20} weight="bold" />
         </Link>

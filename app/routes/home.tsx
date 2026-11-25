@@ -49,7 +49,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {/* Top nav */}
-      <header className="sticky top-0 z-50 border-b border-line bg-surface/90 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-line bg-surface/90 pt-[var(--safe-top)] backdrop-blur">
         <nav className={cx(container, "flex h-14 items-center justify-between gap-4")}>
           <a href="/" aria-label="BenchTalk home">
             <AppMark />

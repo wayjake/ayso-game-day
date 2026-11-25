@@ -99,7 +99,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {/* Slim header */}
-      <header className="border-b border-line bg-surface">
+      <header className="border-b border-line bg-surface pt-[var(--safe-top)]">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to="/" aria-label="BenchTalk home">
             <AppMark />

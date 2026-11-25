@@ -5,7 +5,7 @@ import { AppMark } from "~/components/AppMark";
 // Shell for sign in and sign up: a pitch panel on wide screens, the form on canvas
 export default function UserLayout() {
   return (
-    <div className="min-h-dvh bg-canvas text-ink lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div className="canvas-top min-h-dvh bg-canvas text-ink lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       <aside className="relative hidden overflow-hidden bg-pitch text-white lg:flex lg:flex-col lg:justify-end">
         <PitchLines className="absolute inset-0 h-full w-full" />
         <div className="relative bg-linear-to-t from-pitch-dark via-pitch-dark/80 to-transparent p-10 pt-32 xl:p-14 xl:pt-40">
@@ -18,7 +18,7 @@ export default function UserLayout() {
         </div>
       </aside>
 
-      <div className="flex min-h-dvh flex-col px-4 sm:px-6">
+      <div className="flex min-h-dvh flex-col px-4 pt-[var(--safe-top)] sm:px-6">
         <header className="flex h-16 items-center justify-between gap-4">
           <Link to="/" aria-label="BenchTalk home">
             <AppMark />

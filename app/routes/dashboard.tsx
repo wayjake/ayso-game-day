@@ -50,7 +50,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       >
         Skip to content
       </a>
-      <header className="shrink-0 border-b border-line bg-surface">
+      <header className="shrink-0 border-b border-line bg-surface pt-[var(--safe-top)]">
         <nav className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link to="/dashboard" aria-label="BenchTalk home">
             <AppMark />

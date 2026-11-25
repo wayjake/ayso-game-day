@@ -40,7 +40,7 @@ export function FeedTimeline({
         <button
           type="button"
           onClick={feed.showNew}
-          className="fixed left-1/2 top-[calc(4.5rem+env(safe-area-inset-top))] z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card"
+          className="fixed left-1/2 top-[calc(4.5rem+var(--safe-top))] z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card"
         >
           <ArrowUp size={16} weight="bold" />
           {feed.newCount} new {feed.newCount === 1 ? "post" : "posts"}

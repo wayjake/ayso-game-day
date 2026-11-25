@@ -60,13 +60,31 @@
 	--border: var(--color-line);
 }
 
+/*
+ * The installed iPhone app fills the status bar strip (around the notch or
+ * Dynamic Island) with the page's root background, outside our layout. Make
+ * that white so it reads as part of the white top bar below it. Every page
+ * paints its own canvas grey. Pages whose top is grey, not a white bar
+ * (sign in, invites), mark themselves with .canvas-top to match.
+ * iOS saves these settings at install: delete and re-add the app to see a change.
+ */
+:root {
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 html,
 body {
-	background-color: var(--color-canvas);
+	background-color: var(--color-surface);
 	color: var(--color-ink);
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+}
+
+html:has(.canvas-top),
+html:has(.canvas-top) body {
+	background-color: var(--color-canvas);
 }
 
 /* viewport-fit=cover lets the lineup's bottom bar reach the home indicator;
