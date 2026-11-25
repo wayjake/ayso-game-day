@@ -167,7 +167,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
               ))}
             </div>
 
-            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-6">
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-6">
               {/* Field */}
               <section aria-label={`Quarter ${quarter} lineup`}>
                 <div className="mb-2 flex items-center justify-between gap-3 px-1">

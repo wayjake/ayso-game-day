@@ -17,7 +17,8 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "danger-soft
 type ButtonSize = "sm" | "md" | "lg" | "icon-sm" | "icon";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap transition duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
+  // Labels wrap rather than run off the screen when the iPhone's text size is turned up
+  "inline-flex items-center justify-center gap-2 rounded-lg text-center leading-tight font-semibold transition duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-primary text-white shadow-card hover:bg-primary-hover",
@@ -27,11 +28,12 @@ const buttonVariants: Record<ButtonVariant, string> = {
   "danger-soft": "text-danger hover:bg-danger-soft",
 };
 
-// On touch screens every size is at least 44px tall (Apple's minimum touch target)
+// On touch screens every size is at least 44px tall (Apple's minimum touch target).
+// Minimum heights, so a label that wraps at a large text size makes the button taller.
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm pointer-coarse:h-11",
-  md: "h-10 px-4 text-sm pointer-coarse:h-11",
-  lg: "h-12 px-5 text-base",
+  sm: "min-h-9 px-3 py-1.5 text-sm pointer-coarse:min-h-11",
+  md: "min-h-10 px-4 py-2 text-sm pointer-coarse:min-h-11",
+  lg: "min-h-12 px-5 py-2.5 text-base",
   "icon-sm": "h-9 w-9 text-sm pointer-coarse:h-11 pointer-coarse:w-11",
   icon: "h-10 w-10 text-sm pointer-coarse:h-11 pointer-coarse:w-11",
 };
@@ -73,7 +75,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={cx("flex items-center justify-between gap-4", className)}>
+    <div className={cx("flex flex-wrap items-center justify-between gap-x-4 gap-y-2", className)}>
       <h2 className="text-base font-semibold">
         {title}
         {count !== undefined && <span className="ml-1.5 font-normal text-subtle tabular">{count}</span>}
@@ -178,7 +180,7 @@ export function Page({
 export function DateTile({ iso, className }: { iso: string; className?: string }) {
   return (
     <div className={cx("flex w-12 shrink-0 flex-col items-center rounded-lg bg-surface-2 py-1 ring-1 ring-line", className)}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
         {formatGameDate(iso, { month: "short" })}
       </span>
       <span className="font-display text-xl font-bold leading-none tabular">{formatGameDate(iso, { day: "numeric" })}</span>
@@ -263,7 +265,7 @@ export function PlayerAvatar({
 // Form fields
 
 export const inputClass =
-  "block w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-subtle transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-2 disabled:text-muted";
+  "block w-full rounded-lg border border-field bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-subtle transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-2 disabled:text-muted";
 
 export const labelClass = "mb-1.5 block text-sm font-medium text-ink";
 

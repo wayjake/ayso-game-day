@@ -116,7 +116,7 @@ export default function TaskDetail({ loaderData }: Route.ComponentProps) {
         <TaskMeta dueDate={task.dueDate} today={today} perFamily={task.perFamily} coachConfirms={task.coachConfirms} />
         {task.details && <p className="mt-3 whitespace-pre-wrap text-sm">{task.details}</p>}
         {task.link && (
-          <a href={task.link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex max-w-full items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+          <a href={task.link} target="_blank" rel="noopener noreferrer" className="pointer-coarse:min-h-11 mt-2 inline-flex max-w-full items-center gap-1.5 text-sm font-medium text-primary hover:underline">
             <ArrowSquareOut size={16} className="shrink-0" />
             <span className="truncate">{task.link}</span>
           </a>

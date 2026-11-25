@@ -889,7 +889,7 @@ function PositionSlot({
           ) : (
             <div className="text-center leading-none">
               <div className="text-sm">{position.number}</div>
-              <div className="mt-0.5 font-sans text-[9px] font-semibold text-muted sm:text-[10px]">{position.abbreviation}</div>
+              <div className="mt-0.5 font-sans text-[11px] font-semibold text-muted">{position.abbreviation}</div>
             </div>
           )}
         </div>
@@ -898,7 +898,7 @@ function PositionSlot({
         {assignedPlayer && quartersSittingOut !== undefined && (
           <div
             className={cx(
-              "pointer-events-none absolute -top-1 -right-2 z-30 flex h-4 items-center justify-center rounded px-1 text-[9px] font-bold tabular shadow-card",
+              "pointer-events-none absolute -top-1 -right-2 z-30 flex h-[18px] items-center justify-center rounded px-1 text-[11px] font-bold tabular shadow-card",
               sittingOutBadgeClass(quartersSittingOut)
             )}
             title={`Sitting out ${quartersSittingOut} of 4 quarters`}
@@ -916,7 +916,7 @@ function PositionSlot({
 
         {/* Previous quarter player hint when position is empty */}
         {!assignedPlayer && previousQuarterPlayer && (
-          <div className="pointer-events-none absolute top-12 left-1/2 z-10 max-w-[70px] -translate-x-1/2 truncate rounded-md bg-surface/75 px-1.5 py-0.5 text-[10px] text-muted sm:top-14 sm:max-w-none sm:px-2 sm:text-xs sm:whitespace-nowrap">
+          <div className="pointer-events-none absolute top-12 left-1/2 z-10 max-w-[70px] -translate-x-1/2 truncate rounded-md bg-surface/75 px-1.5 py-0.5 text-[11px] text-muted sm:top-14 sm:max-w-none sm:px-2 sm:text-xs sm:whitespace-nowrap">
             {previousQuarterPlayer.name.length > 12 ? `${previousQuarterPlayer.name.substring(0, 10)}...` : previousQuarterPlayer.name}
           </div>
         )}

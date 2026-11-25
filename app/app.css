@@ -16,7 +16,8 @@
 	--color-surface: #FFFFFF;
 	--color-surface-2: #EEF1F5;
 	--color-line: #DFE4EA;
-	--color-line-strong: #C3CCD7;
+	--color-line-strong: #C3CCD7; /* Decorative borders: cards, dividers, secondary buttons */
+	--color-field: #808B9A; /* Borders of things you type into or tick: 3:1 on white, canvas and surface-2 (WCAG 1.4.11) */
 	--color-ink: #101B2D;
 	--color-muted: #536175;
 	--color-subtle: #64717F; /* 5:1 on white, 4.6:1 on canvas: the lightest grey that passes for text (was #8693A5, 3.1:1) */
@@ -174,12 +175,87 @@ img {
 }
 
 /*
+ * Dynamic Type: on iPhone and iPad, the base font size follows the Text Size
+ * setting (Settings > Display & Brightness, or Accessibility > Larger Text),
+ * like a native app. -apple-system-body is 17px at the default size, iOS's own
+ * body size; every rem in the app (text, spacing, bar heights) scales with it.
+ * Only iOS: on a Mac the same keyword is 13px. -webkit-touch-callout exists
+ * only in iOS WebKit, so it picks out iPhone and iPad (Safari, the installed
+ * app, and every iOS browser, which all use WebKit).
+ */
+@supports (-webkit-touch-callout: none) {
+	html {
+		font: -apple-system-body;
+		font-family: var(--font-sans);
+	}
+}
+
+/*
+ * Checkboxes and radios, drawn here rather than by the system: iOS's own
+ * unchecked box is too faint to see against white (it fails 3:1). Size comes
+ * from the usual classes (h-4 w-4, size-4) and the touch rule below; accent-*
+ * classes are now no-ops. The hidden switch that plays haptics keeps its own look.
+ */
+@layer base {
+	input[type="checkbox"]:not([switch]),
+	input[type="radio"] {
+		appearance: none;
+		-webkit-appearance: none;
+		display: inline-block;
+		flex-shrink: 0;
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+		vertical-align: middle;
+		border: 1.5px solid var(--color-field);
+		border-radius: 0.3rem;
+		background-color: var(--color-surface);
+		background-position: center;
+		background-repeat: no-repeat;
+		cursor: pointer;
+		transition:
+			background-color 120ms ease-out,
+			border-color 120ms ease-out;
+	}
+	input[type="radio"] {
+		border-radius: 9999px;
+	}
+	input[type="checkbox"]:not([switch]):checked {
+		border-color: var(--color-primary);
+		background-color: var(--color-primary);
+		background-size: 80%;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+	}
+	input[type="radio"]:checked {
+		border-color: var(--color-primary);
+		background-image: radial-gradient(circle, var(--color-primary) 0 42%, transparent 46%);
+	}
+	input[type="checkbox"]:disabled,
+	input[type="radio"]:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+}
+
+/*
  * Touch targets: 44pt is the smallest a finger hits reliably (Apple's HIG).
  * `tap` gives a small control (an icon button, an inline link) an invisible
  * 44px hit area around it without changing how it looks.
  */
 @utility tap {
 	position: relative;
+	&::after {
+		content: "";
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: max(100%, 44px);
+		height: max(100%, 44px);
+		transform: translate(-50%, -50%);
+	}
+}
+/* The same hit area for a control that's already positioned (absolute or fixed), which tap would override */
+@utility tap-area {
 	&::after {
 		content: "";
 		position: absolute;

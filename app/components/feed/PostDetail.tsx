@@ -266,7 +266,7 @@ function PostBody({
             rows={1}
             maxLength={MAX_COMMENT}
             placeholder="Add a comment…"
-            className="block max-h-32 min-h-11 w-full resize-none rounded-2xl border border-line-strong bg-surface px-4 py-2.5 text-[16px] text-ink [field-sizing:content] placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="block max-h-32 min-h-11 w-full resize-none rounded-2xl border border-field bg-surface px-4 py-2.5 text-[16px] text-ink [field-sizing:content] placeholder:text-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
         <button

@@ -6,7 +6,7 @@ export function MessagesTabs({ teamId, needsReply = 0, className }: { teamId: nu
   const base = `/dashboard/team/${teamId}`;
   const tab = ({ isActive }: { isActive: boolean }) =>
     cx(
-      "flex-1 rounded-lg px-3 py-2 text-center text-sm font-semibold transition sm:flex-none sm:px-4",
+      "min-w-0 flex-1 rounded-lg px-3 py-2 text-center text-sm font-semibold break-words transition sm:flex-none sm:px-4",
       isActive ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-muted hover:text-ink"
     );
   return (

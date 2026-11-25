@@ -235,7 +235,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
           </EmptyState>
         </Card>
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
         <Card>
           <ul className="divide-y divide-line">

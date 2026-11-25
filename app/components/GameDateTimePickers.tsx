@@ -15,7 +15,7 @@ import {
 
 // Matches inputClass in ui.tsx, laid out as a button with an icon on the right
 const triggerClass =
-  "flex w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-left text-sm text-ink transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
+  "flex w-full items-center justify-between gap-2 rounded-lg border border-field bg-surface px-3 py-2.5 text-left text-sm text-ink transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 const popoverClass =
   "absolute z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-surface p-3 shadow-overlay ring-1 ring-line";
 const chipBase = "rounded-full border px-3 py-1.5 text-sm font-medium transition";
@@ -348,7 +348,7 @@ export function GameTimePicker({
                 type="time"
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                className="rounded-md border border-line-strong bg-surface px-2 py-1 text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="rounded-md border border-field bg-surface px-2 py-1 text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </label>
             <button type="button" onClick={close} className="rounded-md px-2 py-1.5 font-medium text-primary hover:bg-primary-soft">

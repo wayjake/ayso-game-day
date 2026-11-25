@@ -68,7 +68,7 @@ function CarouselArrow({ dir, onClick }: { dir: "prev" | "next"; onClick: () => 
       onClick={onClick}
       aria-label={dir === "prev" ? "Previous" : "Next"}
       className={cx(
-        "absolute top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-ink shadow-card backdrop-blur transition hover:bg-white",
+        "tap-area absolute top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-ink shadow-card backdrop-blur transition hover:bg-white",
         dir === "prev" ? "left-2" : "right-2"
       )}
     >
@@ -185,7 +185,7 @@ export function PostActions({
 // ---------------------------------------------------------------------------
 // People
 
-const avatarSizes = { sm: "size-7 text-[10px]", md: "size-9 text-xs" };
+const avatarSizes = { sm: "size-7 text-[11px]", md: "size-9 text-xs" };
 
 /** Initials in a colored circle; the color comes from the person's id so it stays the same */
 export function PersonAvatar({ person, size = "md", className }: { person: { id: number; name: string }; size?: keyof typeof avatarSizes; className?: string }) {
