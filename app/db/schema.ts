@@ -381,6 +381,10 @@ export const messages = sqliteTable('messages', {
   // Set on a reply: the thread's root message. Threads are one level deep, so
   // a reply to a reply points at the same root.
   parentId: integer('parent_id'),
+  // The sender deleted it (direct threads only). The row stays, with an empty
+  // body, so replies under it, reactions' and announcements' references and
+  // email reply matching (emailMessageId) still work.
+  deletedAt: text('deleted_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   index('messages_conversation_idx').on(t.conversationId, t.id),

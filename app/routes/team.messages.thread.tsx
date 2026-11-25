@@ -13,6 +13,7 @@ import {
   getThread,
   groupSubtitle,
   groupTitle,
+  deleteMessage,
   postMessage,
   toggleReaction,
   setNeedsReply,
@@ -151,6 +152,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     await toggleReaction(conversation, user, Number(formData.get("messageId")), String(formData.get("emoji") ?? ""));
     return data({ ok: true });
   }
+  if (intent === "delete") {
+    const deleted = await deleteMessage(conversation, user.id, Number(formData.get("messageId")));
+    return deleted ? data({ ok: true }) : data({ error: "That message can't be deleted" }, { status: 400 });
+  }
   if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
   const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
     email: formData.get("alsoEmail") === "1",
@@ -283,6 +288,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           realtime={realtime}
           meId={me}
           receipts={receipts}
+          canDelete={kind === "direct"}
           emptyText={
             kind === "team"
               ? "No messages yet. Post something for every family on the team."
