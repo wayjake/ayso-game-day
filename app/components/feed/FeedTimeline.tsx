@@ -109,12 +109,7 @@ function PostCard({
   return (
     <Card className="overflow-hidden">
       <PostHeader post={post} showTeamName={showTeamName} onDeleted={() => onDeleted(post.id)} />
-      <Link to={href} state={{ fromFeed: true }} className="block" aria-label="Open post" tabIndex={-1} onClick={(e) => {
-        // Taps on a video's controls or the carousel shouldn't open the post
-        if ((e.target as HTMLElement).closest("video, button")) e.preventDefault();
-      }}>
-        <PostMedia media={post.media} caption={post.caption} />
-      </Link>
+      <PostMedia media={post.media} caption={post.caption} href={href} />
       <PostActions postId={post.id} stats={post.stats} onStats={(stats) => onStats(post.id, stats)} commentsTo={href} />
       {post.caption && <p className="whitespace-pre-wrap break-words px-4 pb-2 text-[15px]">{post.caption}</p>}
       {post.stats.comments > 0 ? (

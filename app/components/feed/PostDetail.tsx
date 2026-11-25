@@ -30,13 +30,14 @@ export function PostDetail({ post, comments, likers, me, feedHref, showTeamName,
   const state = location.state as { fromFeed?: boolean; focusComment?: boolean } | null;
   const { revalidate } = useRevalidator();
 
-  // Fresh comments and likes while you're here: on realtime events, else every 15 s
+  // Fresh comments and likes while you're here: on realtime events, plus a poll
+  // (every 15 s without realtime, a slow safety net with it)
   useRealtimeEvents(channels, (event) => {
     if (!post || event.postId === post.id) revalidate();
   });
   useEffect(() => {
-    if (channels.length) return;
-    const id = window.setInterval(() => document.visibilityState === "visible" && revalidate(), 15_000);
+    const ms = channels.length ? 60_000 : 15_000;
+    const id = window.setInterval(() => document.visibilityState === "visible" && revalidate(), ms);
     return () => window.clearInterval(id);
   }, [channels.length, revalidate]);
 

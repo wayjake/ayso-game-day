@@ -8,11 +8,12 @@ import { sendPostAction, type FeedAuthor, type FeedMediaItem, type PostStats } f
 // A post's files (one on its own, several as a swipeable carousel) and the
 // like/comment row under it. Ported from disney-social's PostMedia.
 
-export function PostMedia({ media, caption }: { media: FeedMediaItem[]; caption: string | null }) {
-  return media.length === 1 ? <Media item={media[0]} caption={caption} /> : <Carousel media={media} caption={caption} />;
+/** `href`: tapping a photo opens the post (videos keep their own controls) */
+export function PostMedia({ media, caption, href }: { media: FeedMediaItem[]; caption: string | null; href?: string }) {
+  return media.length === 1 ? <Media item={media[0]} caption={caption} href={href} /> : <Carousel media={media} caption={caption} href={href} />;
 }
 
-function Carousel({ media, caption }: { media: FeedMediaItem[]; caption: string | null }) {
+function Carousel({ media, caption, href }: { media: FeedMediaItem[]; caption: string | null; href?: string }) {
   const [index, setIndex] = useState(0);
   const track = useRef<HTMLDivElement>(null);
   const last = media.length - 1;
@@ -39,7 +40,7 @@ function Carousel({ media, caption }: { media: FeedMediaItem[]; caption: string 
             className="grid aspect-[4/5] min-h-0 w-full flex-none snap-center snap-always place-items-center overflow-hidden bg-surface-2"
             aria-label={`${i + 1} of ${media.length}`}
           >
-            <Media item={item} caption={caption} fill />
+            <Media item={item} caption={caption} href={href} fill />
           </div>
         ))}
       </div>
@@ -74,14 +75,22 @@ function CarouselArrow({ dir, onClick }: { dir: "prev" | "next"; onClick: () => 
   );
 }
 
-function Media({ item, caption, fill = false }: { item: FeedMediaItem; caption: string | null; fill?: boolean }) {
+function Media({ item, caption, href, fill = false }: { item: FeedMediaItem; caption: string | null; href?: string; fill?: boolean }) {
   // min-h-0: a tall file mustn't stretch its 4:5 slide
   const size = fill ? "size-full min-h-0 object-contain" : "w-full";
   // The 1280px copy's size holds the space while it loads, so the feed doesn't jump
   const dims = { width: item.width ?? undefined, height: item.height ?? undefined };
-  return item.type === "image" ? (
-    <img src={item.displayUrl ?? item.url} alt={caption ?? ""} loading="lazy" decoding="async" {...dims} className={cx(size, "bg-surface-2")} />
-  ) : (
+  if (item.type === "image") {
+    const img = <img src={item.displayUrl ?? item.url} alt={caption ?? ""} loading="lazy" decoding="async" draggable={false} {...dims} className={cx(size, "bg-surface-2")} />;
+    return href ? (
+      <Link to={href} state={{ fromFeed: true }} className={cx("block", fill && "size-full min-h-0")} aria-label="Open post">
+        {img}
+      </Link>
+    ) : (
+      img
+    );
+  }
+  return (
     <video
       src={item.url}
       // The frame at 3 s stands in until play, so none of the video downloads before then
