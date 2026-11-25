@@ -13,6 +13,17 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Read receipts",
+    summary: "See when your messages have been read, and who in a group has seen them.",
+    changes: [
+      { kind: "new", text: "Your messages show one check once they're sent and two once they've been read." },
+      { kind: "new", text: "Tap a message in a private chat to see when it was read, like \"Read today at 11:15 AM\"." },
+      { kind: "new", text: "In a group or the team chat, tap any message to see who has seen it and when. Everyone in the chat can see this." },
+      { kind: "improved", text: "A message only counts as read once you've actually looked at it, not while BenchTalk is open in a tab you aren't looking at." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Follows your text size",
     summary: "BenchTalk on iPhone and iPad now follows your Text Size setting, and forms are easier to see.",
     changes: [
