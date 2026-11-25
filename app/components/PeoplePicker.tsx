@@ -89,6 +89,8 @@ export const PeopleChecklist = forwardRef<HTMLInputElement, ListProps>(function 
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          // Enter here is for searching, never for sending the form around it
+          onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
           placeholder="Search families, kids or staff"
           aria-label="Search people"
           className={cx(inputClass, "pl-9")}
