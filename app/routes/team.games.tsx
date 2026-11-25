@@ -122,6 +122,14 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
     </Link>
   );
 
+  // Empty states: the game is the main action, a practice sits beside it
+  const emptyActions = (gameLabel: string) => (
+    <div className="flex flex-wrap justify-center gap-2">
+      {scheduleLink(gameLabel)}
+      {practiceLink}
+    </div>
+  );
+
   return (
     <Page>
       <PageHeader
@@ -130,7 +138,7 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
         actions={
           <>
             {practiceLink}
-            {upcoming.length > 0 && scheduleLink("Schedule game", "secondary")}
+            {scheduleLink("Schedule game", "secondary")}
           </>
         }
       />
@@ -139,10 +147,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
         <Card>
           <EmptyState
             icon={<CalendarPlus size={24} />}
-            title="No games yet"
-            action={scheduleLink("Schedule your first game")}
+            title="Nothing scheduled yet"
+            action={emptyActions("Schedule your first game")}
           >
-            Schedule a game to start planning lineups and rotations.
+            Schedule a game to start planning lineups and rotations, or add your practices.
           </EmptyState>
         </Card>
       ) : (
@@ -166,7 +174,7 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                   className="py-10"
                   icon={<CalendarPlus size={24} />}
                   title="Nothing coming up"
-                  action={scheduleLink("Schedule game")}
+                  action={emptyActions("Schedule game")}
                 >
                   Everything scheduled is in the past.
                 </EmptyState>

@@ -362,6 +362,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <li><a className="transition hover:text-ink" href="#schedule">Schedule</a></li>
             <li><a className="transition hover:text-ink" href="#messages">Messages</a></li>
             <li><a className="transition hover:text-ink" href="#pricing">Pricing</a></li>
+            <li><a className="transition hover:text-ink" href="/changelog">What's new</a></li>
             <li>
               <a className="transition hover:text-ink" href={isLoggedIn ? "/dashboard" : "/user/login"}>
                 {isLoggedIn ? "Your team" : "Sign in"}
