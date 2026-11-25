@@ -3,19 +3,19 @@ import { useUploadThing } from "~/utils/uploadthing";
 import { getImageUrl } from "~/utils/image";
 import { buttonClass, cx } from "~/components/ui";
 import { Camera, CircleNotch, ClipboardText, UploadSimple } from "@phosphor-icons/react";
-import {
-  processImageToSizes,
-  validateImage,
-  IMAGE_SIZES,
-} from "~/utils/image-resize.client";
+import { makeSquareJpeg } from "~/utils/media-derivatives.client";
+
+// Player photos only ever show as squares, 96px at most (avatars are 32–56px),
+// so one 320px square JPEG covers a 3x screen with large text, at ~20KB.
+// The original never leaves the device.
+const PHOTO_EDGE = 320;
 
 interface ImageUploaderProps {
   currentImage?: string | null;
-  onUploadComplete: (baseUrl: string) => void; // Now just returns base URL
+  onUploadComplete: (url: string) => void;
   onUploadError?: (error: string) => void;
   endpoint?: "playerImage" | "teamLogo";
   className?: string;
-  enableResize?: boolean; // Enable multi-size resizing
 }
 
 export function ImageUploader({
@@ -24,7 +24,6 @@ export function ImageUploader({
   onUploadError,
   endpoint = "playerImage",
   className = "",
-  enableResize = true,
 }: ImageUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -34,21 +33,12 @@ export function ImageUploader({
 
   const { startUpload } = useUploadThing(endpoint, {
     onClientUploadComplete: (res) => {
-      // Upload complete
-      if (enableResize && res?.length > 0) {
-        // Extract base URL from the first uploaded file
-        // Assuming filename pattern: player_123456_abc7-medium.jpg
-        const firstFile = res[0];
-        const fileUrl = firstFile.ufsUrl || firstFile.url; // Use ufsUrl, fallback to url for compatibility
-        const baseUrl = fileUrl.replace(/-[^-]+\.(jpg|jpeg|png|webp)$/i, '');
-        
-        onUploadComplete(baseUrl);
-      } else if (res?.[0]) {
-        // Single file upload (backward compatibility)
-        const fileUrl = res[0].ufsUrl || res[0].url; // Use ufsUrl, fallback to url for compatibility
-        onUploadComplete(fileUrl);
-      }
-      setPreviewUrl(null);
+      const file = res?.[0];
+      if (file) onUploadComplete(file.ufsUrl || file.url);
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return null;
+      });
       setIsUploading(false);
       setUploadProgress(0);
     },
@@ -58,7 +48,10 @@ export function ImageUploader({
       onUploadError?.(error.message || "Upload failed");
       setIsUploading(false);
       setUploadProgress(0);
-      setPreviewUrl(null);
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return null;
+      });
     },
     onUploadProgress: (progress) => {
       // Track upload progress
@@ -68,68 +61,29 @@ export function ImageUploader({
 
   const processFile = useCallback(
     async (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        onUploadError?.("Choose a photo (JPG, PNG, WebP or HEIC)");
+        return;
+      }
+      setIsProcessing(true);
       try {
-        if (enableResize) {
-          // Use advanced validation and resizing
-          setIsProcessing(true);
-          
-          // Validate the image
-          const validation = await validateImage(file, 10);
-          if (!validation.valid) {
-            onUploadError?.(validation.error || "Invalid image");
-            setIsProcessing(false);
-            return;
-          }
-          
-          // Show preview
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setPreviewUrl(reader.result as string);
-          };
-          reader.readAsDataURL(file);
-          
-          // Generate predictable ID for this upload batch
-          const imageId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-          
-          // Process into multiple sizes with predictable naming
-          const resizedImages = await processImageToSizes(file, undefined, imageId);
-          const filesToUpload = Object.values(resizedImages);
-          
-          setIsProcessing(false);
-          setIsUploading(true);
-          await startUpload(filesToUpload);
-        } else {
-          // Simple validation (backward compatibility)
-          const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-          if (!validTypes.includes(file.type)) {
-            onUploadError?.("Please select a valid image file (PNG, JPG, or WebP)");
-            return;
-          }
-
-          const maxSize = endpoint === "playerImage" ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
-          if (file.size > maxSize) {
-            onUploadError?.(`File too large. Maximum size is ${endpoint === "playerImage" ? "4MB" : "2MB"}`);
-            return;
-          }
-
-          // Show preview
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setPreviewUrl(reader.result as string);
-          };
-          reader.readAsDataURL(file);
-
-          setIsUploading(true);
-          await startUpload([file]);
-        }
+        const photo = await makeSquareJpeg(file, PHOTO_EDGE);
+        setPreviewUrl((old) => {
+          if (old) URL.revokeObjectURL(old);
+          return URL.createObjectURL(photo);
+        });
+        setIsProcessing(false);
+        setIsUploading(true);
+        await startUpload([photo]);
       } catch (err) {
         console.error("Error processing image:", err);
         onUploadError?.(err instanceof Error ? err.message : "Failed to process image");
-        setIsProcessing(false);
         setIsUploading(false);
+      } finally {
+        setIsProcessing(false);
       }
     },
-    [startUpload, endpoint, onUploadError, enableResize, onUploadComplete]
+    [startUpload, onUploadError]
   );
 
   const handleFileSelect = useCallback(
@@ -254,7 +208,7 @@ export function ImageUploader({
         <input
           id="image-upload"
           type="file"
-          accept="image/png,image/jpeg,image/jpg,image/webp"
+          accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
           onChange={handleFileSelect}
           disabled={busy}
           className="hidden"
@@ -266,16 +220,7 @@ export function ImageUploader({
             <ClipboardText size={14} className="shrink-0" />
             Or paste an image with Ctrl+V (Cmd+V on Mac)
           </p>
-          <p>
-            {endpoint === "playerImage"
-              ? "Max 10MB · PNG, JPG, or WebP"
-              : "Max 2MB · PNG, JPG, or SVG"}
-          </p>
-          {enableResize && (
-            <p className="text-subtle">
-              Saved at 150px (thumbnail), 600px (medium) and 1200px (large)
-            </p>
-          )}
+          <p>JPG, PNG, WebP or HEIC · cropped to a square</p>
         </div>
       </div>
     </div>
