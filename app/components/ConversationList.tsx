@@ -2,6 +2,9 @@ import { Link } from "react-router";
 import { ChatsCircle, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
 import { formatMessageTime } from "~/utils/dates";
 import { Badge, Card, cx } from "~/components/ui";
+import { navMotion } from "~/utils/nav-motion";
+import { StaffBadge } from "~/components/StaffBadge";
+import type { StaffRole } from "~/utils/team-roles";
 
 export type ConversationListItem = {
   id: number;
@@ -13,6 +16,10 @@ export type ConversationListItem = {
   unread: number;
   needsReply?: boolean;
   emailOnly?: boolean;
+  /** Family app: a private thread with one staff member shows their role */
+  staffRole?: StaffRole | null;
+  /** Where the row goes when it isn't a thread yet (family app: a staff member not written to) */
+  href?: string;
 };
 
 export function ConversationList({
@@ -36,14 +43,16 @@ export function ConversationList({
           // The open thread is being read, even if the list hasn't caught up
           const unread = selected ? 0 : c.unread;
           return (
-          <li key={c.id}>
+          <li key={c.href ?? c.id}>
             <Link
-              to={hrefFor(c.id)}
-              prefetch={prefetch}
+              to={c.href ?? hrefFor(c.id)}
+              // Opening a not-yet-started thread creates it, so never on hover
+              prefetch={c.href ? "none" : prefetch}
+              {...navMotion("push")}
               aria-current={selected ? "page" : undefined}
               className={cx(
                 "flex items-center gap-3 px-4 py-3.5 transition sm:px-5",
-                selected ? "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]" : "hover:bg-surface-2/60"
+                selected ? "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]" : "hover:bg-surface-2/60 active:bg-surface-2"
               )}
             >
               <span
@@ -56,7 +65,10 @@ export function ConversationList({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline justify-between gap-3">
-                  <span className={cx("truncate", unread > 0 ? "font-bold" : "font-semibold")}>{c.title}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className={cx("truncate", unread > 0 ? "font-bold" : "font-semibold")}>{c.title}</span>
+                    {c.staffRole && <StaffBadge role={c.staffRole} short />}
+                  </span>
                   {c.lastMessageAt && (
                     <span className={cx("shrink-0 text-xs", unread > 0 ? "font-semibold text-primary" : "text-subtle")}>
                       {formatMessageTime(c.lastMessageAt)}

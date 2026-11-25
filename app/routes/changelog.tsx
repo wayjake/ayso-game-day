@@ -36,7 +36,7 @@ export default function Changelog({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="min-h-dvh bg-canvas text-ink">
-      <header className="sticky top-0 z-50 border-b border-line bg-surface/90 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-line bg-surface/90 pt-[var(--safe-top)] backdrop-blur">
         <nav className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <a href="/" aria-label="BenchTalk home">
             <AppMark />

@@ -27,7 +27,7 @@ export const NOTIFY_CATEGORIES: NotifyCategory[] = [
     locked: true,
     default: true,
   },
-  { kind: "chat", label: "Chat messages", detail: "Team chat and your messages with the coaches.", default: true },
+  { kind: "chat", label: "Chat messages", detail: "Team chat and your private messages.", default: true },
   { kind: "replies", label: "Replies to threads you're in", detail: "When someone replies to a thread you started or replied to.", default: true },
   { kind: "reactions", label: "Reactions", detail: "When someone reacts to one of your messages.", default: true },
   { kind: "posts", label: "New photos and videos", detail: "When someone posts to the team feed.", default: false },

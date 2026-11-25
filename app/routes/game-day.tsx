@@ -113,7 +113,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {/* Slim header */}
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-2 sm:px-4">
           <Link to={base} className={buttonClass({ variant: "ghost", size: "icon" })} aria-label="Back to team">
             <ArrowLeft size={20} weight="bold" />

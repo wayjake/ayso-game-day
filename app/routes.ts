@@ -20,12 +20,14 @@ export default [
   route("invite/:code", "routes/invite.tsx"),
   route("join/:code", "routes/join.tsx"),
   route("ack/:token", "routes/ack.tsx"),
+  route("todo/:token", "routes/todo.tsx"),
   // Family app: parents' schedule, RSVPs and messages
   route("family", "routes/family.tsx", [
     index("routes/family._index.tsx"),
     route("feed", "routes/family.feed.tsx"),
     route("feed/:postId", "routes/family.feed.post.tsx"),
     route("messages", "routes/family.messages.tsx"),
+    route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
   ]),
@@ -74,6 +76,10 @@ export default [
       route("announcements", "routes/team.announcements.tsx"),
       route("announcements/new", "routes/team.announcements-new.tsx"),
       route("announcements/:announcementId", "routes/team.announcements.detail.tsx"),
+      route("tasks", "routes/team.tasks.tsx"),
+      route("tasks/new", "routes/team.tasks-new.tsx"),
+      route("tasks/:taskId", "routes/team.tasks.detail.tsx"),
+      route("tasks/:taskId/edit", "routes/team.tasks.edit.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

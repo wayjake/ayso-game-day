@@ -2,6 +2,7 @@ import { useFetcher } from "react-router";
 import { Check, Question, X } from "@phosphor-icons/react";
 import { cx } from "~/components/ui";
 import { RSVP_LABELS, type RsvpStatus } from "~/utils/schedule";
+import { haptic } from "~/utils/haptics";
 
 // Going / Maybe / Can't go for one player and one event. Posts `_action=rsvp`
 // to the current route and shows the new answer right away.
@@ -49,8 +50,9 @@ export function RsvpButtons({
               value={value}
               disabled={disabled}
               aria-pressed={selected}
+              onClick={() => !selected && haptic()}
               className={cx(
-                "flex items-center justify-center gap-1.5 rounded-lg font-semibold ring-1 transition active:translate-y-px disabled:opacity-50",
+                "flex items-center justify-center gap-1.5 rounded-lg font-semibold ring-1 transition active:scale-[0.96] disabled:opacity-50",
                 size === "sm" ? "h-9 px-2 text-xs" : "h-11 px-2 text-sm",
                 selected ? active : "bg-surface text-muted ring-line-strong hover:bg-surface-2 hover:text-ink"
               )}

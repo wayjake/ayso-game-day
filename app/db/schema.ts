@@ -340,20 +340,23 @@ export const conversations = sqliteTable('conversations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   kind: text('kind', { enum: ['team', 'direct'] }).notNull(),
-  // 'direct' threads belong to a parent account, a family email, or both. A
-  // family that isn't on the app yet has only familyEmail; the thread moves to
-  // their account when they join with a proven email (invite or magic link).
+  // A 'direct' thread is one-to-one: one staff member (staffUserId) and one
+  // family. Only those two can read it; other staff can't. The family side is a
+  // parent account, a family email, or both. A family that isn't on the app yet
+  // has only familyEmail; the thread moves to their account when they join with
+  // a proven email (invite or magic link).
+  staffUserId: integer('staff_user_id').references(() => users.id),
   parentUserId: integer('parent_user_id').references(() => users.id),
   familyEmail: text('family_email'), // Lowercased
-  // A family wrote last and no coach has replied or marked it done
+  // The family wrote last and the staff member hasn't replied or marked it done
   needsReply: integer('needs_reply', { mode: 'boolean' }).notNull().default(false),
   lastMessageAt: text('last_message_at'),
   lastMessagePreview: text('last_message_preview'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('conversations_team_chat_idx').on(t.teamId).where(sql`kind = 'team'`),
-  uniqueIndex('conversations_direct_idx').on(t.teamId, t.parentUserId).where(sql`kind = 'direct'`),
-  uniqueIndex('conversations_family_email_idx').on(t.teamId, t.familyEmail).where(sql`kind = 'direct' and family_email is not null`),
+  uniqueIndex('conversations_direct_staff_idx').on(t.teamId, t.staffUserId, t.parentUserId).where(sql`kind = 'direct'`),
+  uniqueIndex('conversations_family_email_staff_idx').on(t.teamId, t.staffUserId, t.familyEmail).where(sql`kind = 'direct' and family_email is not null`),
 ]);
 
 export const messages = sqliteTable('messages', {
@@ -443,6 +446,10 @@ export const announcementRecipients = sqliteTable('announcement_recipients', {
   complainedAt: text('complained_at'),
   repliedAt: text('replied_at'),
   acknowledgedAt: text('acknowledged_at'),
+  // Who tapped "Got it" first, and where: in the app (a parent account) or the
+  // email's link (an account only when they were signed in as one of the family)
+  acknowledgedBy: integer('acknowledged_by').references(() => users.id),
+  acknowledgedVia: text('acknowledged_via', { enum: ['app', 'email'] }),
   remindedAt: text('reminded_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -575,6 +582,47 @@ export const postComments = sqliteTable('post_comments', {
   index('post_comments_post_idx').on(t.postId, t.id),
 ]);
 
+// ---------------------------------------------------------------------------
+// Tasks: things families need to do ("Pay the uniform fee", "Sign the code of
+// conduct"). Rules live in utils/tasks.core.ts, shared with the MCP server.
+
+export const tasks = sqliteTable('tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  title: text('title').notNull(),
+  details: text('details'),
+  link: text('link'), // e.g. a payment page or the form to sign
+  dueDate: text('due_date'), // YYYY-MM-DD
+  // Every player on the team, including ones added later (backfilled on read)
+  assignAll: integer('assign_all', { mode: 'boolean' }).notNull().default(true),
+  // One per family: checking it for one sibling checks it for every sibling
+  perFamily: integer('per_family', { mode: 'boolean' }).notNull().default(false),
+  // Counts as done only once a coach confirms it, not when the family checks it
+  coachConfirms: integer('coach_confirms', { mode: 'boolean' }).notNull().default(false),
+  createdBy: integer('created_by').references(() => users.id), // Null when imported
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('tasks_team_idx').on(t.teamId)]);
+
+// One per task per player. A coach confirming also fills in the family side
+// (familyDoneVia = 'coach'), so parents see it as done.
+export const taskAssignments = sqliteTable('task_assignments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  playerId: integer('player_id').notNull().references(() => players.id),
+  familyDoneAt: text('family_done_at'),
+  familyDoneBy: integer('family_done_by').references(() => users.id), // Null from a no-login link, a coach, or an import
+  familyDoneVia: text('family_done_via', { enum: ['app', 'link', 'coach', 'import'] }),
+  confirmedAt: text('confirmed_at'),
+  confirmedBy: integer('confirmed_by').references(() => users.id),
+  note: text('note'), // Coach-only, e.g. "Paid cash"
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('task_assignments_task_player_idx').on(t.taskId, t.playerId),
+  index('task_assignments_team_player_idx').on(t.teamId, t.playerId),
+]);
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -623,3 +671,6 @@ export type FamilyNote = typeof familyNotes.$inferSelect;
 export type InboundEmail = typeof inboundEmails.$inferSelect;
 export type Post = typeof posts.$inferSelect;
 export type PostMedia = typeof postMedia.$inferSelect;
+
+export type Task = typeof tasks.$inferSelect;
+export type TaskAssignment = typeof taskAssignments.$inferSelect;

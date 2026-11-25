@@ -1,5 +1,5 @@
 import type { Route } from "./+types/team";
-import { Outlet, NavLink, useLocation } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -9,6 +9,7 @@ import { Badge } from "~/components/ui";
 import { coachConversationIds, totalUnread } from "~/utils/messages.server";
 import { parseToursSeen } from "~/utils/tours";
 import { HelpButton, TourProvider } from "~/components/Tour";
+import { navMotion } from "~/utils/nav-motion";
 import { CalendarBlank, ChatsCircle, Gear, House, ImagesSquare, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -17,7 +18,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Owners and invited coaches both get in; role tells child routes which one
   const { team, role } = await requireTeamAccess(teamId, user.id);
-  const unread = await totalUnread(await coachConversationIds(teamId), user.id);
+  const unread = await totalUnread(await coachConversationIds(teamId, user.id), user.id);
 
   return data(
     {
@@ -39,14 +40,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const { team, unread, toursSeen } = loaderData;
   const location = useLocation();
+  // Light the tapped tab straight away (see family.tsx): mid-navigation, the pending link is the lit one
+  const pending = useNavigation().location;
+  const under = (pathname: string, also?: string[]) => Boolean(also?.some((path) => pathname.startsWith(path)));
+  const lit = (matched: boolean, isPending: boolean, also?: string[]) =>
+    pending ? isPending || under(pending.pathname, also) : matched || under(location.pathname, also);
   const base = `/dashboard/team/${team.id}`;
 
   const tabs = [
     { label: "Overview", to: base, end: true, icon: House, badge: 0 },
     { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0, tour: "tab-schedule" },
-    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0 },
+    // Families and Tasks hang off the Roster page
+    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0, also: [`${base}/families`, `${base}/tasks`] },
     // Announcements live under Messages, so keep the tab lit there too
-    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: `${base}/announcements` },
+    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: [`${base}/announcements`] },
     { label: "Feed", to: `${base}/feed`, end: false, icon: ImagesSquare, badge: 0 },
     { label: "Settings", to: `${base}/settings`, end: false, icon: Gear, badge: 0 },
   ];
@@ -74,8 +81,9 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 end={end}
                 prefetch="intent"
                 data-tour={tour}
-                className={({ isActive: matched }) => {
-                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                {...navMotion("tab")}
+                className={({ isActive: matched, isPending }) => {
+                  const isActive = lit(matched, isPending, also);
                   return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-0.5 pt-2 pb-2.5 text-[11px] font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
                     isActive
                       ? "border-primary text-ink"
@@ -83,8 +91,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                   }`;
                 }}
               >
-                {({ isActive: matched }) => {
-                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                {({ isActive: matched, isPending }) => {
+                  const isActive = lit(matched, isPending, also);
                   return (
                   <>
                     <span className="relative">

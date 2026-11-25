@@ -60,13 +60,72 @@
 	--border: var(--color-line);
 }
 
+/*
+ * The installed iPhone app fills the status bar strip (around the notch or
+ * Dynamic Island) with the page's root background, outside our layout. Make
+ * that white so it reads as part of the white top bar below it. Every page
+ * paints its own canvas grey. Pages whose top is grey, not a white bar
+ * (sign in, invites), mark themselves with .canvas-top to match.
+ * iOS saves these settings at install: delete and re-add the app to see a change.
+ */
+:root {
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 html,
 body {
-	background-color: var(--color-canvas);
+	background-color: var(--color-surface);
 	color: var(--color-ink);
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+}
+
+html:has(.canvas-top),
+html:has(.canvas-top) body {
+	background-color: var(--color-canvas);
+}
+
+/*
+ * Touch: what makes a web page feel like an app on a phone.
+ * No grey flash on tap, no double-tap-to-zoom delay, no font inflation in
+ * landscape. Controls don't select their text or pop the long-press menu when
+ * held; content (messages, addresses) still selects as normal.
+ */
+html {
+	-webkit-tap-highlight-color: transparent;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+a,
+button,
+label,
+summary,
+input,
+select,
+textarea,
+[role="button"] {
+	touch-action: manipulation;
+}
+button,
+nav a,
+[role="button"],
+[role="tab"],
+.chrome {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+img {
+	-webkit-user-drag: none;
+}
+/* iOS zooms the page into a field whose text is under 16px when it's focused.
+   Unlayered, so it beats the text-sm/text-xs utilities on touch screens only. */
+@media (pointer: coarse) {
+	:is(input, select, textarea):is(.text-sm, .text-xs) {
+		font-size: 16px;
+	}
 }
 
 /* viewport-fit=cover lets the lineup's bottom bar reach the home indicator;
@@ -104,6 +163,7 @@ p {
 		opacity 200ms ease-out;
 }
 .sheet::backdrop {
+	opacity: var(--sheet-fade, 1);
 	transition: opacity 200ms ease-out;
 }
 @starting-style {
@@ -171,7 +231,148 @@ p {
 		}
 	}
 }
+/*
+ * Page transitions (utils/nav-motion.ts). React Router wraps the navigation in
+ * a View Transition once the next page's data is in; <html data-nav> says which
+ * way it moves. The family app's top bar and tab bar (.vt-topbar, .vt-tabbar)
+ * are captured on their own and hold still while the page underneath moves.
+ * Short on purpose: the page ignores taps while a transition runs.
+ */
+.vt-topbar {
+	view-transition-name: topbar;
+}
+.vt-tabbar {
+	view-transition-name: tabbar;
+}
+::view-transition-group(*) {
+	animation-duration: 240ms;
+	animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+/* The bars swap in place, no cross-fade, unless one side doesn't have them (a chat thread hides the tab bar) */
+::view-transition-group(topbar),
+::view-transition-group(tabbar),
+::view-transition-new(topbar),
+::view-transition-new(tabbar) {
+	animation: none;
+}
+::view-transition-old(topbar),
+::view-transition-old(tabbar) {
+	animation: none;
+	opacity: 0;
+}
+::view-transition-old(tabbar):only-child {
+	opacity: 1;
+	animation: vt-fade-out 160ms ease-out both;
+}
+::view-transition-new(tabbar):only-child {
+	animation: vt-fade-in 200ms ease-out both;
+}
+
+/* Tabs, and push/back on wide screens: a quick cross-fade */
+/* Same length and curve on both sides: then whatever is identical on both
+   pages (the coach header and team tabs) holds perfectly still */
+html[data-nav]::view-transition-old(root) {
+	animation: vt-fade-out 160ms linear both;
+}
+html[data-nav]::view-transition-new(root) {
+	animation: vt-fade-in 160ms linear both;
+}
+/* Phones: open slides the new screen in over the old one, back slides it away */
+@media (max-width: 39.99rem) {
+	html[data-nav="push"]::view-transition-old(root),
+	html[data-nav="push"]::view-transition-new(root),
+	html[data-nav="back"]::view-transition-old(root),
+	html[data-nav="back"]::view-transition-new(root) {
+		mix-blend-mode: normal;
+		animation-duration: 260ms;
+		animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1);
+		animation-fill-mode: both;
+	}
+	html[data-nav="push"]::view-transition-old(root) {
+		animation-name: vt-shift-out;
+	}
+	html[data-nav="push"]::view-transition-new(root) {
+		animation-name: vt-slide-in;
+		box-shadow: -8px 0 24px rgb(16 27 45 / 0.12);
+	}
+	html[data-nav="back"]::view-transition-old(root) {
+		animation-name: vt-slide-out;
+		box-shadow: -8px 0 24px rgb(16 27 45 / 0.12);
+		z-index: 1;
+	}
+	html[data-nav="back"]::view-transition-new(root) {
+		animation-name: vt-shift-in;
+	}
+}
+/* Browser back/forward and the iOS edge swipe: iOS already animated it */
+html[data-nav="none"]::view-transition-group(*),
+html[data-nav="none"]::view-transition-old(root),
+html[data-nav="none"]::view-transition-new(root),
+html[data-nav="none"]::view-transition-old(tabbar),
+html[data-nav="none"]::view-transition-new(tabbar) {
+	animation: none;
+}
+@keyframes vt-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes vt-fade-out {
+	to {
+		opacity: 0;
+	}
+}
+@keyframes vt-slide-in {
+	from {
+		transform: translateX(100%);
+	}
+}
+@keyframes vt-slide-out {
+	to {
+		transform: translateX(100%);
+	}
+}
+@keyframes vt-shift-out {
+	to {
+		transform: translateX(-25%);
+		filter: brightness(0.94);
+	}
+}
+@keyframes vt-shift-in {
+	from {
+		transform: translateX(-25%);
+		filter: brightness(0.94);
+	}
+}
+
+/* A like: the heart pops (feed/PostMedia.tsx) */
+@keyframes like-pop {
+	0% {
+		transform: scale(1);
+	}
+	40% {
+		transform: scale(1.35);
+	}
+	70% {
+		transform: scale(0.95);
+	}
+	100% {
+		transform: scale(1.1);
+	}
+}
+.like-pop {
+	animation: like-pop 360ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
+	.like-pop {
+		animation: none;
+	}
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
 	.tour-fade,
 	.tour-pop,
 	.tour-step {

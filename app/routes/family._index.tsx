@@ -8,6 +8,9 @@ import { eventDayPhrase, eventPhrase, isRsvpStatus, type ScheduleEvent } from "~
 import { sendPush, isPushConfigured } from "~/utils/push.server";
 import { formatGameDate, formatGameTime, formatTimeRange, relativeGameDay, todayISO } from "~/utils/dates";
 import { RsvpButtons } from "~/components/RsvpButtons";
+import { FamilyTodo } from "~/components/FamilyTodo";
+import { familyTasks } from "~/utils/tasks.server";
+import { setFamilyDone } from "~/utils/tasks.core";
 import { Alert, Badge, Card, DateTile, EmptyState, HomeAwayBadge, PlayerAvatar, buttonClass, cx } from "~/components/ui";
 import { Bell, CalendarBlank, Clock, MapPin, Note, Sneaker, SoccerBall } from "@phosphor-icons/react";
 
@@ -29,12 +32,34 @@ export async function loader({ request }: Route.LoaderArgs) {
     today,
     firstName: (user.name || "").split(" ")[0],
     suggestPush: isPushConfigured() && !sub,
+    tasks: await familyTasks(kids),
   });
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const { user, kids } = await requireParent(request);
   const formData = await request.formData();
+
+  // Checking a task off (or taking it back), only for your own kids on that task's team
+  if (formData.get("_action") === "task") {
+    const playerIds = formData.getAll("playerId").map(Number);
+    const mine = kids.filter((k) => playerIds.includes(k.playerId));
+    const teamId = mine[0]?.teamId;
+    if (mine.length === 0 || mine.length !== playerIds.length || mine.some((k) => k.teamId !== teamId)) {
+      return data({ error: "Can't update that task" }, { status: 400 });
+    }
+    const result = await setFamilyDone(db, {
+      teamId,
+      taskId: Number(formData.get("taskId")),
+      playerIds,
+      done: formData.get("done") === "1",
+      by: user.id,
+      via: "app",
+    });
+    if (!result.task || result.playerIds.length === 0) return data({ error: "That task isn't there anymore" }, { status: 400 });
+    return data({ ok: true });
+  }
+
   if (formData.get("_action") !== "rsvp") return data({ error: "Unknown action" }, { status: 400 });
 
   const playerId = Number(formData.get("playerId"));
@@ -70,7 +95,7 @@ export async function action({ request }: Route.ActionArgs) {
 type LoaderData = Route.ComponentProps["loaderData"];
 
 export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
-  const { kids, events, answers, today, firstName, suggestPush } = loaderData;
+  const { kids, events, answers, today, firstName, suggestPush, tasks } = loaderData;
   const [params] = useSearchParams();
   const multipleTeams = new Set(kids.map((k) => k.teamId)).size > 1;
 
@@ -86,6 +111,8 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
       <p className="mt-1 text-muted">
         {multipleTeams ? "Upcoming games and practices for your players." : `${kids[0].teamName}: upcoming games and practices.`}
       </p>
+
+      <FamilyTodo items={tasks} today={today} showTeam={multipleTeams} className="mt-5" />
 
       {suggestPush && (
         <Card className="mt-5 flex items-center gap-4 p-4">

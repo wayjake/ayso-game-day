@@ -1738,7 +1738,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   };
   
   return (
-    <Page>
+    <Page data-no-pull>
         {/* Header */}
         <header className="mb-6">
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">

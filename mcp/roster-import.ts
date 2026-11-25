@@ -1,4 +1,5 @@
-// MCP server: import a CSV roster into a brand-new team on a coach's account.
+// MCP server: import a CSV roster into a brand-new team on a coach's account,
+// and create tasks and bring over who has done them (e.g. from a spreadsheet).
 //
 // Runs over stdio, so nothing here may write to stdout except the MCP transport.
 // Logs go to stderr.
@@ -21,6 +22,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as schema from "../app/db/schema";
+import { cleanTaskInput, createTask, ensureAssignments, setConfirmed, setFamilyDone, setNote } from "../app/utils/tasks.core";
+import { taskState } from "../app/utils/tasks";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env"), quiet: true });
@@ -361,6 +364,222 @@ server.registerTool(
       });
 
       return text(`${preview}\n\nCreated team #${teamId}: /dashboard/team/${teamId}/roster`);
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Tasks: create them and bring over who has already done what. The rules
+// (siblings on per-family tasks, coach confirmation filling in the family
+// side) come from app/utils/tasks.core.ts, the same code the app runs.
+// ---------------------------------------------------------------------------
+
+async function teamWithPlayers(teamId: number) {
+  const [team] = await db.select({ id: schema.teams.id, name: schema.teams.name }).from(schema.teams).where(eq(schema.teams.id, teamId)).limit(1);
+  if (!team) throw new Error(`No team #${teamId} on ${target.label}`);
+  const roster = await db
+    .select({ id: schema.players.id, name: schema.players.name })
+    .from(schema.players)
+    .where(eq(schema.players.teamId, teamId))
+    .orderBy(schema.players.name);
+  return { team, roster };
+}
+
+const normName = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+// Exact name, "Last, First", or every word of the given name in exactly one
+// player's name. Anything else is reported back rather than guessed.
+function matchPlayer(roster: { id: number; name: string }[], given: string) {
+  const flipped = given.includes(",") ? given.split(",").reverse().join(" ") : given;
+  for (const candidate of [given, flipped]) {
+    const exact = roster.filter((p) => normName(p.name) === normName(candidate));
+    if (exact.length === 1) return { player: exact[0] };
+    if (exact.length > 1) return { error: `"${given}" matches ${exact.length} players with the same name` };
+  }
+  const words = normName(flipped).split(" ").filter(Boolean);
+  const loose = roster.filter((p) => {
+    const have = normName(p.name).split(" ");
+    return words.length > 0 && words.every((w) => have.includes(w));
+  });
+  if (loose.length === 1) return { player: loose[0] };
+  if (loose.length > 1) return { error: `"${given}" could be ${loose.map((p) => p.name).join(" or ")}` };
+  return { error: `"${given}" isn't on the roster` };
+}
+
+function toIso(at: string | undefined) {
+  if (!at) return undefined;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(at) ? new Date(`${at}T12:00:00Z`) : new Date(at);
+  if (Number.isNaN(date.getTime())) throw new Error(`Can't read the date "${at}"; use YYYY-MM-DD`);
+  return date.toISOString();
+}
+
+server.registerTool(
+  "list_tasks",
+  {
+    title: "List a team's tasks",
+    description: `List a team's tasks on the ${target.label} database with how many players have done each, plus the roster (for matching names in set_task_status).`,
+    inputSchema: { team_id: z.number().int() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ team_id }) => {
+    try {
+      const { team, roster } = await teamWithPlayers(team_id);
+      const list = await db.select().from(schema.tasks).where(eq(schema.tasks.teamId, team.id)).orderBy(schema.tasks.id);
+      const rows = list.length ? await db.select().from(schema.taskAssignments).where(eq(schema.taskAssignments.teamId, team.id)) : [];
+      const lines = list.map((t) => {
+        const mine = rows.filter((r) => r.taskId === t.id);
+        const states = mine.map((r) => taskState(t, r));
+        const flags = [t.assignAll ? "everyone" : "picked players", t.perFamily && "per family", t.coachConfirms && "coach confirms", t.dueDate && `due ${t.dueDate}`].filter(Boolean).join(", ");
+        return `#${t.id} ${t.title} (${flags}): ${states.filter((s) => s === "done").length} done, ${states.filter((s) => s === "waiting").length} to confirm, ${states.filter((s) => s === "open").length} open of ${mine.length}`;
+      });
+      return text(
+        `${target.label}: team #${team.id} ${team.name}\n${list.length} tasks\n${lines.join("\n")}\n\nRoster (${roster.length}): ${roster.map((p) => p.name).join(", ")}`
+      );
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+  }
+);
+
+server.registerTool(
+  "create_task",
+  {
+    title: "Create a task for families",
+    description:
+      `Create a task ("Pay the uniform fee", "Sign the code of conduct") on a team (${target.label} database) for every player or for named players. ` +
+      "It shows up for families straight away; nothing is sent to them. dry_run defaults to true and writes nothing: run it first, show the user the preview, and only call again with dry_run=false once they confirm.",
+    inputSchema: {
+      team_id: z.number().int(),
+      title: z.string().min(1),
+      details: z.string().optional(),
+      link: z.string().optional().describe("Payment page or form to sign"),
+      due_date: z.string().optional().describe("YYYY-MM-DD"),
+      per_family: z.boolean().default(false).describe("One per family: checking it for one sibling checks it for all"),
+      coach_confirms: z.boolean().default(false).describe("Only counts as done once a coach confirms it"),
+      players: z.union([z.literal("all"), z.array(z.string()).min(1)]).default("all").describe('"all" (including players added later) or player names'),
+      dry_run: z.boolean().default(true),
+    },
+    annotations: { destructiveHint: false, idempotentHint: false },
+  },
+  async (args) => {
+    try {
+      const { team, roster } = await teamWithPlayers(args.team_id);
+      const input = { title: args.title, details: args.details, link: args.link, dueDate: args.due_date, perFamily: args.per_family, coachConfirms: args.coach_confirms };
+      const clean = cleanTaskInput(input);
+      if (!clean.ok) return fail(clean.error);
+
+      let ids: number[] | "all" = "all";
+      const problems: string[] = [];
+      if (args.players !== "all") {
+        ids = [];
+        for (const name of args.players) {
+          const m = matchPlayer(roster, name);
+          if (m.player) ids.push(m.player.id);
+          else problems.push(m.error!);
+        }
+        if (problems.length) return fail(`Fix these names first (nothing written):\n  ${problems.join("\n  ")}`);
+      }
+      const v = clean.value;
+      const preview = [
+        `${args.dry_run ? "DRY RUN, nothing written." : "CREATED."} Database: ${target.label}`,
+        `Team #${team.id} ${team.name}`,
+        `Task: ${v.title}${v.dueDate ? `, due ${v.dueDate}` : ""}${v.perFamily ? ", per family" : ""}${v.coachConfirms ? ", coach confirms" : ""}`,
+        v.details ? `Details: ${v.details}` : null,
+        v.link ? `Link: ${v.link}` : null,
+        ids === "all"
+          ? `For everyone: ${roster.length} players now, plus anyone added later`
+          : `For ${ids.length} players: ${roster.filter((p) => (ids as number[]).includes(p.id)).map((p) => p.name).join(", ")}`,
+      ].filter(Boolean).join("\n");
+      if (args.dry_run) return text(preview);
+
+      const result = await createTask(db, { teamId: team.id, createdBy: null, input, playerIds: ids });
+      if (!result.ok) return fail(result.error);
+      return text(`${preview}\n\nTask #${result.task.id}: /dashboard/team/${team.id}/tasks/${result.task.id}`);
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+  }
+);
+
+server.registerTool(
+  "set_task_status",
+  {
+    title: "Record who has done a task",
+    description:
+      `Bring over who has already done a task (${target.label} database), e.g. from a spreadsheet. Per player: family_done marks the family's check (shown as "marked done in the import"); confirmed marks it confirmed by a coach, which also counts as the family's check. ` +
+      "On per-family tasks a check reaches the player's siblings too. Names that don't match exactly one player are reported, not guessed. " +
+      "dry_run defaults to true and writes nothing: run it first, show the user the preview and any unmatched names, and only call again with dry_run=false once they confirm.",
+    inputSchema: {
+      team_id: z.number().int(),
+      task_id: z.number().int(),
+      updates: z
+        .array(
+          z.object({
+            player: z.string().describe("Player name as on the roster, or 'Last, First'"),
+            family_done: z.boolean().optional(),
+            confirmed: z.boolean().optional(),
+            at: z.string().optional().describe("When it happened, YYYY-MM-DD. Defaults to now"),
+            note: z.string().optional().describe("Coach-only note, e.g. 'Paid cash'"),
+          })
+        )
+        .min(1),
+      dry_run: z.boolean().default(true),
+    },
+    annotations: { destructiveHint: false, idempotentHint: true },
+  },
+  async (args) => {
+    try {
+      const { team, roster } = await teamWithPlayers(args.team_id);
+      const [task] = await db
+        .select()
+        .from(schema.tasks)
+        .where(and(eq(schema.tasks.id, args.task_id), eq(schema.tasks.teamId, team.id)))
+        .limit(1);
+      if (!task) return fail(`No task #${args.task_id} on team #${team.id}`);
+      await ensureAssignments(db, team.id);
+      const assigned = new Set(
+        (await db.select({ playerId: schema.taskAssignments.playerId }).from(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, task.id))).map((r) => r.playerId)
+      );
+
+      const planned: { player: { id: number; name: string }; u: (typeof args.updates)[number]; at?: string }[] = [];
+      const problems: string[] = [];
+      for (const u of args.updates) {
+        const m = matchPlayer(roster, u.player);
+        if (!m.player) problems.push(m.error!);
+        else if (!assigned.has(m.player.id)) problems.push(`${m.player.name} isn't on this task`);
+        else if (u.family_done === undefined && u.confirmed === undefined && u.note === undefined) problems.push(`${m.player.name}: nothing to change`);
+        else planned.push({ player: m.player, u, at: toIso(u.at) });
+      }
+
+      const describe = (p: (typeof planned)[number]) =>
+        `  ${p.player.name}: ${[
+          p.u.confirmed !== undefined && (p.u.confirmed ? "confirmed" : "not confirmed"),
+          p.u.family_done !== undefined && (p.u.family_done ? "family done" : "family not done"),
+          p.u.note !== undefined && `note "${p.u.note}"`,
+          p.at && `at ${p.at.slice(0, 10)}`,
+        ].filter(Boolean).join(", ")}`;
+      const preview = [
+        `${args.dry_run ? "DRY RUN, nothing written." : "UPDATED."} Database: ${target.label}`,
+        `Team #${team.id} ${team.name}, task #${task.id} ${task.title}${task.perFamily ? " (per family: siblings follow)" : ""}`,
+        `${planned.length} players to update`,
+        ...planned.map(describe),
+        problems.length ? `\nSkipped (${problems.length}):\n  ${problems.join("\n  ")}` : null,
+      ].filter((l) => l !== null).join("\n");
+      if (args.dry_run) return text(preview);
+
+      for (const p of planned) {
+        const ids = [p.player.id];
+        if (p.u.family_done !== undefined) {
+          await setFamilyDone(db, { teamId: team.id, taskId: task.id, playerIds: ids, done: p.u.family_done, via: "import", at: p.at });
+        }
+        if (p.u.confirmed !== undefined) {
+          await setConfirmed(db, { teamId: team.id, taskId: task.id, playerIds: ids, confirmed: p.u.confirmed, at: p.at });
+        }
+        if (p.u.note !== undefined) await setNote(db, team.id, task.id, p.player.id, p.u.note);
+      }
+      return text(`${preview}\n\n/dashboard/team/${team.id}/tasks/${task.id}`);
     } catch (e) {
       return fail((e as Error).message);
     }
