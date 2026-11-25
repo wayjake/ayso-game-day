@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.player.remove";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
-import { db, teams, players, guardians, rsvps, contacts } from "~/db";
+import { db, teams, players, guardians, rsvps, contacts, taskAssignments } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { deletePlayerImage } from "~/utils/upload.server";
 
@@ -44,9 +44,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     // All or nothing: foreign keys are enforced, so a player with lineup
     // history still can't be deleted, and then nothing else changes either
     await db.transaction(async (tx) => {
-      // Parent links and RSVPs go with the player; their contacts stay as general team contacts
+      // Parent links, RSVPs and task checkmarks go with the player; their contacts stay as general team contacts
       await tx.delete(guardians).where(eq(guardians.playerId, playerId));
       await tx.delete(rsvps).where(eq(rsvps.playerId, playerId));
+      await tx.delete(taskAssignments).where(eq(taskAssignments.playerId, playerId));
       await tx.update(contacts).set({ playerId: null }).where(eq(contacts.playerId, playerId));
       await tx
         .delete(players)

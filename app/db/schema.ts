@@ -582,6 +582,47 @@ export const postComments = sqliteTable('post_comments', {
   index('post_comments_post_idx').on(t.postId, t.id),
 ]);
 
+// ---------------------------------------------------------------------------
+// Tasks: things families need to do ("Pay the uniform fee", "Sign the code of
+// conduct"). Rules live in utils/tasks.core.ts, shared with the MCP server.
+
+export const tasks = sqliteTable('tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  title: text('title').notNull(),
+  details: text('details'),
+  link: text('link'), // e.g. a payment page or the form to sign
+  dueDate: text('due_date'), // YYYY-MM-DD
+  // Every player on the team, including ones added later (backfilled on read)
+  assignAll: integer('assign_all', { mode: 'boolean' }).notNull().default(true),
+  // One per family: checking it for one sibling checks it for every sibling
+  perFamily: integer('per_family', { mode: 'boolean' }).notNull().default(false),
+  // Counts as done only once a coach confirms it, not when the family checks it
+  coachConfirms: integer('coach_confirms', { mode: 'boolean' }).notNull().default(false),
+  createdBy: integer('created_by').references(() => users.id), // Null when imported
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('tasks_team_idx').on(t.teamId)]);
+
+// One per task per player. A coach confirming also fills in the family side
+// (familyDoneVia = 'coach'), so parents see it as done.
+export const taskAssignments = sqliteTable('task_assignments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  playerId: integer('player_id').notNull().references(() => players.id),
+  familyDoneAt: text('family_done_at'),
+  familyDoneBy: integer('family_done_by').references(() => users.id), // Null from a no-login link, a coach, or an import
+  familyDoneVia: text('family_done_via', { enum: ['app', 'link', 'coach', 'import'] }),
+  confirmedAt: text('confirmed_at'),
+  confirmedBy: integer('confirmed_by').references(() => users.id),
+  note: text('note'), // Coach-only, e.g. "Paid cash"
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('task_assignments_task_player_idx').on(t.taskId, t.playerId),
+  index('task_assignments_team_player_idx').on(t.teamId, t.playerId),
+]);
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -630,3 +671,6 @@ export type FamilyNote = typeof familyNotes.$inferSelect;
 export type InboundEmail = typeof inboundEmails.$inferSelect;
 export type Post = typeof posts.$inferSelect;
 export type PostMedia = typeof postMedia.$inferSelect;
+
+export type Task = typeof tasks.$inferSelect;
+export type TaskAssignment = typeof taskAssignments.$inferSelect;

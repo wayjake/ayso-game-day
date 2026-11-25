@@ -69,11 +69,14 @@ export function MessageThread({
   composerExtra,
   realtime = null,
   layout = "window",
+  initialDraft = null,
   readOnly = null,
   acks,
   ackHref,
 }: {
   layout?: "window" | "pane";
+  /** Text to start the main composer with, e.g. a drafted task reminder. Fills the box each time it changes. */
+  initialDraft?: string | null;
   /** Staff: under announcements that asked for "Got it", who has (by message id) */
   acks?: Record<number, AckSummaryView>;
   /** Staff: the announcement's tracker */
@@ -184,6 +187,7 @@ export function MessageThread({
           )}
           innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}
           extra={composerExtra}
+          initialDraft={initialDraft}
           onTyping={live.setTyping}
           typists={live.typists.filter((t) => t.where == null)}
         />
@@ -537,7 +541,9 @@ function Composer({
   autoFocus = false,
   onTyping,
   typists = [],
+  initialDraft = null,
 }: {
+  initialDraft?: string | null;
   onTyping?: (where: TypingWhere) => void;
   typists?: Typist[];
   fetcherKey: string;
@@ -551,9 +557,14 @@ function Composer({
   const fetcher = useFetcher<{ error?: string }>({ key: fetcherKey });
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const sending = fetcher.state !== "idle";
   const id = `message-body-${fetcherKey}`;
+
+  // A new draft handed in (the page stays mounted between conversations)
+  useEffect(() => {
+    if (initialDraft) setDraft(initialDraft);
+  }, [initialDraft]);
   const typingText = typingLabel(typists);
 
   // Tell the others I'm typing: at most every 3s, and stop after 5s of quiet

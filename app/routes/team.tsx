@@ -42,16 +42,18 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const location = useLocation();
   // Light the tapped tab straight away (see family.tsx): mid-navigation, the pending link is the lit one
   const pending = useNavigation().location;
-  const lit = (matched: boolean, isPending: boolean, also?: string) =>
-    pending ? isPending || Boolean(also && pending.pathname.startsWith(also)) : matched || Boolean(also && location.pathname.startsWith(also));
+  const under = (pathname: string, also?: string[]) => Boolean(also?.some((path) => pathname.startsWith(path)));
+  const lit = (matched: boolean, isPending: boolean, also?: string[]) =>
+    pending ? isPending || under(pending.pathname, also) : matched || under(location.pathname, also);
   const base = `/dashboard/team/${team.id}`;
 
   const tabs = [
     { label: "Overview", to: base, end: true, icon: House, badge: 0 },
     { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0, tour: "tab-schedule" },
-    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0 },
+    // Families and Tasks hang off the Roster page
+    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0, also: [`${base}/families`, `${base}/tasks`] },
     // Announcements live under Messages, so keep the tab lit there too
-    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: `${base}/announcements` },
+    { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: [`${base}/announcements`] },
     { label: "Feed", to: `${base}/feed`, end: false, icon: ImagesSquare, badge: 0 },
     { label: "Settings", to: `${base}/settings`, end: false, icon: Gear, badge: 0 },
   ];
