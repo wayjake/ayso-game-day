@@ -1,5 +1,10 @@
-import { createUploadthing, type FileRouter } from "uploadthing/server";
+import { createUploadthing, type FileRouter } from "uploadthing/remix";
+import { UploadThingError } from "uploadthing/server";
+import { db, teams } from "~/db";
+import { getUser } from "~/utils/auth.server";
+import { canAccessTeam } from "~/utils/team-access.server";
 
+// The Remix adapter hands middleware `{ event }`, so the request is event.request
 const f = createUploadthing({
   errorFormatter: (err) => {
     console.log("UploadThing Error:", err);
@@ -10,7 +15,18 @@ const f = createUploadthing({
   },
 });
 
-// 🎯 FileRouter for AYSO team management app
+// Player photos and team logos: only signed-in team staff (anyone who can open
+// at least one team). Parents and signed-out visitors are refused.
+const forbidden = () => new UploadThingError({ code: "FORBIDDEN", message: "Unauthorized" });
+
+async function requireStaffUploader(request: Request) {
+  const user = await getUser(request, false);
+  if (!user) throw forbidden();
+  const [team] = await db.select({ id: teams.id }).from(teams).where(canAccessTeam(user.id)).limit(1);
+  if (!team) throw forbidden();
+  return { userId: user.id };
+}
+
 export const uploadRouter = {
   // Player profile picture uploader (supports multiple sizes)
   playerImage: f({
@@ -19,20 +35,11 @@ export const uploadRouter = {
       maxFileCount: 3, // Allow 3 files for thumbnail, medium, and large
     },
   })
-    .middleware(async ({ req }) => {
-      // TODO: Add auth check here when we have access to session
-      // For now, we'll pass through but in production you'd check:
-      // const user = await getUser(req);
-      // if (!user) throw new UploadThingError("Unauthorized");
-      
-      // Return metadata to be stored with the file
-      return { uploadedBy: "user" };
-    })
+    .middleware(({ event }) => requireStaffUploader(event.request))
     .onUploadComplete(async ({ metadata, file }) => {
-      // Return data to be sent to the client
-      return { uploadedBy: metadata.uploadedBy, url: file.ufsUrl || file.url };
+      return { uploadedBy: metadata.userId, url: file.ufsUrl || file.url };
     }),
-    
+
   // Team logo uploader (for future use)
   teamLogo: f({
     image: {
@@ -40,11 +47,8 @@ export const uploadRouter = {
       maxFileCount: 1,
     },
   })
-    .middleware(async ({ req }) => {
-      // TODO: Add auth and team ownership check
-      return { uploadedBy: "user" };
-    })
-    .onUploadComplete(async ({ metadata, file }) => {
+    .middleware(({ event }) => requireStaffUploader(event.request))
+    .onUploadComplete(async ({ file }) => {
       return { url: file.ufsUrl || file.url };
     }),
 } satisfies FileRouter;
