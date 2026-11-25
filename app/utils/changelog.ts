@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Easier to tap",
+    summary: "Buttons, checkboxes and links are easier to hit on a phone, and BenchTalk fills the screen sideways.",
+    changes: [
+      { kind: "improved", text: "On phones, buttons and checkboxes are bigger targets, and small icons like back arrows and close buttons respond to a tap anywhere near them." },
+      { kind: "improved", text: "Turn your phone sideways and BenchTalk fills the screen, keeping clear of the notch." },
+      { kind: "improved", text: "Times, hints and other small grey text are darker and easier to read." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Group chats",
     summary: "Message several families at once, or start a group with other parents, for carpools, snacks or anything else.",
     changes: [
