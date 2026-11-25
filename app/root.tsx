@@ -10,6 +10,7 @@ import {
 import { useEffect } from "react";
 import type { Route } from "./+types/root";
 import "./app.css";
+import { useNavMotion } from "./utils/nav-motion";
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48" },
@@ -59,6 +60,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useNavMotion();
+
   // The service worker only handles push (see public/sw.js)
   useEffect(() => {
     if ("serviceWorker" in navigator) {

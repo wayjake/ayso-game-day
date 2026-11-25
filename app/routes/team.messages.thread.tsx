@@ -27,6 +27,7 @@ import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
+import { navMotion } from "~/utils/nav-motion";
 
 async function access(request: Request, teamId: number, conversationId: number) {
   const user = await getUser(request);
@@ -151,6 +152,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           <div className="flex items-center gap-3">
             <Link
               to={`/dashboard/team/${params.teamId}/messages${location.search}`}
+              {...navMotion("back")}
               className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink lg:hidden"
               aria-label="All messages"
             >

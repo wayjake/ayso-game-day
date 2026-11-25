@@ -230,7 +230,124 @@ p {
 		}
 	}
 }
+/*
+ * Page transitions (utils/nav-motion.ts). React Router wraps the navigation in
+ * a View Transition once the next page's data is in; <html data-nav> says which
+ * way it moves. The family app's top bar and tab bar (.vt-topbar, .vt-tabbar)
+ * are captured on their own and hold still while the page underneath moves.
+ * Short on purpose: the page ignores taps while a transition runs.
+ */
+.vt-topbar {
+	view-transition-name: topbar;
+}
+.vt-tabbar {
+	view-transition-name: tabbar;
+}
+::view-transition-group(*) {
+	animation-duration: 240ms;
+	animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+/* The bars swap in place, no cross-fade, unless one side doesn't have them (a chat thread hides the tab bar) */
+::view-transition-group(topbar),
+::view-transition-group(tabbar),
+::view-transition-new(topbar),
+::view-transition-new(tabbar) {
+	animation: none;
+}
+::view-transition-old(topbar),
+::view-transition-old(tabbar) {
+	animation: none;
+	opacity: 0;
+}
+::view-transition-old(tabbar):only-child {
+	opacity: 1;
+	animation: vt-fade-out 160ms ease-out both;
+}
+::view-transition-new(tabbar):only-child {
+	animation: vt-fade-in 200ms ease-out both;
+}
+
+/* Tabs, and push/back on wide screens: a quick cross-fade */
+html[data-nav]::view-transition-old(root) {
+	animation: vt-fade-out 100ms ease-out both;
+}
+html[data-nav]::view-transition-new(root) {
+	animation: vt-fade-in 180ms ease-out both;
+}
+/* Phones: open slides the new screen in over the old one, back slides it away */
+@media (max-width: 39.99rem) {
+	html[data-nav="push"]::view-transition-old(root),
+	html[data-nav="push"]::view-transition-new(root),
+	html[data-nav="back"]::view-transition-old(root),
+	html[data-nav="back"]::view-transition-new(root) {
+		mix-blend-mode: normal;
+		animation-duration: 260ms;
+		animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1);
+		animation-fill-mode: both;
+	}
+	html[data-nav="push"]::view-transition-old(root) {
+		animation-name: vt-shift-out;
+	}
+	html[data-nav="push"]::view-transition-new(root) {
+		animation-name: vt-slide-in;
+		box-shadow: -8px 0 24px rgb(16 27 45 / 0.12);
+	}
+	html[data-nav="back"]::view-transition-old(root) {
+		animation-name: vt-slide-out;
+		box-shadow: -8px 0 24px rgb(16 27 45 / 0.12);
+		z-index: 1;
+	}
+	html[data-nav="back"]::view-transition-new(root) {
+		animation-name: vt-shift-in;
+	}
+}
+/* Browser back/forward and the iOS edge swipe: iOS already animated it */
+html[data-nav="none"]::view-transition-group(*),
+html[data-nav="none"]::view-transition-old(root),
+html[data-nav="none"]::view-transition-new(root),
+html[data-nav="none"]::view-transition-old(tabbar),
+html[data-nav="none"]::view-transition-new(tabbar) {
+	animation: none;
+}
+@keyframes vt-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes vt-fade-out {
+	to {
+		opacity: 0;
+	}
+}
+@keyframes vt-slide-in {
+	from {
+		transform: translateX(100%);
+	}
+}
+@keyframes vt-slide-out {
+	to {
+		transform: translateX(100%);
+	}
+}
+@keyframes vt-shift-out {
+	to {
+		transform: translateX(-25%);
+		filter: brightness(0.94);
+	}
+}
+@keyframes vt-shift-in {
+	from {
+		transform: translateX(-25%);
+		filter: brightness(0.94);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
 	.tour-fade,
 	.tour-pop,
 	.tour-step {

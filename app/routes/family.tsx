@@ -7,6 +7,7 @@ import { requireParent } from "~/utils/family.server";
 import { parentConversationIds, totalUnread } from "~/utils/messages.server";
 import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
+import { navMotion } from "~/utils/nav-motion";
 import { usePush } from "~/hooks/usePush";
 import type { FamilyContext } from "~/hooks/useFamily";
 import { AppMark } from "~/components/AppMark";
@@ -107,7 +108,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="min-h-dvh bg-canvas text-ink">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
+      <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-4">
           <Link to="/family" aria-label="Schedule">
             <AppMark />
@@ -120,6 +121,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
                 to={to}
                 end={end}
                 prefetch="intent"
+                {...navMotion("tab")}
                 className={(state) =>
                   cx(
                     "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
@@ -164,7 +166,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       {/* Phone tab bar */}
       {!inThread && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+          className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
           aria-label="Family"
         >
           {tabs.map(({ label, to, end, icon: Icon, badge }) => (
@@ -173,6 +175,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
               to={to}
               end={end}
               prefetch="intent"
+              {...navMotion("tab")}
               className={(state) =>
                 cx(
                   "group relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150",

@@ -4,6 +4,7 @@ import { CaretLeft, CaretRight, ChatCircle, Heart } from "@phosphor-icons/react"
 import { cx } from "~/components/ui";
 import { StaffBadge } from "~/components/StaffBadge";
 import { sendPostAction, type FeedAuthor, type FeedMediaItem, type PostStats } from "~/utils/feed";
+import { navMotion } from "~/utils/nav-motion";
 
 // A post's files (one on its own, several as a swipeable carousel) and the
 // like/comment row under it. Ported from disney-social's PostMedia.
@@ -83,7 +84,7 @@ function Media({ item, caption, href, fill = false }: { item: FeedMediaItem; cap
   if (item.type === "image") {
     const img = <img src={item.displayUrl ?? item.url} alt={caption ?? ""} loading="lazy" decoding="async" draggable={false} {...dims} className={cx(size, "bg-surface-2")} />;
     return href ? (
-      <Link to={href} state={{ fromFeed: true }} className={cx("block", fill && "size-full min-h-0")} aria-label="Open post">
+      <Link to={href} state={{ fromFeed: true }} {...navMotion("push")} className={cx("block", fill && "size-full min-h-0")} aria-label="Open post">
         {img}
       </Link>
     ) : (
@@ -165,7 +166,7 @@ export function PostActions({
           <span className="tabular">{shown.likes || ""}</span>
         </button>
         {commentsTo ? (
-          <Link to={commentsTo} state={{ fromFeed: true, focusComment: true }} className={cx(btn, "text-muted")} aria-label="Comments">
+          <Link to={commentsTo} state={{ fromFeed: true, focusComment: true }} {...navMotion("push")} className={cx(btn, "text-muted")} aria-label="Comments">
             {comment}
           </Link>
         ) : (

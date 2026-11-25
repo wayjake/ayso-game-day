@@ -9,6 +9,7 @@ import { Badge } from "~/components/ui";
 import { coachConversationIds, totalUnread } from "~/utils/messages.server";
 import { parseToursSeen } from "~/utils/tours";
 import { HelpButton, TourProvider } from "~/components/Tour";
+import { navMotion } from "~/utils/nav-motion";
 import { CalendarBlank, ChatsCircle, Gear, House, ImagesSquare, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -78,6 +79,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 end={end}
                 prefetch="intent"
                 data-tour={tour}
+                {...navMotion("tab")}
                 className={({ isActive: matched, isPending }) => {
                   const isActive = lit(matched, isPending, also);
                   return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-0.5 pt-2 pb-2.5 text-[11px] font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${

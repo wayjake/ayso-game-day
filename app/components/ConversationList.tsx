@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { ChatsCircle, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
 import { formatMessageTime } from "~/utils/dates";
 import { Badge, Card, cx } from "~/components/ui";
+import { navMotion } from "~/utils/nav-motion";
 
 export type ConversationListItem = {
   id: number;
@@ -40,10 +41,11 @@ export function ConversationList({
             <Link
               to={hrefFor(c.id)}
               prefetch={prefetch}
+              {...navMotion("push")}
               aria-current={selected ? "page" : undefined}
               className={cx(
                 "flex items-center gap-3 px-4 py-3.5 transition sm:px-5",
-                selected ? "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]" : "hover:bg-surface-2/60"
+                selected ? "bg-primary-soft shadow-[inset_3px_0_0_var(--color-primary)]" : "hover:bg-surface-2/60 active:bg-surface-2"
               )}
             >
               <span
