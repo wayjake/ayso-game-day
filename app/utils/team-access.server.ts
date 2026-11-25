@@ -1,5 +1,5 @@
 import { db, teams, teamMembers, users } from "~/db";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { toStaffRole, type StaffRole } from "~/utils/team-roles";
 
 // Permission level: the owner can manage staff, everyone else on staff can't.
@@ -20,6 +20,13 @@ export function canAccessTeam(userId: number) {
         .where(and(eq(teamMembers.userId, userId), eq(teamMembers.status, "active")))
     )
   );
+}
+
+// Teams that aren't archived. Pair with canAccessTeam wherever teams are
+// listed for picking (the switcher, the /dashboard redirect, the main teams
+// list); never in access checks, since archived teams still open.
+export function activeTeams() {
+  return isNull(teams.archivedAt);
 }
 
 export async function getTeamForUser(teamId: number, userId: number) {

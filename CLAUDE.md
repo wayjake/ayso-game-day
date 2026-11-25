@@ -102,6 +102,7 @@ The application uses Drizzle ORM with 8 main tables:
 2. **teams** - Team information and settings
    - Fields: id, name, coachId, format (7v7/9v9/11v11), ageGroup, season, region, timestamps
    - Relationship: One user (coach) can have many teams
+   - `archivedAt`/`archivedBy`: a past season, set by the owner (Settings > Archive this team). Archived teams are left out wherever teams are listed for picking (the team switcher via the dashboard loader, the `/dashboard` redirect including the last-team cookie, the main grid on All teams, the Account page's fallback team) using `activeTeams()` from `team-access.server.ts` alongside `canAccessTeam`. They still open and work everywhere else (access checks, messages, the family app); All teams lists them under "Archived teams", and a banner inside says it's archived with Unarchive for the owner.
 
 3. **players** - Player profiles with photos and preferred positions
    - Fields: id, teamId, coachId, name, description, profilePicture, profileImageBase (unused), preferredPositions (JSON array), timestamps
