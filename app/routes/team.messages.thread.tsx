@@ -13,8 +13,6 @@ import {
   getThread,
   groupSubtitle,
   groupTitle,
-  latestMessageId,
-  markRead,
   postMessage,
   toggleReaction,
   setNeedsReply,
@@ -28,6 +26,7 @@ import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.serv
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
 import { taskDraftFor } from "~/utils/tasks.server";
+import { getReadReceipts, markConversationRead } from "~/utils/read-receipts.server";
 import { groupView, handleGroupAction } from "~/utils/groups.server";
 import { GroupPanel, type GroupInfo } from "~/components/GroupPanel";
 import { Button, cx } from "~/components/ui";
@@ -50,7 +49,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const threadParam = new URL(request.url).searchParams.get("thread");
   const thread = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
   // Everything is on screen or summed up under its thread, so all of it counts as read
-  await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
+  await markConversationRead(conversation, user.id);
 
   let title = "Team chat";
   let subtitle = "Every coach and family on the app can see this";
@@ -107,6 +106,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return data({
     me: user.id,
+    receipts: await getReadReceipts(conversation),
     teamId: conversation.teamId,
     acks,
     context,
@@ -168,6 +168,7 @@ export function meta({ data }: Route.MetaArgs) {
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
     me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft, acks, group,
+    receipts,
   } = loaderData;
   // The draft is in the box now; drop it from the URL so a reload doesn't bring it back
   const [searchParams, setSearchParams] = useSearchParams();
@@ -281,6 +282,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           thread={thread}
           realtime={realtime}
           meId={me}
+          receipts={receipts}
           emptyText={
             kind === "team"
               ? "No messages yet. Post something for every family on the team."

@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher, useFetchers, useLocation, useRevalidator, useSubmit } from "react-router";
-import { ArrowBendUpLeft, ArrowLeft, ChatCircle, Check, CheckCircle, PaperPlaneRight } from "@phosphor-icons/react";
-import { formatMessageDateTime, formatMessageTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
+import { ArrowBendUpLeft, ArrowLeft, CaretDown, ChatCircle, Check, CheckCircle, Checks, PaperPlaneRight } from "@phosphor-icons/react";
+import { formatMessageDateTime, formatMessageTime, formatReadTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
+import { readersOf, type MessageReader, type ReadReceipts } from "~/utils/read-receipts";
 import { REACTIONS } from "~/utils/reactions";
 import { Badge, cx } from "~/components/ui";
 import { StaffBadge } from "~/components/StaffBadge";
@@ -73,7 +74,10 @@ export function MessageThread({
   readOnly = null,
   acks,
   ackHref,
+  receipts = null,
 }: {
+  /** Who has read how far (read receipts). Main list only; thread replies don't show them. */
+  receipts?: ReadReceipts | null;
   layout?: "window" | "pane";
   /** Text to start the main composer with, e.g. a drafted task reminder. Fills the box each time it changes. */
   initialDraft?: string | null;
@@ -106,6 +110,9 @@ export function MessageThread({
   // An event that arrives mid-reload waits for it to finish, then reloads again
   const missed = useRef(false);
   const live = useConversationRealtime(realtime, () => {
+    // Loading the thread marks it read, so a hidden tab waits: the
+    // visibilitychange tick below reloads it when it's looked at again
+    if (document.visibilityState !== "visible") return;
     if (revalidator.state === "idle") revalidator.revalidate();
     else missed.current = true;
   });
@@ -164,6 +171,7 @@ export function MessageThread({
             canReply={!readOnly}
             acks={acks}
             ackHref={ackHref}
+            receipts={receipts}
           />
         )}
       </div>
@@ -324,7 +332,9 @@ function MessageList({
   after,
   acks,
   ackHref,
+  receipts = null,
 }: {
+  receipts?: ReadReceipts | null;
   acks?: Record<number, AckSummaryView>;
   ackHref?: (announcementId: number) => string;
   messages: Shown[];
@@ -382,6 +392,11 @@ function MessageList({
         const showAck = acknowledged && m.announcement?.ask === "ack";
         const acked = acknowledged?.includes(m.id) || ackPending;
         const isSelected = selected === m.id;
+        // Read receipts: only where someone else on the app could read it
+        const showReceipts = Boolean(receipts && receipts.participants > 1 && !m.pending && m.id > 0);
+        const readers = showReceipts ? readersOf(receipts, m.id, m.senderId) : [];
+        // A direct thread has one other reader, so only your own messages say anything
+        const readInfo = showReceipts && receipts && (receipts.kind !== "direct" || mine);
         return (
           <li key={m.id} data-message={m.id}>
             {newDay && (
@@ -473,6 +488,7 @@ function MessageList({
                   )}
                 </div>
               )}
+              {isSelected && readInfo && receipts && <ReadInfo kind={receipts.kind} readers={readers} />}
 
               {m.reactions && m.reactions.length > 0 && (
                 <div className={cx("mt-1 flex flex-wrap gap-1 px-1", mine && "justify-end")}>
@@ -518,9 +534,10 @@ function MessageList({
                 </details>
               )}
               {!m.pending && (!sameSender(next, m) || hasExtras || i === messages.length - 1) && (
-                <span className="mt-0.5 px-1 text-[11px] text-subtle">
+                <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-subtle">
                   {formatMessageTime(m.createdAt)}
                   {showEmailDetails && m.emailedTo && ` · emailed to ${m.emailedTo}`}
+                  {mine && showReceipts && <Ticks read={readers.length > 0} />}
                 </span>
               )}
             </div>
@@ -727,5 +744,62 @@ function AckLine({ summary, href }: { summary: AckSummaryView; href: string }) {
         {names.length > 0 && ` · ${shown}${more}`}
       </span>
     </Link>
+  );
+}
+
+// Your own messages: one check once it's sent, two once someone has read it
+function Ticks({ read }: { read: boolean }) {
+  return read ? (
+    <Checks size={14} weight="bold" className="text-primary" aria-label="Read" />
+  ) : (
+    <Check size={13} weight="bold" aria-label="Sent" />
+  );
+}
+
+// Under a tapped message, like Telegram: when the other person read it, or
+// who in the group has, and when. Everyone in the conversation can see it.
+function ReadInfo({ kind, readers }: { kind: ReadReceipts["kind"]; readers: MessageReader[] }) {
+  const [open, setOpen] = useState(readers.length <= 5);
+  const pill = "mt-1.5 flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs text-muted shadow-overlay ring-1 ring-line";
+
+  if (kind === "direct") {
+    const reader = readers[0];
+    return (
+      <p className={pill}>
+        {reader ? <Checks size={14} weight="bold" className="text-primary" /> : <Check size={14} weight="bold" />}
+        {reader ? (reader.at ? `Read ${formatReadTime(reader.at)}` : "Read") : "Not read yet"}
+      </p>
+    );
+  }
+  if (readers.length === 0) {
+    return (
+      <p className={pill}>
+        <Check size={14} weight="bold" /> Not seen yet
+      </p>
+    );
+  }
+  return (
+    <div className="mt-1.5 w-64 max-w-[85vw] overflow-hidden rounded-xl bg-surface text-sm shadow-overlay ring-1 ring-line">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-semibold text-muted hover:bg-surface-2 pointer-coarse:min-h-11"
+      >
+        <Checks size={14} weight="bold" className="text-primary" />
+        Seen by {readers.length}
+        <CaretDown size={12} weight="bold" className={cx("ml-auto transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <ul className="max-h-56 overflow-y-auto border-t border-line py-1">
+          {readers.map((r) => (
+            <li key={r.userId} className="flex items-baseline justify-between gap-3 px-3 py-1.5">
+              <span className="truncate text-ink">{r.name}</span>
+              <span className="shrink-0 text-xs text-subtle">{r.at ? formatReadTime(r.at) : "Read"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

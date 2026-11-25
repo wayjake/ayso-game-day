@@ -51,7 +51,7 @@ export async function publishFeed(teamId: number, event: FeedEvent) {
   }
 }
 
-export type ConversationEvent = { kind: "message" | "reaction" | "members"; threadId?: number | null };
+export type ConversationEvent = { kind: "message" | "reaction" | "members" | "read"; threadId?: number | null };
 
 // Awaited by callers (serverless hosts may drop work left after the response).
 // Never throws: a realtime hiccup only means pages catch up on their next poll.
