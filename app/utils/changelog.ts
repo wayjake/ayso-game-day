@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Snappier tabs",
+    summary: "Tapping a tab answers straight away, and the help button has moved up next to the bell.",
+    changes: [
+      { kind: "improved", text: "Tap a tab and the next page turns into view right away, with an outline of what's coming that fills in as it loads, so you're never left wondering whether the tap worked." },
+      { kind: "improved", text: "The ? help button for coaches now sits in the top bar, next to the notifications bell, so on a phone it no longer takes up a line under the team name." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "All your teams in one place",
     summary: "Archive teams and invite staff to several teams at once, from your account.",
     changes: [

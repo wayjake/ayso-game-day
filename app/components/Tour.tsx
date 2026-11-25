@@ -30,7 +30,9 @@ async function save(body: { action: "seen"; tourId: string } | { action: "reset"
   }
 }
 
-export function TourProvider({ teamId, initialSeen, children }: { teamId: number; initialSeen: ToursSeen; children: ReactNode }) {
+// Lives in the dashboard layout so the ? can sit in its top bar. Off a team's
+// pages (teamId null) there are no tours: the context is null and the ? hides.
+export function TourProvider({ teamId, initialSeen, children }: { teamId: number | null; initialSeen: ToursSeen; children: ReactNode }) {
   const [seen, setSeen] = useState<ToursSeen>(initialSeen);
   const [active, setActive] = useState<{ tour: Tour; index: number } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -54,7 +56,7 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
   // First visit: the welcome tour. First time in Messages after that: the
   // announcements tour. Never both at once, and never over the Help sheet.
   useEffect(() => {
-    if (active || helpOpen || autoStarted.current) return;
+    if (teamId === null || active || helpOpen || autoStarted.current) return;
     const welcome = getTour("welcome")!;
     const announcements = getTour("announcements")!;
     // Only start where the tour's first step lives, so it never pulls you off the page you came for
@@ -74,9 +76,9 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
   }, [location.pathname, active]);
 
   return (
-    <TourContext.Provider value={{ start, openHelp: () => setHelpOpen(true) }}>
+    <TourContext.Provider value={teamId === null ? null : { start, openHelp: () => setHelpOpen(true) }}>
       {children}
-      {active && (
+      {active && teamId !== null && (
         <TourRunner
           teamId={teamId}
           tour={active.tour}
@@ -85,7 +87,7 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
           onDone={() => finish(active.tour)}
         />
       )}
-      {helpOpen && (
+      {helpOpen && teamId !== null && (
         <HelpSheet
           seen={seen}
           onStart={start}
