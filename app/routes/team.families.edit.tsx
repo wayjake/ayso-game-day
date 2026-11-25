@@ -88,6 +88,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Only the owner gives or takes away staff roles
   const notes: string[] = [];
+  // Coach invites count toward "Save and invite": they're how that parent joins
+  let sent = 0;
+  let linkOnly = 0;
   if (myRole === "owner") {
     for (const g of input) {
       // Removed parents' coach invites were cancelled with their contacts
@@ -95,7 +98,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       const was = before?.guardians.find((b) => g.originalEmail && b.email === normalizeEmail(g.originalEmail));
       if (g.role !== "parent" && !parseStaffRole(g.role)) continue;
       const email = normalizeEmail(g.email);
-      const note = await setGuardianRole({
+      const change = await setGuardianRole({
         request,
         team,
         guardian: {
@@ -109,15 +112,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         role: parseStaffRole(g.role),
         owner: user,
       });
-      if (note) notes.push(note);
+      if (change) notes.push(change.note);
+      if (change?.invite === "sent") sent++;
+      if (change?.invite === "link-only") linkOnly++;
     }
   }
 
   // "Save and invite": invite every parent who hasn't had a working invite yet,
   // then show the results on the Families list
   if (text("_action") === "saveInvite") {
-    let sent = 0;
-    let linkOnly = 0;
     for (const g of input) {
       if (g.remove) continue;
       const email = normalizeEmail(g.email);
@@ -336,7 +339,7 @@ function GuardianCard({
     <li className="rounded-xl border border-line p-4">
       {g && <input type="hidden" name={field("originalEmail")} value={g.email} />}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        {g ? familyStatusBadge[g.status] : <span className="text-sm font-medium text-muted">New parent or guardian</span>}
+        {g ? (g.staffInvite && g.status === "invited" ? null : familyStatusBadge[g.status]) : <span className="text-sm font-medium text-muted">New parent or guardian</span>}
         {g?.staffRole && <StaffBadge role={g.staffRole} />}
         {g?.staffInvite && <Badge tone="primary">Coach invite sent</Badge>}
         {canRemove && (

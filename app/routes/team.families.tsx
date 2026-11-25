@@ -7,13 +7,13 @@ import { StaffBadge } from "~/components/StaffBadge";
 import { STAFF_ROLES, parseStaffRole, staffRoleLabel } from "~/utils/team-roles";
 import { db, contacts, players } from "~/db";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
-import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
+import { inviteFamily, listFamilies, type Family } from "~/utils/parent-invites.server";
 import { isEmailConfigured } from "~/utils/email.server";
 import { formatMessageTime } from "~/utils/dates";
 import { handleNoteAction } from "~/utils/announcements.server";
 import { getOrCreateFamilyConversation } from "~/utils/messages.server";
 import { findFamily, getFamilyContext } from "~/utils/family-context.server";
-import { groupHouseholds, staffAccountFor } from "~/utils/family-admin.server";
+import { groupHouseholds, sendCoachInvite, staffAccountFor } from "~/utils/family-admin.server";
 import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
 import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
@@ -60,12 +60,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 const staffAccount = staffAccountFor;
 
+// Families still waiting for a first (or fresh) invite. A parent invited as
+// staff gets their coach invite again, which only the owner can send.
+const needsInvite = (f: Family, isOwner: boolean) =>
+  (f.status === "not-invited" || f.status === "expired") && (!f.staffInvite || isOwner);
+
 type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | "no-players"; url?: string; linkedCount?: number };
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const teamId = parseInt(params.teamId);
-  await requireTeamAccess(teamId, user.id);
+  const { team: myTeam, role: myRole } = await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
 
@@ -101,18 +106,27 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
   }
 
+  const isOwner = myRole === "owner";
+  const families = await listFamilies(request, teamId);
   let emails: string[] = [];
   if (intent === "invite") {
     emails = [String(formData.get("email") ?? "")];
   } else if (intent === "inviteAll") {
-    const families = await listFamilies(request, teamId);
-    emails = families.filter((f) => f.status === "not-invited" || f.status === "expired").map((f) => f.email);
+    emails = families.filter((f) => needsInvite(f, isOwner)).map((f) => f.email);
   } else {
     return data({ error: "Unknown action" }, { status: 400 });
   }
 
   const outcomes: InviteOutcome[] = [];
   for (const email of emails) {
+    const family = families.find((f) => f.email === email.trim().toLowerCase());
+    // Invited as staff: resend that invite rather than a parent invite on top
+    if (family?.staffInvite && family.status !== "joined") {
+      if (!isOwner) return data({ error: "Only the team owner can resend a coach invite." }, { status: 403 });
+      const result = await sendCoachInvite({ request, team: myTeam, email: family.email, role: family.staffInvite, owner: user });
+      if (result) outcomes.push({ email, result });
+      continue;
+    }
     const outcome = await inviteFamily({ request, teamId, email, invitedBy: user });
     outcomes.push({ email, ...outcome });
   }
@@ -158,7 +172,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
       ? String(navigation.formData.get("email") ?? "")
       : null;
   const invitingAll = navigation.state === "submitting" && navigation.formData?.get("_action") === "inviteAll";
-  const toInvite = families.filter((f) => f.status === "not-invited" || f.status === "expired").length;
+  const toInvite = families.filter((f) => needsInvite(f, isOwner)).length;
   const joined = households.filter((h) => h.some((f) => f.status === "joined")).length;
   const outcomes = actionData && "outcomes" in actionData ? actionData.outcomes : [];
 
@@ -303,9 +317,12 @@ function ParentLine({ f, isOwner, busy, panelHref }: { f: FamilyRow; isOwner: bo
           <span className="min-w-0 truncate text-muted">{f.email}</span>
           {statusBadge[f.status]}
           {f.account?.staffRole && <StaffBadge role={f.account.staffRole} />}
+          {f.staffInvite && f.status !== "joined" && <StaffBadge role={f.staffInvite} />}
         </div>
         {f.status === "invited" && f.invitedAt && (
-          <div className="mt-0.5 pl-5 text-xs text-subtle">Invited {formatMessageTime(f.invitedAt)}</div>
+          <div className="mt-0.5 pl-5 text-xs text-subtle">
+            {f.staffInvite ? "Coach invite sent" : "Invited"} {formatMessageTime(f.invitedAt)}
+          </div>
         )}
         {f.status === "joined" && f.kids.some((k) => !k.linked) && (
           <div className="mt-0.5 pl-5 text-xs text-warning">
@@ -334,7 +351,7 @@ function ParentLine({ f, isOwner, busy, panelHref }: { f: FamilyRow; isOwner: bo
           </Form>
         )}
         {f.inviteUrl && <CopyLink url={f.inviteUrl} />}
-        {(f.status !== "joined" || f.kids.some((k) => !k.linked)) && (
+        {(f.status !== "joined" || f.kids.some((k) => !k.linked)) && (!f.staffInvite || isOwner) && (
           <Form method="post">
             <input type="hidden" name="_action" value="invite" />
             <input type="hidden" name="email" value={f.email} />
