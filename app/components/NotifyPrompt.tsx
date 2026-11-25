@@ -25,9 +25,16 @@ export function NotifyPrompt({ push, audience = "family" }: { push: PushState; a
 
   useEffect(() => {
     if (push.status !== "off" || !isTouchDevice()) return;
+    let retry = 0;
     const show = () => {
-      // Another sheet is up (the install sheet after signing in): wait for it
-      if (asked() || document.querySelector("dialog[open]")) return;
+      if (asked()) return;
+      // Something else is up: a sheet (install, after signing in) or a guided
+      // tour, which is a plain role="dialog" with no close event. Look again shortly.
+      if (document.querySelector('dialog[open], [role="dialog"]')) {
+        window.clearTimeout(retry);
+        retry = window.setTimeout(show, 1500);
+        return;
+      }
       try {
         localStorage.setItem(ASKED_KEY, String(Date.now()));
       } catch {}
@@ -40,6 +47,7 @@ export function NotifyPrompt({ push, audience = "family" }: { push: PushState; a
     const timer = window.setTimeout(show, 600);
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(retry);
       document.removeEventListener("close", onDialogClose, true);
     };
   }, [push.status]);
