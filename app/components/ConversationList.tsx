@@ -45,7 +45,8 @@ export function ConversationList({
           <li key={c.href ?? c.id}>
             <Link
               to={c.href ?? hrefFor(c.id)}
-              prefetch={prefetch}
+              // Opening a not-yet-started thread creates it, so never on hover
+              prefetch={c.href ? "none" : prefetch}
               aria-current={selected ? "page" : undefined}
               className={cx(
                 "flex items-center gap-3 px-4 py-3.5 transition sm:px-5",

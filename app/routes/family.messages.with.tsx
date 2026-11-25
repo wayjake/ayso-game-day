@@ -11,8 +11,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const teamId = Number(params.teamId);
   const staffId = Number(params.staffId);
   const staff = teamIds.includes(teamId) ? await getCoachUserIds(teamId) : [];
-  // Only someone on that team's staff, and not themselves (a parent who also coaches the team)
-  if (!staff.includes(staffId) || staff.includes(user.id)) {
+  // Only someone on that team's staff, and never themselves (a parent who is also on the staff)
+  if (!staff.includes(staffId) || staffId === user.id) {
     throw new Response("Not found", { status: 404 });
   }
   const conversation = await getOrCreateDirectConversation(teamId, user.id, staffId);

@@ -46,7 +46,9 @@ export function useConversationRealtime(config: RealtimeConfig, onChange: (event
         const channel = ably.channels.get(channelName);
         channelRef.current = channel;
 
-        const onState = () => setConnected(ably.connection.state === "connected");
+        // Live only once this channel is attached, not just the connection: a
+        // refused channel has to keep the page on its fast poll
+        const onState = () => setConnected(ably.connection.state === "connected" && channel.state === "attached");
         const onMessage = (message: InboundMessage) => onChangeRef.current(message.data ?? {});
         const onPresence = async () => {
           const members: PresenceMessage[] = await channel.presence.get().catch(() => []);
@@ -60,6 +62,7 @@ export function useConversationRealtime(config: RealtimeConfig, onChange: (event
 
         cleanup = () => {
           ably.connection.off(onState);
+          channel.off(onState);
           channel.unsubscribe("changed", onMessage);
           channel.presence.unsubscribe(onPresence);
           channel.presence.leave().catch(() => {});
@@ -67,9 +70,23 @@ export function useConversationRealtime(config: RealtimeConfig, onChange: (event
         };
 
         ably.connection.on(onState);
+        channel.on(onState);
         onState();
-        await channel.subscribe("changed", onMessage);
-        await channel.presence.subscribe(onPresence);
+        const attach = async () => {
+          await channel.subscribe("changed", onMessage);
+          await channel.presence.subscribe(onPresence);
+        };
+        try {
+          await attach();
+        } catch {
+          // The token lists the private threads that existed when it was issued.
+          // One started since (a family's first message to a coach) isn't in it
+          // yet: get a fresh token and try once more.
+          if (cancelled) return;
+          await ably.auth.authorize();
+          if (cancelled) return;
+          await attach();
+        }
         if (cancelled) cleanup();
       })
       .catch((error) => console.warn("Realtime unavailable, polling instead:", (error as Error).message));

@@ -406,11 +406,12 @@ export async function listCoachConversations(teamId: number, userId: number): Pr
 // with each staff member (their role shown as a badge). Threads are made on
 // first open, so a staff member they've never written to links to
 // /family/messages/with/:teamId/:staffId. A thread with someone who has left
-// the staff stays listed while it has history.
+// the staff stays listed while it has history. A parent who is on the staff
+// of the same team still gets their family threads with the other staff here
+// (never one with themselves), so the list shows everything the unread badge counts.
 export async function listParentConversations(
   userId: number,
-  teamList: { teamId: number; teamName: string }[],
-  coachedTeamIds: Set<number> = new Set()
+  teamList: { teamId: number; teamName: string }[]
 ): Promise<ConversationSummary[]> {
   const teamChats: ConversationSummary[] = [];
   const directs: ConversationSummary[] = [];
@@ -433,9 +434,6 @@ export async function listParentConversations(
       needsReply: false,
       emailOnly: false,
     });
-    // On teams they also coach, they're staff, not a family
-    if (coachedTeamIds.has(teamId)) continue;
-
     const staff = (await getTeamStaff(teamId)).filter((m) => m.userId !== userId);
     const threads = await db
       .select({ convo: conversations, name: users.name, email: users.email })
