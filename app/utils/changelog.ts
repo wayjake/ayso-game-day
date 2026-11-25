@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "All your teams in one place",
+    summary: "Archive teams and invite staff to several teams at once, from your account.",
+    changes: [
+      { kind: "improved", text: "Your account lists every team you're on. Archive the ones whose season is over, or bring them back, without opening each team." },
+      { kind: "improved", text: "Invite a coach, assistant coach or team manager to several of your teams at once from your account. A team's own Settings now invites to just that team." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Archive past teams",
     summary: "Put away a team when its season is over, without losing anything.",
     changes: [
