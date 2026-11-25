@@ -250,6 +250,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /api/uploadthing - File upload handler
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)
+/changelog - What's new, linked from the home page footer. Entries live in `app/utils/changelog.ts`
 /dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 /join/:code - Parent invite: sign up or log in, linked to their kids
 /ack/:token - "Got it" from an announcement email (POST to confirm)
@@ -627,6 +628,10 @@ Do feature development in a git worktree, never in the main checkout, so several
   3. Delete the merged branch with `git branch -d <branch>`, and its remote copy with `git push origin --delete <branch>` if it was pushed.
   4. Only clean up what this session created. Leave other sessions' worktrees and dev servers alone.
   5. If either one refuses (the worktree has uncommitted or untracked changes, or the branch isn't merged), stop and tell the user. Don't use `--force` or `-D`.
+
+### Shipping preview to main
+
+Main goes live through a PR from `preview` to `main`, which the user merges. Before opening it, add a release to the top of `app/utils/changelog.ts` covering everything in `main..preview`, written for coaches and families (what they can do now, not how it was built), and ship that to `preview` first.
 
 ### After every push, update the local checkout
 
