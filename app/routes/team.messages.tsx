@@ -91,7 +91,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
               </span>
             </div>
           </header>
-          <MessagesTabs teamId={team.id} needsReply={needsReplyCount} className="lg:mb-3 lg:flex" />
+          <MessagesTabs teamId={team.id} needsReply={needsReplyCount} className="lg:mb-3" />
 
           <div className="relative mb-3 hidden lg:block">
             <label htmlFor="conversation-search" className="sr-only">Search conversations</label>

@@ -297,7 +297,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
     /dashboard/team/:teamId/rsvps/:eventType/:eventId - Who's coming; answer for a family; remind non-responders
     /dashboard/team/:teamId/messages - Team chat, family threads and group chats; New message starts a private thread or a group
     /dashboard/team/:teamId/messages/:conversationId - Thread (notes, mark done; replies email families not on the app)
-    /dashboard/team/:teamId/announcements - Announcements list
+    /dashboard/team/:teamId/announcements - Announcements, in the same workspace as Messages: the list on the left from lg, with the open announcement or the compose form beside it (layout route, like team.messages.tsx)
     /dashboard/team/:teamId/announcements/new - Compose: audience, ask for nothing / "Got it" / a reply, send a test
     /dashboard/team/:teamId/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
     /dashboard/team/:teamId/feed - Team photo and video feed (coach view)

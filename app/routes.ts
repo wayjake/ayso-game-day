@@ -76,9 +76,12 @@ export default [
       ]),
       route("feed", "routes/team.feed.tsx"),
       route("feed/:postId", "routes/team.feed.post.tsx"),
-      route("announcements", "routes/team.announcements.tsx"),
-      route("announcements/new", "routes/team.announcements-new.tsx"),
-      route("announcements/:announcementId", "routes/team.announcements.detail.tsx"),
+      // Same two-pane workspace as Messages: the list on the left, the open one beside it
+      route("announcements", "routes/team.announcements.tsx", [
+        index("routes/team.announcements._index.tsx"),
+        route("new", "routes/team.announcements-new.tsx"),
+        route(":announcementId", "routes/team.announcements.detail.tsx"),
+      ]),
       route("tasks", "routes/team.tasks.tsx"),
       route("tasks/new", "routes/team.tasks-new.tsx"),
       route("tasks/:taskId", "routes/team.tasks.detail.tsx"),
