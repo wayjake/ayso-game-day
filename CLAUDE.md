@@ -643,6 +643,8 @@ Do feature development in a git worktree, never in the main checkout, so several
 
 Main goes live through a PR from `preview` to `main`, which the user merges. Before opening it, add a release to the top of `app/utils/changelog.ts` covering everything in `main..preview`, written for coaches and families (what they can do now, not how it was built), and ship that to `preview` first.
 
+Merge these PRs with a merge commit, never squash: hand the user `! gh pr merge <n> --merge` (this overrides the global `--squash` default). `preview` is long-lived, and a squash gives `main` a commit `preview` doesn't have, so the next PR conflicts. `git log --first-parent main` shows just the releases. (#4 was squashed; `preview` was reconciled with `git merge -s ours origin/main` after checking `git diff origin/main preview` held only new work.) Feature branches into `preview` can still be squashed.
+
 ### After every push, update the local checkout
 
 Any time Claude pushes (a merge to `preview` or `main`, or a feature branch), bring the main checkout up to date straight after. The user's dev server on 5173 runs from it.
