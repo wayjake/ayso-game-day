@@ -3,18 +3,13 @@ import { Bell, BellSlash, DeviceMobile } from "@phosphor-icons/react";
 import { Alert, Button } from "~/components/ui";
 import { NotificationsBlockedSheet } from "~/components/NotificationsBlockedSheet";
 import { NotifyCategories } from "~/components/NotifyCategories";
-import { usePush, type PushState, type PushTestOutcome } from "~/hooks/usePush";
+import type { PushState, PushTestOutcome } from "~/hooks/usePush";
 import { PushTestResult } from "~/components/PushTestResult";
-import type { NotifyPrefs } from "~/utils/notify";
 
-// Turns Web Push on or off for this browser. PushToggle keeps its own state
-// (coach pages); the family app passes its shared state to PushControls so the
-// header bell and the Settings page agree. iPhones only allow push for sites
+// Turns Web Push on or off for this browser, on the settings pages. Each
+// layout's one push state (usePushContext) comes in, so the header bell and
+// the settings page agree. iPhones only allow push for sites
 // added to the Home Screen, so there we point at installing first.
-
-export function PushToggle({ vapidPublicKey, notifyPrefs }: { vapidPublicKey: string | null; notifyPrefs: NotifyPrefs }) {
-  return <PushControls push={usePush(vapidPublicKey, notifyPrefs)} audience="coach" />;
-}
 
 export function PushControls({
   push,
@@ -87,8 +82,12 @@ export function PushControls({
         </div>
       )}
 
-      {push.status === "on" && (
+      {/* Account-wide, so they can be chosen before this device is on (or from a computer for a phone) */}
+      {push.status !== "loading" && push.status !== "unconfigured" && (
         <div className="border-t border-line pt-4">
+          {push.status !== "on" && (
+            <p className="mb-3 text-xs text-muted">What you get on every device where notifications are on:</p>
+          )}
           <NotifyCategories push={push} audience={audience} />
         </div>
       )}

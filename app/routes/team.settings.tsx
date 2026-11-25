@@ -1,17 +1,17 @@
 import type { Route } from "./+types/team.settings";
-import { Form, data, useNavigation } from "react-router";
+import { Form, Link, data, useNavigation } from "react-router";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getTeamStaff, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
 import { createInvites, inviteUrl, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
-import { coachFromAddress, isEmailConfigured, isOnSendingDomain, sendingDomain } from "~/utils/email.server";
-import { db, teams, users, teamInvites } from "~/db";
-import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
-import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, cx, inputClass, labelClass } from "~/components/ui";
+import { isEmailConfigured } from "~/utils/email.server";
+import { db, teams, teamInvites } from "~/db";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, buttonClass, cx, inputClass, labelClass } from "~/components/ui";
 import { APP_TIME_ZONE } from "~/utils/dates";
 import { StaffBadge } from "~/components/StaffBadge";
 import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
-import { Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt, UserCircle } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -50,9 +50,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     team,
     role,
-    me: { id: user.id, name: user.name, email: user.email, sendingEmail: user.sendingEmail, isAdmin: user.role === "admin" },
-    sendingDomain: sendingDomain(),
-    fromHeader: coachFromAddress(user, team).header,
+    me: { id: user.id },
     staff,
     pendingInvites,
     ownedTeams,
@@ -88,35 +86,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       .where(eq(teams.id, teamId));
 
     return data({ intent, success: "Team details saved" });
-  }
-
-  if (intent === "updateName") {
-    await db
-      .update(users)
-      .set({ name: text("name") || null, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(users.id, user.id));
-
-    return data({ intent, success: "Your name was saved" });
-  }
-
-  if (intent === "updateSendingEmail") {
-    // Only admins pick an address, and each address belongs to one account,
-    // so nobody can send announcements as another coach
-    if (user.role !== "admin") return data({ intent, error: "Ask the site owner to set up an address for you" }, { status: 403 });
-    const address = text("sendingEmail").toLowerCase();
-    if (address && (!/^[a-z0-9._+-]+@[a-z0-9.-]+$/.test(address) || !isOnSendingDomain(address))) {
-      return data({ intent, error: `Use an address ending in @${sendingDomain()}` }, { status: 400 });
-    }
-    if (address) {
-      const [taken] = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(and(sql`lower(${users.sendingEmail}) = ${address}`, ne(users.id, user.id)))
-        .limit(1);
-      if (taken) return data({ intent, error: "Another account already uses that address" }, { status: 400 });
-    }
-    await db.update(users).set({ sendingEmail: address || null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(users.id, user.id));
-    return data({ intent, success: address ? `Announcements now come from ${address}` : "Using the shared address" });
   }
 
   if (intent === "invite") {
@@ -252,7 +221,6 @@ function CopyButton({ value }: { value: string }) {
 
 export default function TeamSettings({ loaderData, actionData }: Route.ComponentProps) {
   const { team, role, me, staff, pendingInvites, ownedTeams, emailConfigured } = loaderData;
-  const myStaffRole = staff.find((s) => s.userId === me.id)?.role ?? "coach";
   const navigation = useNavigation();
   const busy = (intent: string) =>
     navigation.state === "submitting" && navigation.formData?.get("_action") === intent;
@@ -272,7 +240,7 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
 
   return (
     <Page width="narrow" className="space-y-6">
-      <PageHeader title="Settings" description="Team details, your name on game cards, and who's on the team staff." />
+      <PageHeader title="Settings" description="Team details and who's on the team staff." />
 
       {/* Team details */}
       <Card className="p-5 sm:p-6">
@@ -319,52 +287,15 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
         </Form>
       </Card>
 
-      {/* Your name */}
-      <Card className="p-5 sm:p-6">
-        <CardHeader title="Your name" />
-        <p className="mt-0.5 text-sm text-muted">
-          {myStaffRole === "team-manager"
-            ? "Shown to families next to your messages."
-            : "Printed on game cards and shown to families next to your messages."}
+      {/* Personal settings moved to the Account page (avatar menu, top right) */}
+      <Card className="flex items-center gap-3 p-5 sm:p-6">
+        <UserCircle size={28} className="shrink-0 text-muted" aria-hidden />
+        <p className="min-w-0 flex-1 text-sm text-muted">
+          Your name, notifications and email address are in your account, and apply to every team.
         </p>
-        <Form method="post" className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <input type="hidden" name="_action" value="updateName" />
-          <input name="name" defaultValue={me.name ?? ""} placeholder="Your full name" className={inputClass} aria-label="Your name" />
-          <Button type="submit" className="sm:h-auto" disabled={busy("updateName")}>
-            {busy("updateName") ? "Saving…" : "Save"}
-          </Button>
-        </Form>
-        {message("updateName")}
-      </Card>
-
-      {/* Sending address for announcements and email replies */}
-      <Card className="scroll-mt-6 p-5 sm:p-6" id="your-email">
-        <CardHeader title="Your email address" />
-        <p className="mt-0.5 text-sm text-muted">
-          Announcements and replies to families go out as <span className="font-medium text-ink">{loaderData.fromHeader}</span>.
-          Replies come back here either way.
-        </p>
-        {me.isAdmin && loaderData.sendingDomain ? (
-          <Form method="post" className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <input type="hidden" name="_action" value="updateSendingEmail" />
-            <input
-              name="sendingEmail"
-              type="email"
-              defaultValue={me.sendingEmail ?? ""}
-              placeholder={`you@${loaderData.sendingDomain}`}
-              className={inputClass}
-              aria-label="Your sending address"
-            />
-            <Button type="submit" className="sm:h-auto" disabled={busy("updateSendingEmail")}>
-              {busy("updateSendingEmail") ? "Saving…" : "Save"}
-            </Button>
-          </Form>
-        ) : (
-          !me.sendingEmail && (
-            <p className="mt-3 text-sm text-muted">Want your own @{loaderData.sendingDomain ?? "team"} address? Ask the site owner to set one up.</p>
-          )
-        )}
-        {message("updateSendingEmail")}
+        <Link to="/dashboard/account" className={buttonClass({ variant: "secondary", size: "sm" })}>
+          Account settings
+        </Link>
       </Card>
 
       {/* Team staff */}

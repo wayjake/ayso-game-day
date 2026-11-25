@@ -6,7 +6,8 @@ import { formatMessageDateTime, formatMessageTime } from "~/utils/dates";
 import { sendPostAction, type FeedPage, type FeedPost, type FeedScope, type PostStats } from "~/utils/feed";
 import { Button, Card, EmptyState, cx } from "~/components/ui";
 import { Composer } from "~/components/feed/Composer";
-import { AuthorName, PersonAvatar, PostActions, PostMedia } from "~/components/feed/PostMedia";
+import { AuthorName, PostActions, PostMedia } from "~/components/feed/PostMedia";
+import { PersonAvatar } from "~/components/PersonAvatar";
 import { navMotion } from "~/utils/nav-motion";
 
 // The team feed page body, shared by the family app and the coach dashboard.

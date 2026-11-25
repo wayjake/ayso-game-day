@@ -185,23 +185,6 @@ export function PostActions({
 // ---------------------------------------------------------------------------
 // People
 
-const avatarSizes = { sm: "size-7 text-[11px]", md: "size-9 text-xs" };
-
-/** Initials in a colored circle; the color comes from the person's id so it stays the same */
-export function PersonAvatar({ person, size = "md", className }: { person: { id: number; name: string }; size?: keyof typeof avatarSizes; className?: string }) {
-  const parts = person.name.trim().split(/\s+/);
-  const letters = (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0]?.[0] ?? "?").toUpperCase();
-  const tones = ["bg-primary", "bg-coral", "bg-pitch", "bg-brand", "bg-primary-ink"];
-  return (
-    <span
-      aria-hidden
-      className={cx("grid shrink-0 place-items-center rounded-full font-bold text-white", tones[person.id % tones.length], avatarSizes[size], className)}
-    >
-      {letters}
-    </span>
-  );
-}
-
 /** Name with a staff badge for coaches */
 export function AuthorName({ author, children }: { author: FeedAuthor; children?: ReactNode }) {
   return (

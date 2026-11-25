@@ -1,17 +1,14 @@
 import type { Route } from "./+types/family.settings";
-import { Form, data, useNavigation } from "react-router";
-import { db, users } from "~/db";
-import { eq, sql } from "drizzle-orm";
+import { data } from "react-router";
 import { requireParent } from "~/utils/family.server";
-import { PushControls } from "~/components/PushToggle";
-import { useFamily } from "~/hooks/useFamily";
-import { Alert, Button, Card, CardHeader, PlayerAvatar, inputClass, labelClass } from "~/components/ui";
-import { SignOut } from "@phosphor-icons/react";
+import { accountAction } from "~/utils/account.server";
+import { LogOutButton, NotificationsCard, ProfileCard } from "~/components/AccountSettings";
+import { Card, CardHeader, PlayerAvatar } from "~/components/ui";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, kids } = await requireParent(request);
   return data({
-    me: { name: user.name ?? "", email: user.email },
+    me: { id: user.id, name: user.name, email: user.email },
     kids,
   });
 }
@@ -19,13 +16,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const { user } = await requireParent(request);
   const formData = await request.formData();
-  if (formData.get("_action") === "updateName") {
-    const name = String(formData.get("name") ?? "").trim();
-    if (!name) return data({ error: "Your name can't be empty" }, { status: 400 });
-    await db.update(users).set({ name, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(users.id, user.id));
-    return data({ success: "Saved" });
-  }
-  return data({ error: "Unknown action" }, { status: 400 });
+  // Only the name here; the sending address is a coach setting
+  if (formData.get("_action") !== "updateName") return data({ intent: "", error: "Unknown action" }, { status: 400 });
+  const handled = await accountAction(user, formData);
+  return data(handled!.result, { status: handled!.status });
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -34,21 +28,14 @@ export function meta({}: Route.MetaArgs) {
 
 export default function FamilySettings({ loaderData, actionData }: Route.ComponentProps) {
   const { me, kids } = loaderData;
-  const { push, openInstall } = useFamily();
-  const navigation = useNavigation();
-  const saving = navigation.state === "submitting" && navigation.formData?.get("_action") === "updateName";
 
   return (
     <div className="space-y-5 pt-6 sm:pt-8">
       <h1 className="font-display text-3xl font-bold tracking-tight">Settings</h1>
 
-      <Card className="p-5">
-        <CardHeader title="Notifications" className="mb-1" />
-        <p className="mb-4 text-sm text-muted">
-          Turn it on separately on each phone or computer you use. What you choose to get applies to all of them.
-        </p>
-        <PushControls push={push} onInstall={openInstall} />
-      </Card>
+      <ProfileCard me={me} nameHint="Shown to the coaches and the team next to your messages." result={actionData} />
+
+      <NotificationsCard />
 
       <Card className="p-5">
         <CardHeader title="Your players" count={kids.length} className="mb-3" />
@@ -66,28 +53,7 @@ export default function FamilySettings({ loaderData, actionData }: Route.Compone
         <p className="mt-4 text-xs text-muted">Missing someone? Ask their coach to invite this email address.</p>
       </Card>
 
-      <Card className="p-5">
-        <CardHeader title="Your account" className="mb-3" />
-        <Form method="post" className="space-y-3">
-          <input type="hidden" name="_action" value="updateName" />
-          <div>
-            <label htmlFor="name" className={labelClass}>Name</label>
-            <input id="name" name="name" defaultValue={me.name} required autoComplete="name" className={inputClass} />
-          </div>
-          <p className="text-sm text-muted">Signed in as {me.email}</p>
-          {actionData && "error" in actionData && <Alert>{actionData.error}</Alert>}
-          {actionData && "success" in actionData && <Alert tone="success">{actionData.success}</Alert>}
-          <Button type="submit" variant="secondary" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </Form>
-      </Card>
-
-      <Form action="/user/logout" method="post">
-        <Button type="submit" variant="ghost" className="w-full sm:w-auto">
-          <SignOut size={18} /> Log out
-        </Button>
-      </Form>
+      <LogOutButton />
     </div>
   );
 }

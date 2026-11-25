@@ -20,7 +20,7 @@ function asked() {
   }
 }
 
-export function NotifyPrompt({ push }: { push: PushState }) {
+export function NotifyPrompt({ push, audience = "family" }: { push: PushState; audience?: "family" | "coach" }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -63,11 +63,15 @@ export function NotifyPrompt({ push }: { push: PushState }) {
           <ul className="mt-5 space-y-2.5 text-[15px]">
             <li className="flex gap-3">
               <ChatsCircle size={20} weight="fill" className="mt-0.5 shrink-0 text-pitch" aria-hidden />
-              New messages from the coaches and the team
+              {audience === "coach"
+                ? "Messages and email replies from families"
+                : "New messages from the coaches and the team"}
             </li>
             <li className="flex gap-3">
               <CalendarX size={20} weight="fill" className="mt-0.5 shrink-0 text-brand" aria-hidden />
-              New, moved or cancelled games and practices
+              {audience === "coach"
+                ? "Players who can't make a game or practice"
+                : "New, moved or cancelled games and practices"}
             </li>
           </ul>
           <p className="mt-4 text-sm text-muted">Change this anytime from the bell at the top of the app.</p>

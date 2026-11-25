@@ -5,7 +5,7 @@ import { makeDerivatives } from "~/utils/media-derivatives.client";
 import { uploadFiles } from "~/utils/uploadthing";
 import { MAX_CAPTION, MAX_FILES, MAX_VIDEOS } from "~/utils/feed";
 import { Button, Card, cx, inputClass } from "~/components/ui";
-import { PersonAvatar } from "~/components/feed/PostMedia";
+import { PersonAvatar } from "~/components/PersonAvatar";
 
 // The box at the top of the feed: add photos or videos, write a caption,
 // post. Files start uploading the moment they're picked (as drafts, see

@@ -9,11 +9,19 @@ import type { PushState, PushTestOutcome } from "~/hooks/usePush";
 import { PushTestResult } from "~/components/PushTestResult";
 import { isStandalone, isTouchDevice } from "~/utils/pwa";
 
-// The bell in the family header: one tap shows whether this device gets
+// The bell in the header (family app and coach dashboard): one tap shows whether this device gets
 // notifications, with the switch right there, then which kinds you get, plus
 // "Add to Home Screen" on phones that haven't installed the app yet.
 
-export function NotificationsMenu({ push, onInstall }: { push: PushState; onInstall: () => void }) {
+export function NotificationsMenu({
+  push,
+  onInstall,
+  audience = "family",
+}: {
+  push: PushState;
+  onInstall: () => void;
+  audience?: "family" | "coach";
+}) {
   const [open, setOpen] = useState(false);
   const [blockedHelp, setBlockedHelp] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
@@ -93,7 +101,7 @@ export function NotificationsMenu({ push, onInstall }: { push: PushState; onInst
             {push.status === "on" && (
               <>
                 <div className="my-4 border-t border-line" />
-                <NotifyCategories push={push} audience="family" />
+                <NotifyCategories push={push} audience={audience} />
               </>
             )}
 

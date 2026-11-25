@@ -13,6 +13,18 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Your account, one tap away",
+    summary: "Your picture at the top of the app opens your account, and coaches can now choose which notifications they get.",
+    changes: [
+      { kind: "new", text: "Your avatar sits at the top right of every page. Tap it for your account settings, or to log out." },
+      { kind: "new", text: "Coaches have an Account page with your name, notifications and email address in one place. They apply to every team you're on, so they're no longer under each team's Settings." },
+      { kind: "new", text: "Coaches get the notifications bell at the top of the app, and on a phone BenchTalk offers to turn notifications on, just like it does for families." },
+      { kind: "improved", text: "Choose which kinds of notifications you get, like chat messages, reactions or players dropping out, even before you've turned them on for a device." },
+      { kind: "improved", text: "Coaches who are also parents can switch to the family view from the avatar menu, and see the coach-only notification kinds there too." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Full-width top bar",
     summary: "On a big screen, the bar along the top of the coach pages now runs the whole width of the window.",
     changes: [
