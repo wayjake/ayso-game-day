@@ -113,7 +113,7 @@ async function mergeConversation(from: typeof conversations.$inferSelect, into: 
   const [last] = await db
     .select({ createdAt: messages.createdAt, body: messages.body })
     .from(messages)
-    .where(eq(messages.conversationId, into.id))
+    .where(and(eq(messages.conversationId, into.id), isNull(messages.deletedAt)))
     .orderBy(desc(messages.id))
     .limit(1);
   await db
@@ -325,6 +325,7 @@ async function unreadCounts(conversationIds: number[], userId: number) {
     )
     .where(and(
       inArray(messages.conversationId, conversationIds),
+      isNull(messages.deletedAt),
       // Email replies have no sender account; they still count as unread
       sql`coalesce(${messages.senderId}, 0) <> ${userId}`,
       sql`${messages.id} > coalesce(${conversationReads.lastReadMessageId}, 0)`,
@@ -745,6 +746,8 @@ export type ThreadMessage = {
   fullEmail: string | null; // The whole email when the reply was trimmed
   announcement: { id: number; subject: string; ask: "none" | "ack" | "reply" } | null;
   parentId: number | null;
+  /** Its sender deleted it: shown as a placeholder, kept only while replies hang under it */
+  deleted: boolean;
   reactions: ReactionSummary[];
   /** Roots only: the replies under it, if any */
   thread: ThreadSummary | null;
@@ -795,12 +798,20 @@ async function loadMessages(conversationId: number, viewerId: number, where: Ret
       inboundEmailId: messages.inboundEmailId,
       emailedTo: messages.emailedTo,
       parentId: messages.parentId,
+      deletedAt: messages.deletedAt,
       name: users.name,
       email: users.email,
     })
     .from(messages)
     .leftJoin(users, eq(messages.senderId, users.id))
-    .where(and(eq(messages.conversationId, conversationId), where))
+    .where(and(
+      eq(messages.conversationId, conversationId),
+      where,
+      // A deleted message stays as a placeholder only while live replies hang under it
+      sql`(${messages.deletedAt} is null or exists (
+        select 1 from messages r where r.parent_id = ${messages.id} and r.deleted_at is null
+      ))`
+    ))
     .orderBy(desc(messages.id))
     .limit(limit);
   const ids = rows.map((r) => r.id);
@@ -827,20 +838,22 @@ async function loadMessages(conversationId: number, viewerId: number, where: Ret
   return rows.reverse().map((r) => {
     const senderRole = r.senderId != null ? staffRoles.get(r.senderId) ?? null : null;
     const full = r.inboundEmailId ? fullById.get(r.inboundEmailId)?.trim() ?? null : null;
+    const deleted = r.deletedAt != null;
     return {
       id: r.id,
       senderId: r.senderId,
       senderName: displayName(r),
       senderIsCoach: senderRole != null,
       senderRole,
-      body: r.body,
+      body: deleted ? "" : r.body,
       createdAt: r.createdAt,
       viaEmail: r.source === "email",
-      emailedTo: r.emailedTo,
-      fullEmail: full && full !== r.body.trim() ? full : null,
+      emailedTo: deleted ? null : r.emailedTo,
+      fullEmail: !deleted && full && full !== r.body.trim() ? full : null,
       announcement: r.announcementId ? announcementById.get(r.announcementId) ?? null : null,
       parentId: r.parentId,
-      reactions: reactions.get(r.id) ?? [],
+      deleted,
+      reactions: deleted ? [] : reactions.get(r.id) ?? [],
       thread: threads.get(r.id) ?? null,
     };
   });
@@ -889,7 +902,7 @@ async function threadSummaries(rootIds: number[]) {
     })
     .from(messages)
     .leftJoin(users, eq(messages.senderId, users.id))
-    .where(inArray(messages.parentId, rootIds))
+    .where(and(inArray(messages.parentId, rootIds), isNull(messages.deletedAt)))
     .orderBy(messages.id);
   for (const r of rows) {
     const summary = result.get(r.parentId!) ?? { count: 0, lastAt: r.createdAt, names: [] };
@@ -1176,7 +1189,7 @@ export async function toggleReaction(
   const [message] = await db
     .select({ id: messages.id, senderId: messages.senderId, parentId: messages.parentId, body: messages.body })
     .from(messages)
-    .where(and(eq(messages.id, messageId), eq(messages.conversationId, conversation.id)))
+    .where(and(eq(messages.id, messageId), eq(messages.conversationId, conversation.id), isNull(messages.deletedAt)))
     .limit(1);
   if (!message) return false;
 
@@ -1199,6 +1212,51 @@ export async function toggleReaction(
       threadId: message.parentId ?? undefined,
     });
   }
+  return true;
+}
+
+// Deletes one of your own messages in a direct thread. The row stays with its
+// body wiped (see messages.deletedAt) and its reactions go. An email that
+// already went out, and a notification already on their phone, can't be taken
+// back: the page warns about both before it asks. Announcement copies can't be
+// deleted here, since the tracker and "Got it" hang off them.
+export async function deleteMessage(conversation: typeof conversations.$inferSelect, userId: number, messageId: number) {
+  if (conversation.kind !== "direct" || !Number.isInteger(messageId)) return false;
+  const [message] = await db
+    .select({ id: messages.id, parentId: messages.parentId })
+    .from(messages)
+    .where(and(
+      eq(messages.id, messageId),
+      eq(messages.conversationId, conversation.id),
+      eq(messages.senderId, userId),
+      eq(messages.source, "app"),
+      isNull(messages.announcementId),
+      isNull(messages.deletedAt)
+    ))
+    .limit(1);
+  if (!message) return false;
+
+  await db.update(messages).set({ body: "", deletedAt: new Date().toISOString() }).where(eq(messages.id, message.id));
+  await db.delete(messageReactions).where(eq(messageReactions.messageId, message.id));
+
+  // The Messages list shows the newest message: if this was it, show the one before
+  if (message.id === (await latestMessageId(conversation.id))) {
+    const [last] = await db
+      .select({ body: messages.body, parentId: messages.parentId, createdAt: messages.createdAt })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversation.id), isNull(messages.deletedAt)))
+      .orderBy(desc(messages.id))
+      .limit(1);
+    await db
+      .update(conversations)
+      .set({
+        lastMessagePreview: last ? preview(last.parentId ? `↳ ${last.body}` : last.body) : null,
+        lastMessageAt: last?.createdAt ?? conversation.lastMessageAt,
+      })
+      .where(eq(conversations.id, conversation.id));
+  }
+
+  await publishConversation(conversation, { kind: "message", threadId: message.parentId });
   return true;
 }
 

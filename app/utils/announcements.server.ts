@@ -11,7 +11,7 @@ import {
   users,
   type User,
 } from "~/db";
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { getCoachUserIds } from "~/utils/family.server";
 import { listFamilies, type Family } from "~/utils/parent-invites.server";
 import { familyLabels, getOrCreateFamilyConversation, getOrCreateTeamConversation, markRead, preview, usersWithPush } from "~/utils/messages.server";
@@ -607,7 +607,11 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
     const replies = await db
       .select({ conversationId: messages.conversationId, body: messages.body, id: messages.id, senderId: messages.senderId, at: messages.createdAt })
       .from(messages)
-      .where(and(inArray(messages.conversationId, conversationIds), gt(messages.id, Number.isFinite(firstMessageId) ? firstMessageId : 0)))
+      .where(and(
+        inArray(messages.conversationId, conversationIds),
+        gt(messages.id, Number.isFinite(firstMessageId) ? firstMessageId : 0),
+        isNull(messages.deletedAt)
+      ))
       .orderBy(desc(messages.id));
     const coachIds = new Set(await getCoachUserIds(teamId));
     for (const x of privateRows) {
@@ -623,7 +627,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
     const replies = await db
       .select({ parentId: messages.parentId, body: messages.body, senderId: messages.senderId, senderEmail: messages.senderEmail, at: messages.createdAt })
       .from(messages)
-      .where(inArray(messages.parentId, copyIds))
+      .where(and(inArray(messages.parentId, copyIds), isNull(messages.deletedAt)))
       .orderBy(desc(messages.id));
     for (const x of rows) {
       if (x.kind !== "team") continue;

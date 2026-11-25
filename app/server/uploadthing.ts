@@ -30,11 +30,11 @@ async function requireStaffUploader(request: Request) {
 }
 
 export const uploadRouter = {
-  // Player profile picture uploader (supports multiple sizes)
+  // Player photo: one 320px square JPEG, made in the browser (ImageUploader)
   playerImage: f({
     image: {
       maxFileSize: "4MB",
-      maxFileCount: 3, // Allow 3 files for thumbnail, medium, and large
+      maxFileCount: 1,
     },
   })
     .middleware(({ event }) => requireStaffUploader(event.request))
