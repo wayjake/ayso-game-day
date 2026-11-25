@@ -13,6 +13,18 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Tasks for families",
+    summary: "Ask families to pay a fee, sign a form or anything else, and see at a glance who has done it.",
+    changes: [
+      { kind: "new", text: "Tasks: give families something to do, like paying the uniform fee or signing the code of conduct, for the whole team or just some players. Find it under Roster > Tasks." },
+      { kind: "new", text: "See every player and every task in one grid, grouped by family, and open any task for who has and hasn't done it." },
+      { kind: "new", text: "Families check tasks off in the app. Families who aren't on BenchTalk yet get a link that works without signing in." },
+      { kind: "new", text: "Confirm a task yourself, for example once a payment arrives, one family at a time or several at once. A task can count as done only once a coach confirms it, and can count once per family so brothers and sisters share it." },
+      { kind: "new", text: "Message a family from Tasks with what they still have to do already written for you, ready to edit and send." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Private messages, and an app that feels like an app",
     summary: "Messages with a coach are now between the two of you, announcements to everyone go in the team chat, and the app moves like a phone app.",
     changes: [
