@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { db, contacts, guardians, parentInvites, players, teams, users } from "~/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { escapeHtml, sendEmail } from "~/utils/email.server";
+import { escapeHtml, familyDeliveryAddress, sendEmail } from "~/utils/email.server";
+import { getTeamStaff } from "~/utils/team-access.server";
+import { staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 import { normalizeEmail } from "~/utils/invites.server";
 import { claimFamilyConversation } from "~/utils/messages.server";
 
@@ -184,12 +186,18 @@ export async function inviteFamily({
     expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
 
-  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  const [team] = await db
+    .select({ name: teams.name, ageGroup: teams.ageGroup, format: teams.format, season: teams.season, region: teams.region })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .limit(1);
   const url = parentInviteUrl(request, shareCode);
   const sent = await sendParentInviteEmail({
-    to: normalized,
+    // Outside production this goes to the coach instead, like all family mail
+    to: familyDeliveryAddress(normalized, invitedBy.email),
     url,
-    teamName: team?.name ?? "your team",
+    team: team ?? { name: "your team", ageGroup: null, format: null, season: null, region: null },
+    staff: (await getTeamStaff(teamId)).map((s) => ({ name: s.name || s.email, role: s.role })),
     kidNames: kids.map((k) => k.name.split(" ")[0]),
     coachName: invitedBy.name || invitedBy.email,
     coachEmail: invitedBy.email,
@@ -203,46 +211,112 @@ function joinNames(names: string[]) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-async function sendParentInviteEmail({
-  to,
+type InviteTeam = { name: string; ageGroup: string | null; format: string | null; season: string | null; region: string | null };
+
+// The invite is often a family's first contact with BenchTalk, so it says what
+// the app is, which team and coaches it's for, and how to put it on a phone.
+async function sendParentInviteEmail({ to, coachEmail, ...content }: Parameters<typeof parentInviteEmail>[0] & { to: string }) {
+  const { subject, html, text } = parentInviteEmail({ coachEmail, ...content });
+  return sendEmail({ to, subject, html, text, replyTo: coachEmail });
+}
+
+export function parentInviteEmail({
   url,
-  teamName,
+  team,
+  staff,
   kidNames,
   coachName,
   coachEmail,
 }: {
-  to: string;
   url: string;
-  teamName: string;
+  team: InviteTeam;
+  staff: { name: string; role: StaffRole }[];
   kidNames: string[];
   coachName: string;
   coachEmail: string;
 }) {
   const kids = joinNames(kidNames);
-  const subject = `${teamName}: RSVPs and team messages for ${kids}`;
+  const headCoach = staff.find((s) => s.role === "coach")?.name ?? coachName;
+  const otherStaff = staff.filter((s) => s.name !== headCoach);
+  const details = [
+    [team.ageGroup, team.format].filter(Boolean).join(", "),
+    team.season,
+    team.region ? `Region ${team.region.replace(/^region\s*/i, "")}` : null,
+  ].filter(Boolean) as string[];
+  const features = [
+    "The game and practice schedule, with times and fields",
+    `RSVP ${kids} to each game and practice in one tap`,
+    "Team chat, announcements and a private thread with the coaches",
+    "Team photos and videos",
+  ];
+  const iphone = ["Open the link in Safari", "Tap the Share button, then Add to Home Screen", "Open BenchTalk from your Home Screen and turn on notifications"];
+  const android = ["Open the link in Chrome", "Tap the menu (three dots), then Install app or Add to Home screen", "Open BenchTalk from your home screen and allow notifications"];
+
+  const subject = `${coachName} invited you to ${team.name} on BenchTalk`;
   const text = [
-    `${coachName} added you to ${teamName} on BenchTalk.`,
+    `${coachName} invited you to join ${team.name} on BenchTalk as ${kids}'s family.`,
     ``,
-    `Create your account to see the schedule, RSVP ${kids} to games and practices, and message the coaches.`,
+    `THE TEAM`,
+    team.name,
+    ...details,
+    `Head coach: ${headCoach}`,
+    ...otherStaff.map((s) => `${staffRoleLabel(s.role)}: ${s.name}`),
     ``,
-    `Join: ${url}`,
+    `WHAT IS BENCHTALK?`,
+    `BenchTalk is the app your team uses to stay organized. It's free, and there's nothing to download from an app store. In it you'll find:`,
+    ...features.map((f) => `- ${f}`),
     ``,
-    `This link expires in ${INVITE_TTL_DAYS} days.`,
+    `Join the team: ${url}`,
+    ``,
+    `PUT IT ON YOUR PHONE`,
+    `After you join, add BenchTalk to your home screen so it opens like an app and can send you notifications (like schedule changes).`,
+    `iPhone:`,
+    ...iphone.map((step, i) => `${i + 1}. ${step}`),
+    `Android:`,
+    ...android.map((step, i) => `${i + 1}. ${step}`),
+    ``,
+    `This link expires in ${INVITE_TTL_DAYS} days. Questions? Just reply to this email to reach ${coachName}.`,
   ].join("\n");
 
+  const muted = "color: #536175;";
+  const h2 = "margin: 28px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #536175;";
+  const list = (items: string[], ordered = false) =>
+    `<${ordered ? "ol" : "ul"} style="margin: 0; padding-left: 20px;">${items.map((i) => `<li style="margin: 4px 0;">${escapeHtml(i)}</li>`).join("")}</${ordered ? "ol" : "ul"}>`;
+
   const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; color: #101B2D;">
-      <p>${escapeHtml(coachName)} added you to <strong>${escapeHtml(teamName)}</strong> on BenchTalk.</p>
-      <p>Create your account to see the schedule, RSVP ${escapeHtml(kids)} to games and practices, and message the coaches.</p>
-      <p style="margin: 24px 0;">
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; color: #101B2D; font-size: 15px; line-height: 1.5;">
+      <p style="margin: 0 0 16px;">${escapeHtml(coachName)} invited you to join <strong>${escapeHtml(team.name)}</strong> on BenchTalk as ${escapeHtml(kids)}'s family.</p>
+
+      <div style="border: 1px solid #E3E8EF; border-radius: 12px; padding: 16px 18px;">
+        <div style="font-size: 18px; font-weight: 700;">${escapeHtml(team.name)}</div>
+        ${details.length ? `<div style="${muted} font-size: 14px;">${details.map(escapeHtml).join(" &middot; ")}</div>` : ""}
+        <div style="margin-top: 10px; font-size: 14px;">
+          <div><span style="${muted}">Head coach:</span> <strong>${escapeHtml(headCoach)}</strong></div>
+          ${otherStaff.map((s) => `<div><span style="${muted}">${escapeHtml(staffRoleLabel(s.role))}:</span> ${escapeHtml(s.name)}</div>`).join("")}
+        </div>
+      </div>
+
+      <h2 style="${h2}">What is BenchTalk?</h2>
+      <p style="margin: 0 0 8px;">BenchTalk is the app your team uses to stay organized. It's free, and there's nothing to download from an app store. In it you'll find:</p>
+      ${list(features)}
+
+      <p style="margin: 28px 0;">
         <a href="${escapeHtml(url)}" style="background: #2251C4; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Join the team</a>
       </p>
-      <p style="color: #536175; font-size: 13px;">Or paste this link into your browser:<br>${escapeHtml(url)}</p>
-      <p style="color: #536175; font-size: 13px;">This link expires in ${INVITE_TTL_DAYS} days.</p>
+
+      <h2 style="${h2}">Put it on your phone</h2>
+      <p style="margin: 0 0 12px;">After you join, add BenchTalk to your home screen so it opens like an app and can send you notifications (like schedule changes).</p>
+      <p style="margin: 0 0 4px; font-weight: 600;">iPhone</p>
+      ${list(iphone, true)}
+      <p style="margin: 12px 0 4px; font-weight: 600;">Android</p>
+      ${list(android, true)}
+
+      <p style="${muted} font-size: 13px; margin-top: 28px;">Or paste this link into your browser:<br>${escapeHtml(url)}</p>
+      <p style="${muted} font-size: 13px;">This link expires in ${INVITE_TTL_DAYS} days. Questions? Reply to this email to reach ${escapeHtml(coachName)}.</p>
     </div>
   `;
 
-  return sendEmail({ to, subject, html, text, replyTo: coachEmail });
+  return { subject, html, text };
 }
 
 export type ParentInviteState = "pending" | "accepted" | "revoked" | "expired";

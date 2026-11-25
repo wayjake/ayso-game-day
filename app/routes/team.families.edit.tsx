@@ -14,11 +14,12 @@ import {
   type HouseholdGuardian,
 } from "~/utils/family-admin.server";
 import { normalizeEmail } from "~/utils/invites.server";
+import { inviteFamily } from "~/utils/parent-invites.server";
 import { STAFF_ROLES, parseStaffRole, staffRoleLabel } from "~/utils/team-roles";
 import { familyStatusBadge } from "~/components/FamilyContext";
 import { StaffBadge } from "~/components/StaffBadge";
 import { Alert, Badge, Button, Card, Page, PageHeader, buttonClass, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowCounterClockwise, Plus, Trash, X } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, PaperPlaneTilt, Plus, Trash, X } from "@phosphor-icons/react";
 
 // One page for adding a family (no ?email) and editing one (?email=...). A
 // family here is every parent or guardian of the same kids; each keeps their
@@ -86,8 +87,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!result.ok) return data({ error: result.error }, { status: 400 });
 
   // Only the owner gives or takes away staff roles
+  const notes: string[] = [];
   if (myRole === "owner") {
-    const notes: string[] = [];
     for (const g of input) {
       // Removed parents' coach invites were cancelled with their contacts
       if (g.remove) continue;
@@ -110,12 +111,35 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
       if (note) notes.push(note);
     }
-    // Stay on the page so the coach sees what happened to each role, unless
-    // the address this page was opened with is gone
+  }
+
+  // "Save and invite": invite every parent who hasn't had a working invite yet,
+  // then show the results on the Families list
+  if (text("_action") === "saveInvite") {
+    let sent = 0;
+    let linkOnly = 0;
+    for (const g of input) {
+      if (g.remove) continue;
+      const email = normalizeEmail(g.email);
+      const was = before?.guardians.find((b) => g.originalEmail && b.email === normalizeEmail(g.originalEmail));
+      const fresh = !was || was.email !== email || was.status === "not-invited" || was.status === "expired";
+      // A parent just invited as a coach joins through that invite instead
+      const coachInvite = myRole === "owner" && !was?.userId && parseStaffRole(g.role);
+      if (!fresh || coachInvite) continue;
+      const outcome = await inviteFamily({ request, teamId, email, invitedBy: user });
+      if (outcome.result === "sent") sent++;
+      if (outcome.result === "link-only") linkOnly++;
+    }
+    return redirect(`${back}?invited=${sent}&linkOnly=${linkOnly}`);
+  }
+
+  // Stay on the page so the coach sees what happened to each role, unless
+  // the address this page was opened with is gone
+  if (notes.length) {
     const opened = normalizeEmail(new URL(request.url).searchParams.get("email") ?? "");
     const kept = input.filter((g) => !g.remove).map((g) => normalizeEmail(g.email));
-    if (notes.length && kept.includes(opened)) return data({ roleChanged: notes.join(" ") });
-    if (notes.length) return redirect(`${back}/edit?email=${encodeURIComponent(kept[0])}`);
+    if (kept.includes(opened)) return data({ roleChanged: notes.join(" ") });
+    return redirect(`${back}/edit?email=${encodeURIComponent(kept[0])}`);
   }
   return redirect(back);
 }
@@ -149,6 +173,9 @@ function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
   );
   const selected = new Set(household?.playerIds ?? preselect);
   const live = rows.filter((r) => !r.removed);
+  const saving = busy ? String(navigation.formData?.get("_action") ?? "") : null;
+  // Someone here still needs an invite
+  const canInvite = live.some((r) => !r.original || r.original.status === "not-invited" || r.original.status === "expired");
   const update = (key: string, patch: Partial<Row>) => setRows((all) => all.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   return (
@@ -220,9 +247,16 @@ function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
 
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-4 sm:px-6">
             <Link to={back} className={buttonClass({ variant: "ghost" })}>Cancel</Link>
-            <Button type="submit" name="_action" value="save" disabled={busy}>
-              {busy ? "Saving…" : household ? "Save" : "Add family"}
+            {/* Save comes first in the markup so Enter saves without inviting */}
+            <Button type="submit" name="_action" value="save" disabled={busy} className="order-last">
+              {saving === "save" ? "Saving…" : household ? "Save" : "Add family"}
             </Button>
+            {canInvite && (
+              <Button type="submit" name="_action" value="saveInvite" variant="secondary" disabled={busy}>
+                <PaperPlaneTilt size={16} />
+                {saving === "saveInvite" ? "Sending…" : household ? "Save and invite" : "Add and invite"}
+              </Button>
+            )}
           </div>
         </Form>
       </Card>

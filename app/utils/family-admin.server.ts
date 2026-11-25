@@ -194,7 +194,17 @@ export type Household = {
   related: { email: string; name: string }[];
 };
 
-const sameKids = (a: Set<number>, b: Set<number>) => a.size === b.size && [...a].every((id) => b.has(id));
+const kidsKey = (f: { kids: { id: number }[] }) => f.kids.map((k) => k.id).sort((a, b) => a - b).join(",");
+
+// Groups email-keyed families into households: the emails whose kids match exactly
+export function groupHouseholds<F extends { kids: { id: number }[] }>(families: F[]): F[][] {
+  const groups = new Map<string, F[]>();
+  for (const f of families) {
+    const key = kidsKey(f);
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+  return [...groups.values()];
+}
 
 export async function getHousehold(teamId: number, rawEmail: string, coachId: number): Promise<Household | null> {
   const email = normalizeEmail(rawEmail);
@@ -203,7 +213,7 @@ export async function getHousehold(teamId: number, rawEmail: string, coachId: nu
   if (!start) return null;
   const kids = new Set(start.kids.map((k) => k.id));
 
-  const members = families.filter((f) => sameKids(new Set(f.kids.map((k) => k.id)), kids));
+  const members = families.filter((f) => kidsKey(f) === kidsKey(start));
   const related = families.filter((f) => !members.includes(f) && f.kids.some((k) => kids.has(k.id)));
 
   const staffRoles = await getStaffRoles(teamId);
