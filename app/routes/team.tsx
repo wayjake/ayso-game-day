@@ -61,7 +61,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   return (
     <TourProvider teamId={team.id} initialSeen={toursSeen}>
       <div className="shrink-0 border-b border-line bg-surface">
-        <div className="mx-auto max-w-7xl px-safe">
+        <div className="px-safe">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-4">
             <TeamSwitcher team={team} />
             <div className="flex items-center gap-1.5">
@@ -73,7 +73,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
           </div>
 
           {/* Equal columns with the icon over the label on phones, so all six always fit */}
-          <nav className="-mb-px mt-2 grid grid-cols-6 sm:flex sm:gap-1" aria-label="Team" data-tour="team-tabs">
+          <nav className="-mb-px mt-2 grid grid-cols-6 sm:flex sm:w-fit sm:gap-1" aria-label="Team" data-tour="team-tabs">
             {tabs.map(({ label, to, end, icon: Icon, badge, tour, also }) => (
               <NavLink
                 key={label}
