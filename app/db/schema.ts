@@ -41,6 +41,11 @@ export const teams = sqliteTable('teams', {
   season: text('season'), // e.g., Fall 2024
   region: text('region'),
   teamNumber: text('team_number'), // AYSO team # printed on game cards
+  // Archived (a past season): left out of the team switcher, the /dashboard
+  // redirect and the main teams list, for everyone on staff. Still opens and
+  // works as before; All teams lists it under Archived. Only the owner sets it.
+  archivedAt: text('archived_at'),
+  archivedBy: integer('archived_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });

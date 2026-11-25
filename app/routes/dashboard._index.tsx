@@ -13,13 +13,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
 
   const userTeams = await db
-    .select({ id: teams.id })
+    .select({ id: teams.id, archived: teams.archivedAt })
     .from(teams)
     .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
+  // Archived teams never get the doorway, even the last one opened
+  const active = userTeams.filter((t) => !t.archived);
 
   const lastTeamId = await getLastTeamId(request);
-  if (lastTeamId && userTeams.some((t) => t.id === lastTeamId)) {
+  if (lastTeamId && active.some((t) => t.id === lastTeamId)) {
     throw redirect(`/dashboard/team/${lastTeamId}`);
   }
 
@@ -28,8 +30,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect("/family");
   }
 
-  if (userTeams.length === 1) {
-    throw redirect(`/dashboard/team/${userTeams[0].id}`);
+  if (active.length === 1) {
+    throw redirect(`/dashboard/team/${active[0].id}`);
   }
 
   throw redirect("/dashboard/teams");

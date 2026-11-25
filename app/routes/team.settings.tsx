@@ -11,7 +11,7 @@ import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar,
 import { APP_TIME_ZONE } from "~/utils/dates";
 import { StaffBadge } from "~/components/StaffBadge";
 import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
-import { Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt, UserCircle } from "@phosphor-icons/react";
+import { Archive, ArrowCounterClockwise, Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt, UserCircle } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -66,6 +66,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("_action");
 
   const text = (key: string) => ((formData.get(key) as string | null) ?? "").trim();
+
+  // Archiving hides the team from everyone's switcher and team list, so only the owner does it
+  if (intent === "archive" || intent === "unarchive") {
+    await requireTeamOwner(teamId, user.id);
+    const archive = intent === "archive";
+    await db
+      .update(teams)
+      .set({ archivedAt: archive ? new Date().toISOString() : null, archivedBy: archive ? user.id : null, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(teams.id, team.id));
+    return data({
+      intent: "archive",
+      success: archive ? "Archived. It's under All teams > Archived teams now." : "Back in your team list and switcher.",
+    });
+  }
 
   if (intent === "updateTeam") {
     const name = text("name");
@@ -459,6 +473,8 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
           )}
         </Card>
       )}
+
+      <ArchiveCard archived={Boolean(team.archivedAt)} isOwner={role === "owner"} message={message("archive")} />
     </Page>
   );
 }
@@ -477,3 +493,51 @@ function RoleSelect({ className, ...props }: React.ComponentProps<"select">) {
 function formatInviteExpiry(iso: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: APP_TIME_ZONE }).format(new Date(iso));
 }
+
+// A past season: hide the team from the switcher and the team list, or bring it back
+function ArchiveCard({ archived, isOwner, message }: { archived: boolean; isOwner: boolean; message: React.ReactNode }) {
+  const [confirming, setConfirming] = useState(false);
+  const navigation = useNavigation();
+  const busy = navigation.formData?.get("_action") === "archive" || navigation.formData?.get("_action") === "unarchive";
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <CardHeader title={archived ? "This team is archived" : "Archive this team"} />
+      <p className="mt-1 text-sm text-muted">
+        {archived
+          ? "It's hidden from the team switcher and your team list for everyone on staff. Everything is still here, and it works as before."
+          : "For a season that's over: the team drops out of the team switcher and your team list for everyone on staff. Nothing is deleted, and you can still open it from All teams > Archived teams, or bring it back."}
+      </p>
+      {!isOwner ? (
+        <p className="mt-3 text-sm text-muted">Only the team's owner can {archived ? "bring it back" : "archive it"}.</p>
+      ) : archived ? (
+        <Form method="post" className="mt-4">
+          <input type="hidden" name="_action" value="unarchive" />
+          <Button type="submit" variant="secondary" disabled={busy}>
+            <ArrowCounterClockwise size={18} />
+            {busy ? "Restoring…" : "Unarchive team"}
+          </Button>
+        </Form>
+      ) : confirming ? (
+        <Form method="post" className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 p-3" onSubmit={() => setConfirming(false)}>
+          <input type="hidden" name="_action" value="archive" />
+          <p className="min-w-0 flex-1 text-sm font-medium">Hide it from everyone's team list?</p>
+          <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+            Keep it
+          </Button>
+          <Button type="submit" size="sm" disabled={busy}>
+            <Archive size={16} />
+            Archive
+          </Button>
+        </Form>
+      ) : (
+        <Button variant="secondary" className="mt-4" onClick={() => setConfirming(true)}>
+          <Archive size={18} />
+          Archive team
+        </Button>
+      )}
+      {message}
+    </Card>
+  );
+}
+
