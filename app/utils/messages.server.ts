@@ -15,7 +15,7 @@ import {
   teams,
   users,
 } from "~/db";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getTeamForUser } from "~/utils/team-access.server";
 import { getCoachUserIds, getParentUserIds } from "~/utils/family.server";
 import { getStaffRoles, getTeamStaff } from "~/utils/team-access.server";
@@ -260,28 +260,29 @@ export async function totalUnread(conversationIds: number[], userId: number) {
   return total;
 }
 
-// Conversation ids a staff member can see on a team: the team chat and their own direct threads
+// Conversation ids a staff member can see on a team: the team chat and their own direct threads.
+// Two queries on purpose: Turso's planner fails ("internal query planner error")
+// on the OR of the two over this table's partial indexes.
 export async function coachConversationIds(teamId: number, userId: number) {
-  const rows = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(or(and(eq(conversations.teamId, teamId), eq(conversations.kind, "team")), staffDirects(teamId, userId)));
-  return rows.map((r) => r.id);
+  const [team, directs] = await Promise.all([
+    db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.teamId, teamId), eq(conversations.kind, "team"))),
+    db.select({ id: conversations.id }).from(conversations).where(staffDirects(teamId, userId)),
+  ]);
+  return [...team, ...directs].map((r) => r.id);
 }
 
 // Conversation ids a parent can see across their teams
 export async function parentConversationIds(userId: number, teamIds: number[]) {
   if (teamIds.length === 0) return [];
-  const rows = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(
-      and(
-        inArray(conversations.teamId, teamIds),
-        or(eq(conversations.kind, "team"), and(eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId)))
-      )
-    );
-  return rows.map((r) => r.id);
+  // Separate queries, not an OR (see coachConversationIds)
+  const [team, directs] = await Promise.all([
+    db.select({ id: conversations.id }).from(conversations).where(and(inArray(conversations.teamId, teamIds), eq(conversations.kind, "team"))),
+    db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(inArray(conversations.teamId, teamIds), eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId))),
+  ]);
+  return [...team, ...directs].map((r) => r.id);
 }
 
 export type ConversationSummary = {

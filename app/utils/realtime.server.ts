@@ -1,5 +1,5 @@
 import { createHttpClient, type PubSubHttpClient } from "@ably/pubsub-server";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, conversations, guardians, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 
@@ -90,18 +90,16 @@ async function capabilityFor(userId: number) {
     conditions.push(and(inArray(conversations.teamId, [...coachedIds]), eq(conversations.kind, "direct"), eq(conversations.staffUserId, userId)));
   }
   if (parentTeamIds.length > 0) {
-    conditions.push(
-      and(
-        inArray(conversations.teamId, parentTeamIds),
-        or(eq(conversations.kind, "team"), and(eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId)))
-      )
-    );
+    conditions.push(and(inArray(conversations.teamId, parentTeamIds), eq(conversations.kind, "team")));
+    conditions.push(and(inArray(conversations.teamId, parentTeamIds), eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId)));
   }
-  if (conditions.length > 0) {
+  // One query per condition, not an OR of them: Turso's planner can fail on that
+  // over this table's partial indexes (see coachConversationIds)
+  for (const condition of conditions) {
     const visible = await db
       .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind })
       .from(conversations)
-      .where(or(...conditions));
+      .where(condition);
     for (const c of visible) capability[conversationChannel(c)] = allow;
   }
   return capability;
