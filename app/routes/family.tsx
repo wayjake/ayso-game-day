@@ -14,7 +14,7 @@ import { InstallSheet } from "~/components/InstallSheet";
 import { NotificationsMenu } from "~/components/NotificationsMenu";
 import { NotifyPrompt } from "~/components/NotifyPrompt";
 import { buttonClass, cx } from "~/components/ui";
-import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, SignOut } from "@phosphor-icons/react";
+import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, ImagesSquare, SignOut } from "@phosphor-icons/react";
 
 // The family app: what parents see. Built phone-first, since most open it from
 // a notification or their Home Screen.
@@ -74,6 +74,13 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       to: "/family",
       end: true,
       icon: CalendarCheck,
+      badge: 0,
+    },
+    {
+      label: "Feed",
+      to: "/family/feed",
+      end: false,
+      icon: ImagesSquare,
       badge: 0,
     },
     {
@@ -151,7 +158,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       {/* Phone tab bar */}
       {!inThread && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
           aria-label="Family"
         >
           {tabs.map(({ label, to, end, icon: Icon, badge }) => (

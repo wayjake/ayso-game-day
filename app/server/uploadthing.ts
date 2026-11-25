@@ -1,8 +1,10 @@
 import { createUploadthing, type FileRouter } from "uploadthing/remix";
 import { UploadThingError } from "uploadthing/server";
-import { db, teams } from "~/db";
+import { z } from "zod";
+import { db, postUploads, teams } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
+import { feedRole } from "~/utils/feed.server";
 
 // The Remix adapter hands middleware `{ event }`, so the request is event.request
 const f = createUploadthing({
@@ -50,6 +52,36 @@ export const uploadRouter = {
     .middleware(({ event }) => requireStaffUploader(event.request))
     .onUploadComplete(async ({ file }) => {
       return { url: file.ufsUrl || file.url };
+    }),
+
+  // Team feed photos and videos. Files upload the moment they're picked in the
+  // composer and wait in post_uploads as drafts until "Post" (api/feed).
+  // Anyone on the team's staff or a parent on it can post; the browser's
+  // smaller copies (utils/media-derivatives.client.ts) come through here too.
+  feedMedia: f({
+    image: { maxFileSize: "32MB", maxFileCount: 10 },
+    video: { maxFileSize: "1GB", maxFileCount: 3 },
+  })
+    .input(z.object({ teamId: z.number().int().positive() }))
+    .middleware(async ({ event, input }) => {
+      const user = await getUser(event.request, false);
+      if (!user || !(await feedRole(user.id, input.teamId))) throw forbidden();
+      return { userId: user.id, teamId: input.teamId };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      await db
+        .insert(postUploads)
+        .values({
+          fileKey: file.key,
+          userId: metadata.userId,
+          teamId: metadata.teamId,
+          type: file.type.startsWith("video/") ? "video" : "image",
+          url: file.ufsUrl,
+          name: file.name,
+          size: file.size,
+        })
+        .onConflictDoNothing({ target: postUploads.fileKey });
+      return { key: file.key };
     }),
 } satisfies FileRouter;
 

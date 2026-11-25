@@ -12,6 +12,8 @@ export default [
   route("api/realtime/token", "routes/api.realtime-token.ts"),
   route("api/email/webhook", "routes/api.email-webhook.ts"),
   route("api/tours", "routes/api.tours.ts"),
+  route("api/feed", "routes/api.feed.ts"),
+  route("api/feed/posts/:postId", "routes/api.feed-post.ts"),
   // Public routes (no auth required)
   route("public/game/:id", "routes/public.game.tsx"),
   route("invite/:code", "routes/invite.tsx"),
@@ -20,6 +22,8 @@ export default [
   // Family app: parents' schedule, RSVPs and messages
   route("family", "routes/family.tsx", [
     index("routes/family._index.tsx"),
+    route("feed", "routes/family.feed.tsx"),
+    route("feed/:postId", "routes/family.feed.post.tsx"),
     route("messages", "routes/family.messages.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
@@ -64,6 +68,8 @@ export default [
         index("routes/team.messages._index.tsx"),
         route(":conversationId", "routes/team.messages.thread.tsx"),
       ]),
+      route("feed", "routes/team.feed.tsx"),
+      route("feed/:postId", "routes/team.feed.post.tsx"),
       route("announcements", "routes/team.announcements.tsx"),
       route("announcements/new", "routes/team.announcements-new.tsx"),
       route("announcements/:announcementId", "routes/team.announcements.detail.tsx"),

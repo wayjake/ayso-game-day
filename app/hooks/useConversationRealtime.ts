@@ -105,3 +105,40 @@ export function typingLabel(typists: Typist[]) {
   if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
   return `${names.length} people are typing…`;
 }
+
+/**
+ * Calls `onEvent` for each "changed" event on any of these channels (no
+ * presence). Used by the team feed. Does nothing when `channels` is empty.
+ */
+export function useRealtimeEvents(channels: string[], onEvent: (event: { kind?: string; postId?: number }) => void) {
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  const key = channels.join("|");
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    let cleanup = () => {};
+
+    getClient()
+      .then(async (ably) => {
+        if (cancelled) return;
+        const subscribed = key.split("|").map((name) => ably.channels.get(name));
+        const onMessage = (message: InboundMessage) => onEventRef.current(message.data ?? {});
+        cleanup = () => {
+          for (const channel of subscribed) {
+            channel.unsubscribe("changed", onMessage);
+            channel.detach().catch(() => {});
+          }
+        };
+        await Promise.all(subscribed.map((channel) => channel.subscribe("changed", onMessage)));
+        if (cancelled) cleanup();
+      })
+      .catch((error) => console.warn("Realtime unavailable, polling instead:", (error as Error).message));
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [key]);
+}

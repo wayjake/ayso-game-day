@@ -154,6 +154,9 @@ The application uses Drizzle ORM with 8 main tables:
 19. **inboundEmails** - Every email received on the domain, kept whole. Matched to a family by In-Reply-To/References first, then by sender address only if SPF/DKIM/DMARC passed (so a spoofed parent can't post into a thread); the rest wait in "Emails to sort" on the Messages page. Auto-replies never mark a family as replied. Inbound HTML is never rendered.
 20. **familyNotes** - Coach-only notes per family email per team. Never loaded by anything a parent can reach.
 
+### Team feed (photos and videos)
+21. **posts / postMedia / postLikes / postComments / postUploads** - A photo and video feed per team, ported from disney-social's posting UX (no geotagging). Team staff and parents on the team can post, like and comment; only they can see it. Coaches can delete any post or comment, everyone their own. Comments are flat and carry a browser `clientId` so retries don't duplicate. Files upload the moment they're picked (UploadThing route `feedMedia`, input `{ teamId }`, checked with `feedRole`) and wait in `postUploads` as drafts; "Post" (`POST /api/feed`, `intent: publish`) turns the caller's drafts for that team into one post. Drafts older than a day are swept, files and all. The browser also uploads a 1280px and a 400px JPEG of each file (`utils/media-derivatives.client.ts`; for video, the frame at 3 s is the poster). **Files are public UploadThing URLs** (decided 2026-11-24, not the private-ACL plan): access control is on the pages and APIs, which always check the viewer against the post's own team. Deleting a post deletes its files. Pages and polling page by post id, never `created_at`. Helpers: `utils/feed.server.ts`, `utils/feed.ts` (shared types, `postPath`, `sendPostAction`), `hooks/useTeamFeed.ts`, `components/feed/*`. Realtime: a `changed` event on `team:<teamId>:feed` after posts, likes, comments and deletes (parents' token gets that channel; coaches have `team:<id>:*`). Push: `posts` (new posts, off by default) and `comments` (on your posts).
+
 Flow: Resend sends and receives for the whole domain (one MX record on the root). `app/routes/api.email-webhook.ts` takes every `email.*` event (Svix-signed; set `RESEND_WEBHOOK_SECRET`). Helpers: `utils/announcements.server.ts`, `utils/inbound-email.server.ts`, `utils/email-reply.ts` (pure: quote stripping, header parsing, auto-reply detection), `utils/email.server.ts`. Outside production (and on Vercel preview deploys) every family email is redirected to the sending coach unless `EMAIL_DELIVER_TO_FAMILIES=true`. Only `admin` users can set `users.sendingEmail` (their own address on the sending domain, unique per account); everyone else sends from `EMAIL_FROM` with their own display name. Opens show only if open tracking is on for the domain in Resend; leave click tracking off (it rewrites magic links).
 
 Tours: `utils/tours.ts` defines them, `components/Tour.tsx` runs them and the Help sheet (the ? in the team header). Steps point at `data-tour="..."` attributes. Finished/dismissed tours are saved per account in `users.toursSeen`; bump a tour's `version` to show it again.
@@ -251,10 +254,14 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /ack/:token - "Got it" from an announcement email (POST to confirm)
 /api/email/webhook - Resend events and received email
 /api/tours - Save finished/dismissed tours
+/api/feed - JSON: feed pages and polling (?team=<id> or ?scope=family), publish and discard uploads
+/api/feed/posts/:postId - JSON: like, comment, delete a comment, delete the post
 /api/push - JSON: subscribe, unsubscribe, test push
 /family - Family app (parents): schedule with RSVPs
   /family/messages - Team chat + private thread with the coaches
   /family/messages/:conversationId - Thread
+  /family/feed - Team photo and video feed (every team the parent has kids on)
+  /family/feed/:postId - One post with likes and comments
   /family/settings - Notifications, linked players, name
 
 /dashboard - Protected dashboard layout
@@ -280,6 +287,8 @@ export default function Component({ loaderData }: Route.ComponentProps) {
     /dashboard/team/:teamId/announcements - Announcements list
     /dashboard/team/:teamId/announcements/new - Compose: audience, ask for nothing / "Got it" / a reply, send a test
     /dashboard/team/:teamId/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
+    /dashboard/team/:teamId/feed - Team photo and video feed (coach view)
+    /dashboard/team/:teamId/feed/:postId - One post; coaches can delete any post or comment
 ```
 
 ## Key Features & Implementation Patterns
@@ -594,6 +603,7 @@ export async function action({ request }: Route.ActionArgs) {
 | Announcements + tracker | `/app/routes/team.announcements*.tsx`, `/app/utils/announcements.server.ts` |
 | Email replies (inbound) | `/app/utils/inbound-email.server.ts`, `/app/utils/email-reply.ts` |
 | Tours + Help | `/app/utils/tours.ts`, `/app/components/Tour.tsx` |
+| Team feed | `/app/utils/feed.server.ts`, `/app/components/feed/*`, `/app/routes/*feed*.tsx` |
 | Roster CSV import MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default) |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |

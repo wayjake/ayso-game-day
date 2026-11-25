@@ -29,6 +29,23 @@ export function conversationChannel(teamId: number, conversationId: number) {
   return `team:${teamId}:conversation:${conversationId}`;
 }
 
+// New posts, likes, comments and deletes on a team's photo feed
+export function feedChannel(teamId: number) {
+  return `team:${teamId}:feed`;
+}
+
+export type FeedEvent = { kind: "post" | "deleted" | "stats"; postId?: number };
+
+export async function publishFeed(teamId: number, event: FeedEvent) {
+  const ably = client();
+  if (!ably) return;
+  try {
+    await ably.channels.get(feedChannel(teamId)).publish("changed", event);
+  } catch (error) {
+    console.error("Realtime publish failed:", (error as Error).message);
+  }
+}
+
 export type ConversationEvent = { kind: "message" | "reaction"; threadId?: number | null };
 
 // Awaited by callers (serverless hosts may drop work left after the response).
@@ -44,7 +61,8 @@ export async function publishConversation(teamId: number, conversationId: number
 }
 
 // What this person may listen to: every conversation on teams they coach, and
-// on teams where they're a parent, the team chat plus their own thread.
+// on teams where they're a parent, the team chat, their own thread and the
+// team's photo feed. Coaches get the feed through team:<id>:*.
 async function capabilityFor(userId: number) {
   const capability: Record<string, string[]> = {};
   const allow = ["subscribe", "presence"];
@@ -60,6 +78,7 @@ async function capabilityFor(userId: number) {
         .filter((id) => !coachedIds.has(id))
     ),
   ];
+  for (const teamId of parentTeamIds) capability[feedChannel(teamId)] = ["subscribe"];
   if (parentTeamIds.length > 0) {
     const visible = await db
       .select({ id: conversations.id, teamId: conversations.teamId })

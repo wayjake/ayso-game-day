@@ -503,6 +503,78 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
   index('push_subscriptions_user_idx').on(t.userId),
 ]);
 
+// ---------------------------------------------------------------------------
+// Team feed: photo and video posts that only the team's coaches and parents see.
+// Files go to UploadThing and are public URLs (decided 2026-11-24); the pages
+// and APIs are what check team access. See utils/feed.server.ts.
+
+// A file uploaded from the composer before "Post" is tapped. Publishing moves
+// it into post_media; drafts older than a day are swept, files and all.
+export const postUploads = sqliteTable('post_uploads', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  fileKey: text('file_key').notNull().unique(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  type: text('type', { enum: ['image', 'video'] }).notNull(),
+  url: text('url').notNull(),
+  name: text('name'),
+  size: integer('size'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('post_uploads_user_idx').on(t.userId),
+]);
+
+export const posts = sqliteTable('posts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  authorId: integer('author_id').notNull().references(() => users.id),
+  caption: text('caption'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('posts_team_idx').on(t.teamId, t.id),
+]);
+
+// One row per file in a post, in carousel order. display/thumb are the smaller
+// JPEG copies the browser made (1280px and 400px); null when that failed.
+export const postMedia = sqliteTable('post_media', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  postId: integer('post_id').notNull().references(() => posts.id),
+  position: integer('position').notNull().default(0),
+  type: text('type', { enum: ['image', 'video'] }).notNull(),
+  url: text('url').notNull(),
+  fileKey: text('file_key').notNull().unique(),
+  displayUrl: text('display_url'),
+  displayKey: text('display_key'),
+  thumbUrl: text('thumb_url'),
+  thumbKey: text('thumb_key'),
+  width: integer('width'),
+  height: integer('height'),
+}, (t) => [
+  index('post_media_post_idx').on(t.postId, t.position),
+]);
+
+export const postLikes = sqliteTable('post_likes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  postId: integer('post_id').notNull().references(() => posts.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('post_likes_unique_idx').on(t.postId, t.userId),
+]);
+
+// Flat comments. clientId comes from the browser, so a retried send can't
+// post the same comment twice and the optimistic copy can be matched up.
+export const postComments = sqliteTable('post_comments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  postId: integer('post_id').notNull().references(() => posts.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  clientId: text('client_id').notNull().unique(),
+  body: text('body').notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('post_comments_post_idx').on(t.postId, t.id),
+]);
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -549,3 +621,5 @@ export type Announcement = typeof announcements.$inferSelect;
 export type AnnouncementRecipient = typeof announcementRecipients.$inferSelect;
 export type FamilyNote = typeof familyNotes.$inferSelect;
 export type InboundEmail = typeof inboundEmails.$inferSelect;
+export type Post = typeof posts.$inferSelect;
+export type PostMedia = typeof postMedia.$inferSelect;

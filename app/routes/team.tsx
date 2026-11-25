@@ -9,7 +9,7 @@ import { Badge } from "~/components/ui";
 import { coachConversationIds, totalUnread } from "~/utils/messages.server";
 import { parseToursSeen } from "~/utils/tours";
 import { HelpButton, TourProvider } from "~/components/Tour";
-import { CalendarBlank, ChatsCircle, Gear, House, UsersThree } from "@phosphor-icons/react";
+import { CalendarBlank, ChatsCircle, Gear, House, ImagesSquare, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -47,6 +47,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
     { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0 },
     // Announcements live under Messages, so keep the tab lit there too
     { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: `${base}/announcements` },
+    { label: "Feed", to: `${base}/feed`, end: false, icon: ImagesSquare, badge: 0 },
     { label: "Settings", to: `${base}/settings`, end: false, icon: Gear, badge: 0 },
   ];
 
@@ -64,8 +65,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
             <HelpButton className="ml-auto" />
           </div>
 
-          {/* Equal columns with the icon over the label on phones, so all five always fit */}
-          <nav className="-mb-px mt-2 grid grid-cols-5 sm:flex sm:gap-1" aria-label="Team" data-tour="team-tabs">
+          {/* Equal columns with the icon over the label on phones, so all six always fit */}
+          <nav className="-mb-px mt-2 grid grid-cols-6 sm:flex sm:gap-1" aria-label="Team" data-tour="team-tabs">
             {tabs.map(({ label, to, end, icon: Icon, badge, tour, also }) => (
               <NavLink
                 key={label}
@@ -75,7 +76,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 data-tour={tour}
                 className={({ isActive: matched }) => {
                   const isActive = matched || Boolean(also && location.pathname.startsWith(also));
-                  return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-1 pt-2 pb-2.5 text-xs font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
+                  return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-0.5 pt-2 pb-2.5 text-[11px] font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
                     isActive
                       ? "border-primary text-ink"
                       : "border-transparent text-muted hover:border-line-strong hover:text-ink"
