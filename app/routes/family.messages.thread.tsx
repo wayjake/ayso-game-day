@@ -10,8 +10,6 @@ import {
   getThread,
   groupSubtitle,
   groupTitle,
-  latestMessageId,
-  markRead,
   postMessage,
   toggleReaction,
 } from "~/utils/messages.server";
@@ -20,6 +18,7 @@ import { GroupPanel, type GroupInfo } from "~/components/GroupPanel";
 import { Button } from "~/components/ui";
 import { acknowledgeFromThread, acknowledgedMessageIds } from "~/utils/announcements.server";
 import { MessageThread } from "~/components/MessageThread";
+import { getReadReceipts, markConversationRead } from "~/utils/read-receipts.server";
 import { StaffBadge } from "~/components/StaffBadge";
 import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { getStaffRoles } from "~/utils/team-access.server";
@@ -48,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const replies = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
   const thread = replies ? { root: forFamilies(replies.root), replies: replies.replies.map(forFamilies) } : null;
   // Everything is on screen or summed up under its thread, so all of it counts as read
-  await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
+  await markConversationRead(conversation, user.id);
   const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
 
   // A private thread is with one staff member: show who, and their role
@@ -63,6 +62,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return data({
     me: user.id,
+    receipts: await getReadReceipts(conversation),
     kind: conversation.kind,
     teamName: team?.name ?? "Team",
     staff,
@@ -112,7 +112,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function FamilyThread({ loaderData }: Route.ComponentProps) {
-  const { me, kind, teamName, staff, canPost, messages, thread, realtime, acknowledged, group, groupTitle, groupSubtitle } = loaderData;
+  const { me, kind, teamName, staff, canPost, messages, thread, realtime, acknowledged, group, groupTitle, groupSubtitle, receipts } = loaderData;
   const direct = kind === "direct" && staff;
   const [showPeople, setShowPeople] = useState(false);
   return (
@@ -158,6 +158,7 @@ export default function FamilyThread({ loaderData }: Route.ComponentProps) {
         thread={thread}
         realtime={realtime}
         meId={me}
+        receipts={receipts}
         emptyText={
           group
             ? "No messages yet. Only the people in this group see what's written here."

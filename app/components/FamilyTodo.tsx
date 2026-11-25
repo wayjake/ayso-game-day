@@ -112,7 +112,7 @@ function TodoRow({ item, today, showTeam }: { item: FamilyTodoItem; today: strin
             href={item.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1.5 inline-flex max-w-full items-center gap-1 text-sm font-medium text-primary hover:underline"
+            className="pointer-coarse:min-h-11 mt-1.5 inline-flex max-w-full items-center gap-1 text-sm font-medium text-primary hover:underline"
           >
             <ArrowSquareOut size={15} className="shrink-0" />
             <span className="truncate">{linkLabel(item.link)}</span>

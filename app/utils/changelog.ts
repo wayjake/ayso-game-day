@@ -13,6 +13,29 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Read receipts",
+    summary: "See when your messages have been read, and who in a group has seen them.",
+    changes: [
+      { kind: "new", text: "Your messages show one check once they're sent and two once they've been read." },
+      { kind: "new", text: "Tap a message in a private chat to see when it was read, like \"Read today at 11:15 AM\"." },
+      { kind: "new", text: "In a group or the team chat, tap any message to see who has seen it and when. Everyone in the chat can see this." },
+      { kind: "improved", text: "A message only counts as read once you've actually looked at it, not while BenchTalk is open in a tab you aren't looking at." },
+    ],
+  },
+  {
+    date: "2026-11-25",
+    title: "Follows your text size",
+    summary: "BenchTalk on iPhone and iPad now follows your Text Size setting, and forms are easier to see.",
+    changes: [
+      { kind: "improved", text: "On iPhone and iPad, text follows the size you've picked in Settings, from smaller to the largest accessibility sizes, and pages reflow to fit." },
+      { kind: "improved", text: "Text boxes and checkboxes have clearer edges, so empty ones are easy to spot." },
+      { kind: "improved", text: "The smallest labels, like positions on the lineup field, are larger, and email addresses, phone numbers, map links and photo arrows are easier to tap." },
+      { kind: "new", text: "BenchTalk on iPad opens with its logo instead of a blank screen, in either orientation." },
+      { kind: "fixed", text: "The team overview no longer runs off the side of a phone screen." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Easier to tap",
     summary: "Buttons, checkboxes and links are easier to hit on a phone, and BenchTalk fills the screen sideways.",
     changes: [

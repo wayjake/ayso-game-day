@@ -289,7 +289,7 @@ export default function TeamOverview({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <NeedsYou base={base} todo={todo} className="lg:col-span-2" />
 
         {/* Games and practices with who's coming */}

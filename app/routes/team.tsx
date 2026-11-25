@@ -98,7 +98,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                     <span className="relative">
                       <Icon size={18} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : ""} />
                       {badge > 0 && (
-                        <span aria-hidden className="absolute -top-1.5 -right-2.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white tabular sm:hidden">
+                        <span aria-hidden className="absolute -top-1.5 -right-2.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-white tabular sm:hidden">
                           {badge > 99 ? "99+" : badge}
                         </span>
                       )}

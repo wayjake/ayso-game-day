@@ -342,7 +342,7 @@ export function Composer({
                     <button
                       type="button"
                       onClick={() => remove(p)}
-                      className="absolute right-1.5 top-1.5 grid size-8 place-items-center rounded-full bg-ink/80 text-white"
+                      className="tap-area absolute right-1.5 top-1.5 grid size-8 place-items-center rounded-full bg-ink/80 text-white"
                       aria-label="Remove"
                     >
                       <X size={14} weight="bold" />

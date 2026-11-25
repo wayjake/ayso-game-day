@@ -56,7 +56,7 @@ export default function Changelog({ loaderData }: Route.ComponentProps) {
 
         <ol className="mt-12 space-y-14">
           {releases.map((release) => (
-            <li key={`${release.date}-${release.title}`} className="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-8">
+            <li key={`${release.date}-${release.title}`} className="grid grid-cols-1 gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-8">
               <time dateTime={release.date} className="text-sm font-medium text-muted sm:pt-1.5">
                 {formatDate(release.date)}
               </time>

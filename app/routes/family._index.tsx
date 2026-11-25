@@ -200,7 +200,7 @@ function EventCard({
                 {time || "Time TBD"}
               </span>
               {event.location && (
-                <a href={mapsUrl(event.location)} target="_blank" rel="noopener" className="flex min-w-0 items-center gap-1.5 underline decoration-line-strong underline-offset-2 hover:text-ink">
+                <a href={mapsUrl(event.location)} target="_blank" rel="noopener" className="pointer-coarse:min-h-11 flex min-w-0 items-center gap-1.5 underline decoration-line-strong underline-offset-2 hover:text-ink">
                   <MapPin size={16} className="shrink-0 text-subtle" />
                   <span className="break-words">{event.location}</span>
                 </a>

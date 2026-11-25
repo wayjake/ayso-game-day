@@ -97,12 +97,12 @@ function ContactRow({ contact, teamId }: { contact: any; teamId: number }) {
           )}
         </div>
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
-          <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1.5 hover:text-ink hover:underline">
+          <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1.5 hover:text-ink hover:underline pointer-coarse:min-h-11">
             <EnvelopeSimple size={16} className="shrink-0" />
             <span className="truncate">{contact.email}</span>
           </a>
           {contact.phone && (
-            <a href={`tel:${contact.phone}`} className="flex items-center gap-1.5 hover:text-ink hover:underline">
+            <a href={`tel:${contact.phone}`} className="flex items-center gap-1.5 hover:text-ink hover:underline pointer-coarse:min-h-11">
               <Phone size={16} className="shrink-0" />
               {contact.phone}
             </a>
@@ -145,7 +145,7 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
 
       {/* Contacts grouped by player */}
       {hasContacts ? (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {players.map((player) => {
             const playerContacts = contactsByPlayer[player.id] || [];
             if (playerContacts.length === 0) return null;
