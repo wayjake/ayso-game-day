@@ -157,6 +157,7 @@ The application uses Drizzle ORM with 8 main tables:
 
 ### Team feed (photos and videos)
 21. **posts / postMedia / postLikes / postComments / postUploads** - A photo and video feed per team, ported from disney-social's posting UX (no geotagging). Team staff and parents on the team can post, like and comment; only they can see it. Coaches can delete any post or comment, everyone their own. Comments are flat and carry a browser `clientId` so retries don't duplicate. Files upload the moment they're picked (UploadThing route `feedMedia`, input `{ teamId }`, checked with `feedRole`) and wait in `postUploads` as drafts; "Post" (`POST /api/feed`, `intent: publish`) turns the caller's drafts for that team into one post. Drafts older than a day are swept, files and all. The browser also uploads a 1280px and a 400px JPEG of each file (`utils/media-derivatives.client.ts`; for video, the frame at 3 s is the poster). **Files are public UploadThing URLs** (decided 2026-11-24, not the private-ACL plan): access control is on the pages and APIs, which always check the viewer against the post's own team. Deleting a post deletes its files. Pages and polling page by post id, never `created_at`. Helpers: `utils/feed.server.ts`, `utils/feed.ts` (shared types, `postPath`, `sendPostAction`), `hooks/useTeamFeed.ts`, `components/feed/*`. Realtime: a `changed` event on `team:<teamId>:feed` after posts, likes, comments and deletes (parents' token gets that channel; coaches have `team:<id>:*`). Push: `posts` (new posts, off by default) and `comments` (on your posts).
+22. **tasks / taskAssignments** - Things families need to do ("Pay the $85 uniform fee", "Sign the code of conduct"): free text, optional details, link and due date. Any staff role manages them (Roster > Tasks). One assignment row per task per player. `assignAll` tasks also cover players added later (rows are backfilled on read by `ensureAssignments`; taking a player off turns the task into a picked-players one). Two checkmarks per row: the family's (`familyDoneAt/By/Via`: `app`, `link`, `coach`, `import`) and the coach's (`confirmedAt/By`). Confirming fills in the family side too (`via = 'coach'`), and taking it back clears that. Families can only undo their own unconfirmed check. `coachConfirms` tasks count as done only once confirmed; otherwise the family's check is enough. `perFamily` tasks fan a check out to siblings: players listed under the same contact email (one hop). `note` is coach-only and never loaded on a family page. The rules live in `utils/tasks.core.ts`, which takes `db` as an argument and uses relative imports so the MCP server can run the same code. Families see a To do card on `/family`; families not on the app get `/todo/:token` (no login, POST to check off), a signed per-family-per-team link (HMAC of team and email with `SESSION_SECRET`, nothing stored, so it can't be revoked one at a time). Nothing is sent when a task is made: the Message button on the Tasks page opens the family's thread with their open tasks drafted in the box (`?draft=tasks`, built in the thread loader), for the coach to edit and send. Removing a player deletes their assignments.
 
 Flow: Resend sends and receives for the whole domain (one MX record on the root). `app/routes/api.email-webhook.ts` takes every `email.*` event (Svix-signed; set `RESEND_WEBHOOK_SECRET`). Helpers: `utils/announcements.server.ts`, `utils/inbound-email.server.ts`, `utils/email-reply.ts` (pure: quote stripping, header parsing, auto-reply detection), `utils/email.server.ts`. Outside production (and on Vercel preview deploys) every family email is redirected to the sending coach unless `EMAIL_DELIVER_TO_FAMILIES=true`. Only `admin` users can set `users.sendingEmail` (their own address on the sending domain, unique per account); everyone else sends from `EMAIL_FROM` with their own display name. Opens show only if open tracking is on for the domain in Resend; leave click tracking off (it rewrites magic links).
 
@@ -253,6 +254,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 /join/:code - Parent invite: sign up or log in, linked to their kids
 /ack/:token - "Got it" from an announcement email (POST to confirm)
+/todo/:token - A family's tasks without signing in (POST to check one off)
 /api/email/webhook - Resend events and received email
 /api/tours - Save finished/dismissed tours
 /api/feed - JSON: feed pages and polling (?team=<id> or ?scope=family), publish and discard uploads
@@ -290,6 +292,10 @@ export default function Component({ loaderData }: Route.ComponentProps) {
     /dashboard/team/:teamId/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
     /dashboard/team/:teamId/feed - Team photo and video feed (coach view)
     /dashboard/team/:teamId/feed/:postId - One post; coaches can delete any post or comment
+    /dashboard/team/:teamId/tasks - Tasks: a card per task and a players x tasks grid by family; tap a mark to confirm; Message drafts a family's open tasks
+    /dashboard/team/:teamId/tasks/new - New task: text, link, due date, per family, coach confirms, everyone or picked players
+    /dashboard/team/:teamId/tasks/:taskId - One task: filters, bulk confirm / take back / remove, coach notes, add players, delete
+    /dashboard/team/:teamId/tasks/:taskId/edit - Edit a task
 ```
 
 ## Key Features & Implementation Patterns
@@ -605,7 +611,8 @@ export async function action({ request }: Route.ActionArgs) {
 | Email replies (inbound) | `/app/utils/inbound-email.server.ts`, `/app/utils/email-reply.ts` |
 | Tours + Help | `/app/utils/tours.ts`, `/app/components/Tour.tsx` |
 | Team feed | `/app/utils/feed.server.ts`, `/app/components/feed/*`, `/app/routes/*feed*.tsx` |
-| Roster CSV import MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default) |
+| Tasks | `/app/utils/tasks.core.ts` (rules, shared with the MCP), `tasks.server.ts` (views, draft, `/todo` token), `tasks.ts`, `/app/components/tasks.tsx`, `FamilyTodo.tsx`, `/app/routes/team.tasks*.tsx`, `todo.tsx` |
+| Roster import and tasks MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default): `list_teams`, `import_roster_csv`, `list_tasks`, `create_task`, `set_task_status`. Writes default to `dry_run`; test with `--db=file:<copy of dev.db>` |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |
 | Global Styles | `/app/app.css` |

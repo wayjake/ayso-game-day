@@ -1,6 +1,6 @@
 import type { Route } from "./+types/team.messages.thread";
-import { useState } from "react";
-import { Link, data, useFetcher, useLocation } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, data, useFetcher, useLocation, useSearchParams } from "react-router";
 import { db, guardians, players, users } from "~/db";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "~/utils/auth.server";
@@ -25,6 +25,7 @@ import { MessageThread } from "~/components/MessageThread";
 import { conversationChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { EmailToggle } from "~/components/EmailToggle";
+import { taskDraftFor } from "~/utils/tasks.server";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
 
@@ -80,6 +81,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const context = family ? await getFamilyContext(conversation.teamId, family, familyEmail ?? family.email) : null;
   const teamContext = conversation.kind === "team" ? await getTeamChatContext(conversation.teamId) : null;
 
+  // "Message" on the Tasks page: start the box with what this family still has to do
+  const draft =
+    new URL(request.url).searchParams.get("draft") === "tasks" && familyEmail
+      ? await taskDraftFor(request, conversation.teamId, familyEmail, Boolean(conversation.parentUserId))
+      : null;
+
   return data({
     me: user.id,
     teamId: conversation.teamId,
@@ -98,6 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     familyEmail,
     delivery,
     notes: familyEmail ? await familyNotesView(conversation.teamId, familyEmail) : [],
+    draft,
   });
 }
 
@@ -133,8 +141,16 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
-    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId,
+    me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft,
   } = loaderData;
+  // The draft is in the box now; drop it from the URL so a reload doesn't bring it back
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (!searchParams.has("draft")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("draft");
+    setSearchParams(next, { replace: true, preventScrollReset: true });
+  }, [searchParams, setSearchParams]);
   const [showNotes, setShowNotes] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
   const location = useLocation();
@@ -219,6 +235,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           emptyText={kind === "team" ? "No messages yet. Post something for every family on the team." : "No messages yet."}
           placeholder={kind === "team" ? "Message every family on the app" : "Message this family"}
           widthClass="max-w-2xl"
+          initialDraft={draft}
           showEmailDetails
           composerExtra={
             delivery.email ? (
