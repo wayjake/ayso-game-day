@@ -3,7 +3,7 @@ import { data } from "react-router";
 import { and, desc, eq } from "drizzle-orm";
 import { db, teams } from "~/db";
 import { getUser } from "~/utils/auth.server";
-import { canAccessTeam } from "~/utils/team-access.server";
+import { activeTeams, canAccessTeam } from "~/utils/team-access.server";
 import { getLastTeamId } from "~/utils/last-team.server";
 import { coachFromAddress, isOnSendingDomain, sendingDomain } from "~/utils/email.server";
 import { accountAction } from "~/utils/account.server";
@@ -29,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     : [];
   const [team] = lastTeam
     ? [lastTeam]
-    : await db.select({ id: teams.id, name: teams.name }).from(teams).where(canAccessTeam(user.id)).orderBy(desc(teams.createdAt)).limit(1);
+    : await db.select({ id: teams.id, name: teams.name }).from(teams).where(and(canAccessTeam(user.id), activeTeams())).orderBy(desc(teams.createdAt)).limit(1);
 
   const ownAddress = Boolean(user.sendingEmail && isOnSendingDomain(user.sendingEmail));
   return data({

@@ -4,9 +4,9 @@ import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, games } from "~/db";
 import { eq, count, desc, and, gte } from "drizzle-orm";
-import { formatGameDate, formatGameTime, todayISO } from "~/utils/dates";
+import { formatGameDate, formatGameTime, formatMessageTime, todayISO } from "~/utils/dates";
 import { Badge, Card, DateTile, EmptyState, Page, PageHeader, buttonClass } from "~/components/ui";
-import { CalendarBlank, CaretRight, Plus, SoccerBall, UsersThree } from "@phosphor-icons/react";
+import { Archive, CalendarBlank, CaretRight, Plus, SoccerBall, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -21,15 +21,21 @@ export async function loader({ request }: Route.LoaderArgs) {
       season: teams.season,
       region: teams.region,
       createdAt: teams.createdAt,
+      archivedAt: teams.archivedAt,
     })
     .from(teams)
     .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
   
-  // Player count and next game for each team
+  // Archived teams are listed separately, without the next-game lookup
+  const archived = userTeams
+    .filter((t) => t.archivedAt)
+    .sort((a, b) => b.archivedAt!.localeCompare(a.archivedAt!));
+
+  // Player count and next game for each current team
   const today = todayISO();
   const teamsWithPlayerCounts = await Promise.all(
-    userTeams.map(async (team) => {
+    userTeams.filter((t) => !t.archivedAt).map(async (team) => {
       const [playerCount] = await db
         .select({ count: count() })
         .from(players)
@@ -57,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   
   return data({
     teams: teamsWithPlayerCounts,
+    archived,
     user: {
       id: user.id,
       email: user.email,
@@ -73,7 +80,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function TeamsPage({ loaderData }: Route.ComponentProps) {
-  const { teams } = loaderData;
+  const { teams, archived } = loaderData;
 
   return (
     <Page>
@@ -166,17 +173,49 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
         <Card>
           <EmptyState
             icon={<SoccerBall size={24} />}
-            title="No teams yet"
+            title={archived.length ? "No current teams" : "No teams yet"}
             action={
               <Link to="/dashboard/teams/new" className={buttonClass({ size: "lg" })}>
                 <Plus size={18} weight="bold" />
-                Create your first team
+                {archived.length ? "Start a new team" : "Create your first team"}
               </Link>
             }
           >
-            Create a team to start planning games and fair-play rotations.
+            {archived.length
+              ? "Your past teams are archived below. Start a new one for the next season."
+              : "Create a team to start planning games and fair-play rotations."}
           </EmptyState>
         </Card>
+      )}
+
+      {archived.length > 0 && (
+        // Past seasons: out of the way, but one click from here
+        <details className="group mt-10" open={teams.length === 0}>
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+            <Archive size={18} />
+            Archived teams
+            <span className="tabular text-subtle">{archived.length}</span>
+            <CaretRight size={14} weight="bold" className="transition group-open:rotate-90" />
+          </summary>
+          <Card className="mt-3 divide-y divide-line overflow-hidden">
+            {archived.map((team) => (
+              <Link
+                key={team.id}
+                to={`/dashboard/team/${team.id}`}
+                className="flex items-center gap-3 px-4 py-3 transition hover:bg-surface-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{team.name}</p>
+                  <p className="text-sm text-muted">
+                    {[team.format, team.ageGroup, team.season].filter(Boolean).join(" · ")}
+                    {team.archivedAt && ` · archived ${formatMessageTime(team.archivedAt)}`}
+                  </p>
+                </div>
+                <CaretRight size={16} className="shrink-0 text-subtle" />
+              </Link>
+            ))}
+          </Card>
+        </details>
       )}
     </Page>
   );

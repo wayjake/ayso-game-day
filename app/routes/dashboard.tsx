@@ -3,12 +3,12 @@ import { useCallback, useState } from "react";
 import { Outlet, Link, useMatches } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { canAccessTeam } from "~/utils/team-access.server";
+import { activeTeams, canAccessTeam } from "~/utils/team-access.server";
 import { isParent } from "~/utils/family.server";
 import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
 import { db, teams } from "~/db";
-import { desc } from "drizzle-orm";
+import { and, desc } from "drizzle-orm";
 import { UsersThree } from "@phosphor-icons/react";
 import { AppMark } from "~/components/AppMark";
 import { AccountMenu } from "~/components/AccountMenu";
@@ -23,7 +23,7 @@ import { PushContext } from "~/hooks/usePushContext";
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
 
-  // All teams this user can open, for the team switcher
+  // Teams this user can open, for the team switcher. Archived ones live under All teams.
   const userTeams = await db
     .select({
       id: teams.id,
@@ -33,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       season: teams.season,
     })
     .from(teams)
-    .where(canAccessTeam(user.id))
+    .where(and(canAccessTeam(user.id), activeTeams()))
     .orderBy(desc(teams.createdAt));
 
   return data({

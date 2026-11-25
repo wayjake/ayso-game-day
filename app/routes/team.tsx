@@ -1,5 +1,5 @@
 import type { Route } from "./+types/team";
-import { Outlet, NavLink, useLocation, useNavigation } from "react-router";
+import { Outlet, NavLink, useFetcher, useLocation, useNavigation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -10,7 +10,7 @@ import { coachConversationIds, totalUnread } from "~/utils/messages.server";
 import { parseToursSeen } from "~/utils/tours";
 import { HelpButton, TourProvider } from "~/components/Tour";
 import { navMotion } from "~/utils/nav-motion";
-import { CalendarBlank, ChatsCircle, Gear, House, ImagesSquare, UsersThree } from "@phosphor-icons/react";
+import { Archive, CalendarBlank, ChatsCircle, Gear, House, ImagesSquare, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -38,7 +38,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
-  const { team, unread, toursSeen } = loaderData;
+  const { team, role, unread, toursSeen } = loaderData;
   const location = useLocation();
   // Light the tapped tab straight away (see family.tsx): mid-navigation, the pending link is the lit one
   const pending = useNavigation().location;
@@ -119,7 +119,38 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
+      {team.archivedAt && <ArchivedBanner teamId={team.id} isOwner={role === "owner"} />}
+
       <Outlet />
     </TourProvider>
   );
 }
+
+// Inside an archived team: everything works, but say where you are and how to undo it
+function ArchivedBanner({ teamId, isOwner }: { teamId: number; isOwner: boolean }) {
+  const fetcher = useFetcher();
+  return (
+    <div className="shrink-0 border-b border-line bg-warning-soft">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-safe py-2.5 text-sm">
+        <Archive size={18} className="shrink-0 text-warning" aria-hidden />
+        <p className="min-w-0 flex-1">
+          <span className="font-semibold">Archived team.</span>{" "}
+          <span className="text-muted">It's hidden from the team switcher and your team list. Everything still works.</span>
+        </p>
+        {isOwner && (
+          <fetcher.Form method="post" action={`/dashboard/team/${teamId}/settings`}>
+            <input type="hidden" name="_action" value="unarchive" />
+            <button
+              type="submit"
+              disabled={fetcher.state !== "idle"}
+              className="tap font-semibold text-primary underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {fetcher.state !== "idle" ? "Restoring…" : "Unarchive"}
+            </button>
+          </fetcher.Form>
+        )}
+      </div>
+    </div>
+  );
+}
+
