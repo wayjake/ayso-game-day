@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Lighter player photos",
+    summary: "Player photos load faster and look sharper, and videos in the feed show their first frame until you press play.",
+    changes: [
+      { kind: "improved", text: "A new player photo is cropped to a square and shrunk on your phone or computer before it uploads, so rosters and lineups load faster and the photo looks sharp at every size." },
+      { kind: "improved", text: "iPhone photos (HEIC) can be used as player photos." },
+      { kind: "improved", text: "Videos in the feed show their first frame until you press play, and nothing of the video downloads before then." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Full-width top bar",
     summary: "On a big screen, the bar along the top of the coach pages now runs the whole width of the window.",
     changes: [
