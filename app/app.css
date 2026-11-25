@@ -87,6 +87,47 @@ html:has(.canvas-top) body {
 	background-color: var(--color-canvas);
 }
 
+/*
+ * Touch: what makes a web page feel like an app on a phone.
+ * No grey flash on tap, no double-tap-to-zoom delay, no font inflation in
+ * landscape. Controls don't select their text or pop the long-press menu when
+ * held; content (messages, addresses) still selects as normal.
+ */
+html {
+	-webkit-tap-highlight-color: transparent;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+a,
+button,
+label,
+summary,
+input,
+select,
+textarea,
+[role="button"] {
+	touch-action: manipulation;
+}
+button,
+nav a,
+[role="button"],
+[role="tab"],
+.chrome {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+img {
+	-webkit-user-drag: none;
+}
+/* iOS zooms the page into a field whose text is under 16px when it's focused.
+   Unlayered, so it beats the text-sm/text-xs utilities on touch screens only. */
+@media (pointer: coarse) {
+	:is(input, select, textarea):is(.text-sm, .text-xs) {
+		font-size: 16px;
+	}
+}
+
 /* viewport-fit=cover lets the lineup's bottom bar reach the home indicator;
    keep everything else clear of the notch in landscape */
 body {

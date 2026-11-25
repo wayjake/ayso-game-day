@@ -17,7 +17,7 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "danger-soft
 type ButtonSize = "sm" | "md" | "lg" | "icon-sm" | "icon";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap transition duration-150 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
+  "inline-flex items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap transition duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-primary text-white shadow-card hover:bg-primary-hover",

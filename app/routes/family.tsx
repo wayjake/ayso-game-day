@@ -1,6 +1,6 @@
 import type { Route } from "./+types/family";
 import { useCallback, useEffect, useState } from "react";
-import { Form, Link, NavLink, Outlet, data, useMatches, useSearchParams } from "react-router";
+import { Form, Link, NavLink, Outlet, data, useMatches, useNavigation, useSearchParams } from "react-router";
 import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { requireParent } from "~/utils/family.server";
@@ -45,6 +45,12 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   const inThread = useMatches().some((m) => m.id === "routes/family.messages.thread");
 
   const push = usePush(loaderData.vapidPublicKey, loaderData.notifyPrefs);
+
+  // Light the tapped tab straight away, not once its page has loaded: while a
+  // navigation is under way the link it's heading to (isPending) is the lit one
+  const navigating = Boolean(useNavigation().location);
+  const lit = ({ isActive, isPending }: { isActive: boolean; isPending: boolean }) =>
+    navigating ? isPending : isActive;
 
   // Just signed in (?install=1): on a phone that isn't running the installed
   // app, start with how to add it to the Home Screen. The session cookie is
@@ -114,10 +120,10 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
                 to={to}
                 end={end}
                 prefetch="intent"
-                className={({ isActive }) =>
+                className={(state) =>
                   cx(
                     "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
-                    isActive ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
+                    lit(state) ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
                   )
                 }
               >
@@ -167,17 +173,17 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
               to={to}
               end={end}
               prefetch="intent"
-              className={({ isActive }) =>
+              className={(state) =>
                 cx(
-                  "relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold",
-                  isActive ? "text-primary" : "text-muted",
+                  "group relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150",
+                  lit(state) ? "text-primary" : "text-muted",
                 )
               }
             >
-              {({ isActive }) => (
+              {(state) => (
                 <>
-                  <span className="relative">
-                    <Icon size={24} weight={isActive ? "fill" : "regular"} />
+                  <span className="relative transition-transform duration-150 ease-out group-active:scale-85">
+                    <Icon size={24} weight={lit(state) ? "fill" : "regular"} />
                     {badge > 0 && <UnreadDot count={badge} className="absolute -top-1.5 -right-3" />}
                   </span>
                   {label}

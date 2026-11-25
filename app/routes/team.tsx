@@ -1,5 +1,5 @@
 import type { Route } from "./+types/team";
-import { Outlet, NavLink, useLocation } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -39,6 +39,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const { team, unread, toursSeen } = loaderData;
   const location = useLocation();
+  // Light the tapped tab straight away (see family.tsx): mid-navigation, the pending link is the lit one
+  const pending = useNavigation().location;
+  const lit = (matched: boolean, isPending: boolean, also?: string) =>
+    pending ? isPending || Boolean(also && pending.pathname.startsWith(also)) : matched || Boolean(also && location.pathname.startsWith(also));
   const base = `/dashboard/team/${team.id}`;
 
   const tabs = [
@@ -74,8 +78,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 end={end}
                 prefetch="intent"
                 data-tour={tour}
-                className={({ isActive: matched }) => {
-                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                className={({ isActive: matched, isPending }) => {
+                  const isActive = lit(matched, isPending, also);
                   return `flex flex-col items-center gap-1 whitespace-nowrap border-b-2 px-0.5 pt-2 pb-2.5 text-[11px] font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:pb-3 sm:text-sm ${
                     isActive
                       ? "border-primary text-ink"
@@ -83,8 +87,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                   }`;
                 }}
               >
-                {({ isActive: matched }) => {
-                  const isActive = matched || Boolean(also && location.pathname.startsWith(also));
+                {({ isActive: matched, isPending }) => {
+                  const isActive = lit(matched, isPending, also);
                   return (
                   <>
                     <span className="relative">
