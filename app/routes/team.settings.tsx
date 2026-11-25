@@ -3,15 +3,17 @@ import { Form, Link, data, useNavigation } from "react-router";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getTeamStaff, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
-import { createInvites, inviteUrl, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
+import { inviteUrl } from "~/utils/invites.server";
+import { inviteStaff, setTeamArchived } from "~/utils/staff-invites.server";
+import { CopyButton, RoleSelect, StaffInviteForm } from "~/components/StaffInviteForm";
 import { isEmailConfigured } from "~/utils/email.server";
 import { db, teams, teamInvites } from "~/db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
-import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, buttonClass, cx, inputClass, labelClass } from "~/components/ui";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader, PlayerAvatar, buttonClass, inputClass, labelClass } from "~/components/ui";
 import { APP_TIME_ZONE } from "~/utils/dates";
 import { StaffBadge } from "~/components/StaffBadge";
-import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
-import { Archive, ArrowCounterClockwise, Check, Copy, Crown, EnvelopeSimple, LinkSimple, PaperPlaneTilt, UserCircle } from "@phosphor-icons/react";
+import { parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
+import { Archive, ArrowCounterClockwise, Crown, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -21,7 +23,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const staff = await getTeamStaff(teamId);
 
   let pendingInvites: { id: number; email: string | null; role: StaffRole; url: string; expiresAt: string }[] = [];
-  let ownedTeams: { id: number; name: string }[] = [];
 
   if (role === "owner") {
     const invites = await db
@@ -39,12 +40,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         url: inviteUrl(request, invite.shareCode!),
         expiresAt: invite.expiresAt,
       }));
-
-    ownedTeams = await db
-      .select({ id: teams.id, name: teams.name })
-      .from(teams)
-      .where(eq(teams.coachId, user.id))
-      .orderBy(desc(teams.createdAt));
   }
 
   return data({
@@ -53,7 +48,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     me: { id: user.id },
     staff,
     pendingInvites,
-    ownedTeams,
     emailConfigured: isEmailConfigured(),
   });
 }
@@ -71,10 +65,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "archive" || intent === "unarchive") {
     await requireTeamOwner(teamId, user.id);
     const archive = intent === "archive";
-    await db
-      .update(teams)
-      .set({ archivedAt: archive ? new Date().toISOString() : null, archivedBy: archive ? user.id : null, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(teams.id, team.id));
+    await setTeamArchived(team.id, user.id, archive);
     return data({
       intent: "archive",
       success: archive ? "Archived. It's under All teams > Archived teams now." : "Back in your team list and switcher.",
@@ -102,73 +93,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ intent, success: "Team details saved" });
   }
 
+  // This team only; inviting to several teams at once is on the Account page
   if (intent === "invite") {
     await requireTeamOwner(teamId, user.id);
-
-    const email = normalizeEmail(text("email"));
-    const role = parseStaffRole(formData.get("role")) ?? "coach";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return data({ intent, error: "Enter a valid email address" }, { status: 400 });
-    }
-    if (email === normalizeEmail(user.email)) {
-      return data({ intent, error: "That's your own email address" }, { status: 400 });
-    }
-
-    // Only teams this user owns can be shared
-    const requestedIds = formData.getAll("teamIds").map((id) => parseInt(id as string)).filter(Boolean);
-    const ownedTeams = requestedIds.length
-      ? await db
-          .select({ id: teams.id, name: teams.name })
-          .from(teams)
-          .where(and(inArray(teams.id, requestedIds), eq(teams.coachId, user.id)))
-      : [];
-
-    if (ownedTeams.length === 0) {
-      return data({ intent, error: "Pick at least one team" }, { status: 400 });
-    }
-
-    const { created, skippedTeamIds } = await createInvites({
-      email,
-      teamIds: ownedTeams.map((t) => t.id),
-      invitedBy: user.id,
-      role,
-    });
-
-    const nameFor = (id: number) => ownedTeams.find((t) => t.id === id)?.name ?? "";
-    const skippedTeams = skippedTeamIds.map(nameFor);
-
-    if (created.length === 0) {
-      return data(
-        { intent, error: `${email} is already on the staff of ${skippedTeams.join(", ")}. Change their role in the list above.` },
-        { status: 400 }
-      );
-    }
-
-    // One link accepts every team in this batch, so the email only needs the first code
-    const shareCode = created[0].shareCode;
-    const teamNames = created.map((c) => nameFor(c.teamId));
-    const result = await sendInviteEmail({
+    const result = await inviteStaff({
       request,
-      to: email,
-      shareCode,
-      inviterName: user.name || user.email,
-      inviterEmail: user.email,
-      teamNames,
-      role,
+      user,
+      email: text("email"),
+      role: parseStaffRole(formData.get("role")) ?? "coach",
+      teamIds: [team.id],
     });
-
-    return data({
-      intent,
-      invite: {
-        email,
-        url: inviteUrl(request, shareCode),
-        role,
-        teamNames,
-        skippedTeams,
-        emailed: result.sent,
-        emailError: result.error,
-      },
-    });
+    if ("error" in result) return data({ intent, error: result.error }, { status: 400 });
+    return data({ intent, invite: result.invite });
   }
 
   if (intent === "revokeInvite") {
@@ -211,30 +147,8 @@ export function meta({}: Route.MetaArgs) {
 }
 
 
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        } catch {
-          window.prompt("Copy this link", value);
-        }
-      }}
-    >
-      {copied ? <Check size={16} weight="bold" className="text-success" /> : <Copy size={16} />}
-      {copied ? "Copied" : "Copy link"}
-    </Button>
-  );
-}
-
 export default function TeamSettings({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, role, me, staff, pendingInvites, ownedTeams, emailConfigured } = loaderData;
+  const { team, role, me, staff, pendingInvites, emailConfigured } = loaderData;
   const navigation = useNavigation();
   const busy = (intent: string) =>
     navigation.state === "submitting" && navigation.formData?.get("_action") === intent;
@@ -407,85 +321,21 @@ export default function TeamSettings({ loaderData, actionData }: Route.Component
         <Card className="p-5 sm:p-6">
           <CardHeader title="Add to the team staff" />
           <p className="mt-0.5 text-sm text-muted">
-            They'll be able to plan lineups, manage the roster, and edit games on the teams you pick.
-            Only you can invite or remove staff. To give a parent who's already on the app a role, use Families.
+            They'll be able to plan lineups, manage the roster, and edit games on this team. Only you can invite or
+            remove staff. To give a parent who's already on the app a role, use Families. To invite someone to several
+            of your teams at once, use your <Link to="/dashboard/account#teams" className="font-medium text-primary hover:underline">Account</Link>.
           </p>
-          <Form method="post" className="mt-5 space-y-4">
-            <input type="hidden" name="_action" value="invite" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
-              <div>
-                <label htmlFor="inviteEmail" className={labelClass}>Email</label>
-                <input id="inviteEmail" name="email" type="email" required placeholder="coach@example.com" className={inputClass} />
-              </div>
-              <div>
-                <label htmlFor="inviteRole" className={labelClass}>Role</label>
-                <RoleSelect id="inviteRole" name="role" defaultValue="coach" className="h-[42px]" />
-              </div>
-            </div>
-            {ownedTeams.length > 1 && (
-              <fieldset>
-                <legend className={labelClass}>Teams</legend>
-                <div className="divide-y divide-line rounded-lg border border-line-strong">
-                  {ownedTeams.map((t) => (
-                    <label key={t.id} className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm transition hover:bg-surface-2">
-                      <input
-                        type="checkbox"
-                        name="teamIds"
-                        value={t.id}
-                        defaultChecked={t.id === team.id}
-                        className="h-4 w-4 shrink-0 accent-primary"
-                      />
-                      <span className="min-w-0 truncate font-medium">{t.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            )}
-            {ownedTeams.length <= 1 && <input type="hidden" name="teamIds" value={team.id} />}
-            <div className="pt-1">
-              <Button type="submit" disabled={busy("invite")}>
-                {emailConfigured ? <PaperPlaneTilt size={18} /> : <LinkSimple size={18} />}
-                {busy("invite") ? "Sending…" : emailConfigured ? "Send invite" : "Create invite link"}
-              </Button>
-            </div>
-            {message("invite")}
-          </Form>
-
-          {inviteResult && (
-            <div className="mt-5 space-y-3">
-              <Alert tone={inviteResult.emailed ? "success" : "warning"}>
-                {inviteResult.emailed
-                  ? `Invite emailed to ${inviteResult.email} for ${inviteResult.teamNames.join(", ")}.`
-                  : `Invite created for ${inviteResult.email} (${inviteResult.teamNames.join(", ")}). ${
-                      emailConfigured ? "The email didn't send" : "Email isn't set up yet"
-                    }, so send them this link yourself:`}
-              </Alert>
-              {inviteResult.skippedTeams.length > 0 && (
-                <p className="text-sm text-muted">Already on the staff of {inviteResult.skippedTeams.join(", ")}.</p>
-              )}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <code className="min-w-0 flex-1 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-ink ring-1 ring-line">
-                  {inviteResult.url}
-                </code>
-                <CopyButton value={inviteResult.url} />
-              </div>
-            </div>
-          )}
+          <StaffInviteForm
+            teamId={team.id}
+            emailConfigured={emailConfigured}
+            error={actionData?.intent === "invite" && "error" in actionData ? actionData.error : null}
+            invite={inviteResult}
+          />
         </Card>
       )}
 
       <ArchiveCard archived={Boolean(team.archivedAt)} isOwner={role === "owner"} message={message("archive")} />
     </Page>
-  );
-}
-
-function RoleSelect({ className, ...props }: React.ComponentProps<"select">) {
-  return (
-    <select {...props} className={cx(inputClass, "w-auto py-1.5 pr-8", className)}>
-      {STAFF_ROLES.map((r) => (
-        <option key={r} value={r}>{staffRoleLabel(r)}</option>
-      ))}
-    </select>
   );
 }
 
