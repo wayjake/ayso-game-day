@@ -784,7 +784,7 @@ function ReadInfo({ kind, readers }: { kind: ReadReceipts["kind"]; readers: Mess
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-semibold text-muted hover:bg-surface-2"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-semibold text-muted hover:bg-surface-2 pointer-coarse:min-h-11"
       >
         <Checks size={14} weight="bold" className="text-primary" />
         Seen by {readers.length}
