@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/trees.ts\" --brief 2>/dev/null || true",
+            "timeout": 20,
+            "statusMessage": "Checking worktrees"
+          }
+        ]
+      }
+    ]
+  }
+}
