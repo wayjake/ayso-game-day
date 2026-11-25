@@ -1,6 +1,6 @@
 import type { Route } from "./+types/dashboard";
 import { useCallback, useState } from "react";
-import { Outlet, Link, useMatches } from "react-router";
+import { Outlet, Link, useMatches, useParams } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { activeTeams, canAccessTeam } from "~/utils/team-access.server";
@@ -15,6 +15,8 @@ import { AccountMenu } from "~/components/AccountMenu";
 import { InstallSheet } from "~/components/InstallSheet";
 import { NotificationsMenu } from "~/components/NotificationsMenu";
 import { NotifyPrompt } from "~/components/NotifyPrompt";
+import { HelpButton, TourProvider } from "~/components/Tour";
+import { parseToursSeen } from "~/utils/tours";
 import { cx } from "~/components/ui";
 import { PullToRefresh } from "~/components/PullToRefresh";
 import { usePush } from "~/hooks/usePush";
@@ -49,6 +51,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     isParent: await isParent(user.id),
     vapidPublicKey: vapidPublicKey(),
     notifyPrefs: await getNotifyPrefs(user.id),
+    toursSeen: parseToursSeen(user.toursSeen),
     platform: detectPlatform(request.headers.get("user-agent") ?? "", 0),
   });
 }
@@ -64,42 +67,49 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const [installOpen, setInstallOpen] = useState(false);
   const openInstall = useCallback(() => setInstallOpen(true), []);
 
+  // Tours and the Help sheet belong to a team's pages, but the ? sits in this top bar
+  const teamParam = Number(useParams().teamId);
+  const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : null;
+
   return (
     <PushContext.Provider value={{ push, openInstall, audience: "coach" }}>
-      <div className={cx("min-h-dvh bg-canvas text-ink", workspace && "lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden")}>
-        <a
-          href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-raised"
-        >
-          Skip to content
-        </a>
-        <header className="relative z-30 shrink-0 border-b border-line bg-surface pt-[var(--safe-top)]">
-          <nav className="flex h-14 items-center justify-between px-safe">
-            <Link to="/" aria-label="BenchTalk home">
-              <AppMark />
-            </Link>
+      <TourProvider teamId={teamId} initialSeen={loaderData.toursSeen}>
+        <div className={cx("min-h-dvh bg-canvas text-ink", workspace && "lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden")}>
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-raised"
+          >
+            Skip to content
+          </a>
+          <header className="relative z-30 shrink-0 border-b border-line bg-surface pt-[var(--safe-top)]">
+            <nav className="flex h-14 items-center justify-between px-safe">
+              <Link to="/" aria-label="BenchTalk home">
+                <AppMark />
+              </Link>
 
-            <div className="flex items-center gap-1">
-              <NotificationsMenu push={push} onInstall={openInstall} audience="coach" />
-              <AccountMenu
-                me={user}
-                settingsTo="/dashboard/account"
-                links={loaderData.isParent ? [{ to: "/family", label: "Family view", icon: UsersThree }] : []}
-              />
-            </div>
-          </nav>
-        </header>
+              <div className="flex items-center gap-1">
+                <HelpButton className="mr-1" />
+                <NotificationsMenu push={push} onInstall={openInstall} audience="coach" />
+                <AccountMenu
+                  me={user}
+                  settingsTo="/dashboard/account"
+                  links={loaderData.isParent ? [{ to: "/family", label: "Family view", icon: UsersThree }] : []}
+                />
+              </div>
+            </nav>
+          </header>
 
-        <PullToRefresh />
+          <PullToRefresh />
 
-        <main id="main" className={cx(workspace && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
-          <Outlet />
-        </main>
+          <main id="main" className={cx(workspace && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
+            <Outlet />
+          </main>
 
-        {installOpen && <InstallSheet platform={loaderData.platform} openOnLoad={false} onClose={() => setInstallOpen(false)} />}
-        {/* Once per phone, as soon as it can say yes (on iPhone: first launch from the Home Screen) */}
-        <NotifyPrompt push={push} audience="coach" />
-      </div>
+          {installOpen && <InstallSheet platform={loaderData.platform} openOnLoad={false} onClose={() => setInstallOpen(false)} />}
+          {/* Once per phone, as soon as it can say yes (on iPhone: first launch from the Home Screen) */}
+          <NotifyPrompt push={push} audience="coach" />
+        </div>
+      </TourProvider>
     </PushContext.Provider>
   );
 }

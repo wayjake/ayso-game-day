@@ -1,5 +1,5 @@
 import type { Route } from "./+types/family";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Link, NavLink, Outlet, data, useMatches, useNavigation, useSearchParams } from "react-router";
 import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
@@ -8,6 +8,7 @@ import { parentConversationIds, totalUnread } from "~/utils/messages.server";
 import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
 import { navMotion } from "~/utils/nav-motion";
+import { TabTransition, type TransitionTab } from "~/components/TabTransition";
 import { usePush } from "~/hooks/usePush";
 import { AppMark } from "~/components/AppMark";
 import { InstallSheet } from "~/components/InstallSheet";
@@ -109,10 +110,20 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
     },
   ];
 
+  // What each tab's page looks like while it loads (see TabTransition)
+  const frame = "mx-auto w-full max-w-3xl px-safe pt-6 sm:pt-8";
+  const turns: TransitionTab[] = [
+    { to: "/family", end: true, skeleton: "events", frame },
+    { to: "/family/feed", skeleton: "feed", frame },
+    { to: "/family/messages", skeleton: "chats", frame },
+    { to: "/family/settings", skeleton: "form", frame },
+  ];
+  const topBar = useRef<HTMLElement>(null);
+
   return (
     <PushContext.Provider value={{ push, openInstall, audience }}>
       <div className="min-h-dvh bg-canvas text-ink">
-        <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
+        <header ref={topBar} className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
           <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-safe">
             <Link to="/family" aria-label="Schedule">
               <AppMark />
@@ -158,6 +169,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
         <main id="main" className={cx("mx-auto w-full max-w-3xl px-safe", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
           <Outlet />
         </main>
+        <TabTransition tabs={turns} below={topBar} />
 
         {install && (
           <InstallSheet platform={loaderData.platform} openOnLoad={install.openOnLoad} onClose={() => setInstall(null)} />
