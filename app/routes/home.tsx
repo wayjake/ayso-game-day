@@ -199,8 +199,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               <Point icon={<ClipboardText size={20} />} title="A tracker for every family">
                 Delivered, opened, replied or bounced, so you know who to follow up with.
               </Point>
-              <Point icon={<Megaphone size={20} />} title="Replies stay private">
-                When a family answers, it goes only to whoever sent it, never reply-all.
+              <Point icon={<Megaphone size={20} />} title="In the team chat too">
+                Send it to everyone and it's also posted in the team chat, with replies, even emailed ones, under it. Send it to a few families and it stays private.
               </Point>
             </ul>
           </div>

@@ -25,9 +25,13 @@ async function access(request: Request, conversationId: number) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { user, conversation, canPost } = await access(request, Number(params.conversationId));
-  const messages = await getThread(conversation.id, user.id);
+  // In the team chat, a family's email reply shows as its trimmed text only:
+  // the whole email (signature, quoted history) is for the staff
+  const forFamilies = <T extends { fullEmail: string | null }>(m: T) => (conversation.kind === "team" ? { ...m, fullEmail: null } : m);
+  const messages = (await getThread(conversation.id, user.id)).map(forFamilies);
   const threadParam = new URL(request.url).searchParams.get("thread");
-  const thread = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  const replies = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  const thread = replies ? { root: forFamilies(replies.root), replies: replies.replies.map(forFamilies) } : null;
   // Everything is on screen or summed up under its thread, so all of it counts as read
   await markRead(conversation.id, user.id, await latestMessageId(conversation.id));
   const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
@@ -51,16 +55,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     realtime: isRealtimeConfigured()
       ? { channel: conversationChannel(conversation), name: user.name || user.email.split("@")[0] }
       : null,
-    // Announcements in their private thread can be answered with "Got it"
-    acknowledged: conversation.kind === "direct" ? await acknowledgedMessageIds(conversation.id) : null,
+    // Announcements (in their private thread or the team chat) can be answered with "Got it"
+    acknowledged: await acknowledgedMessageIds(conversation, user.id),
   });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const { user, conversation, canPost } = await access(request, Number(params.conversationId));
   const formData = await request.formData();
-  if (formData.get("_action") === "ack" && conversation.kind === "direct") {
-    await acknowledgeFromThread(Number(formData.get("messageId")), conversation.id);
+  if (formData.get("_action") === "ack") {
+    await acknowledgeFromThread(Number(formData.get("messageId")), conversation, user.id);
     return data({ ok: true });
   }
   // Their staff member has left the team: the history stays, but nobody's there to read new messages

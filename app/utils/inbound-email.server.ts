@@ -24,7 +24,7 @@ import {
   referencedMessageIds,
   stripQuotedReply,
 } from "~/utils/email-reply";
-import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, preview } from "~/utils/messages.server";
+import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, notifyThreadReply, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
@@ -294,15 +294,37 @@ async function familyUserId(teamId: number, familyEmail: string) {
 async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match: Omit<Match, "by"> & { by: string }) {
   const userId = await familyUserId(match.teamId, match.familyEmail);
   const staff = await getCoachUserIds(match.teamId);
-  let [conversation] = match.conversationId
-    ? await db.select().from(conversations).where(eq(conversations.id, match.conversationId)).limit(1)
-    : [];
-  if (!conversation || conversation.staffUserId == null || !staff.includes(conversation.staffUserId)) {
-    const staffUserId =
-      match.staffUserId && staff.includes(match.staffUserId)
-        ? match.staffUserId
-        : await defaultStaffFor(match.teamId, match.familyEmail, userId);
-    conversation = await getOrCreateFamilyConversation(match.teamId, match.familyEmail, userId, staffUserId);
+  let conversation: typeof conversations.$inferSelect | undefined = match.conversationId
+    ? (await db.select().from(conversations).where(eq(conversations.id, match.conversationId)).limit(1))[0]
+    : undefined;
+
+  // An announcement sent to everyone lives in the team chat. A real reply to it
+  // goes there too, in the public thread under it. Anything else (an
+  // out-of-office, a fresh email that doesn't answer it) stays private.
+  let rootId: number | null = null;
+  let familyName: string | null = null;
+  let staffUserId = match.staffUserId ?? null;
+  if (conversation?.kind === "team") {
+    const [recipient] = match.recipientId
+      ? await db
+          .select({ messageId: announcementRecipients.messageId, familyLabel: announcementRecipients.familyLabel, sentBy: announcements.sentBy })
+          .from(announcementRecipients)
+          .innerJoin(announcements, eq(announcementRecipients.announcementId, announcements.id))
+          .where(eq(announcementRecipients.id, match.recipientId))
+          .limit(1)
+      : [];
+    if (recipient?.messageId && !inbound.isAutoReply) {
+      rootId = recipient.messageId;
+      familyName = recipient.familyLabel;
+    } else {
+      conversation = undefined;
+      staffUserId ??= recipient?.sentBy ?? null;
+    }
+  }
+
+  if (!rootId && (!conversation || conversation.staffUserId == null || !staff.includes(conversation.staffUserId))) {
+    const owner = staffUserId && staff.includes(staffUserId) ? staffUserId : await defaultStaffFor(match.teamId, match.familyEmail, userId);
+    conversation = await getOrCreateFamilyConversation(match.teamId, match.familyEmail, userId, owner);
   }
 
   const full = inbound.text ?? "";
@@ -319,30 +341,34 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   const [message] = await db
     .insert(messages)
     .values({
-      conversationId: conversation.id,
+      conversationId: conversation!.id,
       senderId,
       senderEmail: inbound.fromEmail,
-      senderName: inbound.fromName,
+      // In the team chat, a name instead of their email address
+      senderName: inbound.fromName || familyName,
       source: "email",
       body: text,
+      parentId: rootId,
       inboundEmailId: inbound.id,
       emailMessageId: inbound.emailMessageId,
       // Same format as CURRENT_TIMESTAMP, so threads sort and display alike
       createdAt: toDbTimestamp(inbound.receivedAt),
     })
     .returning();
+  conversation = conversation!;
 
+  const shown = rootId ? `↳ ${text}` : text;
   await db
     .update(conversations)
     .set({
       // A late-sorted email can be older than the thread's latest message
       lastMessageAt: sql`max(coalesce(${conversations.lastMessageAt}, ''), ${message.createdAt})`,
-      lastMessagePreview: sql`case when coalesce(${conversations.lastMessageAt}, '') > ${message.createdAt} then ${conversations.lastMessagePreview} else ${preview(text)} end`,
-      // An out-of-office shouldn't flag the thread
-      ...(inbound.isAutoReply ? {} : { needsReply: true }),
+      lastMessagePreview: sql`case when coalesce(${conversations.lastMessageAt}, '') > ${message.createdAt} then ${conversations.lastMessagePreview} else ${preview(shown)} end`,
+      // An out-of-office shouldn't flag the thread, and the team chat has no "Needs reply"
+      ...(inbound.isAutoReply || conversation.kind === "team" ? {} : { needsReply: true }),
     })
     .where(eq(conversations.id, conversation.id));
-  await publishConversation(conversation, { kind: "message" });
+  await publishConversation(conversation, { kind: "message", threadId: rootId });
 
   if (match.recipientId && !inbound.isAutoReply) {
     await db
@@ -357,14 +383,19 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
     .where(eq(inboundEmails.id, inbound.id));
 
   if (!inbound.isAutoReply) {
-    const who = inbound.fromName || inbound.fromEmail;
-    // Only the staff member whose thread it is
-    await sendPush([conversation.staffUserId!], "chat", {
-      title: `${who} replied by email`,
-      body: preview(text, 180),
-      url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
-      tag: `conversation-${conversation.id}`,
-    });
+    if (rootId) {
+      // Like any reply in a thread: the people in it hear about it
+      await notifyThreadReply(conversation, rootId, senderId, inbound.fromName || familyName || "A family", text);
+    } else {
+      const who = inbound.fromName || inbound.fromEmail;
+      // Only the staff member whose thread it is
+      await sendPush([conversation.staffUserId!], "chat", {
+        title: `${who} replied by email`,
+        body: preview(text, 180),
+        url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
+        tag: `conversation-${conversation.id}`,
+      });
+    }
   }
   return conversation;
 }

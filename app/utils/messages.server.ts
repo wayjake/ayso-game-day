@@ -865,18 +865,7 @@ export async function postMessage(
   const teamName = team?.name ?? "Team";
 
   if (rootId) {
-    // Replies go only to the people in the thread
-    const people = await db
-      .selectDistinct({ id: messages.senderId })
-      .from(messages)
-      .where(sql`(${messages.id} = ${rootId} or ${messages.parentId} = ${rootId}) and ${messages.senderId} is not null`);
-    const ids = people.map((p) => p.id!).filter((id) => id !== sender.id);
-    await pushToConversation(conversation, ids, "replies", {
-      title: `${senderName} replied${conversation.kind === "team" ? ` · ${teamName}` : ""}`,
-      body: preview(text, 180),
-      tag: `thread-${rootId}`,
-      threadId: rootId,
-    });
+    await notifyThreadReply(conversation, rootId, sender.id, senderName, text);
   } else {
     // A direct thread notifies only the other person in it
     const everyone = (
@@ -892,6 +881,30 @@ export async function postMessage(
   }
 
   return { ...message, emailError: emailed && !emailed.sent ? emailed.error ?? "Email failed" : null };
+}
+
+// A reply in a thread notifies only the people in it: whoever wrote the root
+// and everyone who has replied, except the one replying (null for a family's
+// email reply with no account)
+export async function notifyThreadReply(
+  conversation: typeof conversations.$inferSelect,
+  rootId: number,
+  senderId: number | null,
+  senderName: string,
+  text: string
+) {
+  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
+  const people = await db
+    .selectDistinct({ id: messages.senderId })
+    .from(messages)
+    .where(sql`(${messages.id} = ${rootId} or ${messages.parentId} = ${rootId}) and ${messages.senderId} is not null`);
+  const ids = people.map((p) => p.id!).filter((id) => id !== senderId);
+  await pushToConversation(conversation, ids, "replies", {
+    title: `${senderName} replied${conversation.kind === "team" ? ` · ${team?.name ?? "Team"}` : ""}`,
+    body: preview(text, 180),
+    tag: `thread-${rootId}`,
+    threadId: rootId,
+  });
 }
 
 // Adds the reaction, or takes it back if they'd already reacted with it.

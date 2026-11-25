@@ -51,7 +51,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!isEmailConfigured()) return data({ error: "Email isn't set up on this server.", tested: false }, { status: 503 });
 
   if (intent === "test") {
-    const result = await sendTestAnnouncement({ request, teamId, coach: user, subject, body, ask });
+    const result = await sendTestAnnouncement({ request, teamId, coach: user, subject, body, ask, familyEmails });
     return data(result.sent ? { error: null, tested: true } : { error: result.error ?? "The test didn't send.", tested: false });
   }
 
@@ -179,6 +179,14 @@ export default function NewAnnouncement({ loaderData, actionData }: Route.Compon
             Families with no email on file aren't listed.{" "}
             <Link to={`${base}/contacts`} className="font-medium text-primary hover:underline">Contacts</Link>
           </p>
+          {selected.length > 0 && (
+            // Same rule as sendAnnouncement: every family means the team chat
+            <p className={hintClass}>
+              {selected.length === families.length
+                ? "Going to every family, so it's also posted in the team chat. Replies, by email too, show under it where everyone on the app can see them."
+                : "Each family gets it privately, in their thread with you, and their replies stay private."}
+            </p>
+          )}
         </Card>
 
         <Card className="space-y-4 p-5">
