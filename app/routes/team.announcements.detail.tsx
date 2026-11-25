@@ -173,7 +173,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
   return (
     <Page>
       <PageHeader
-        back={{ to: `${base}/announcements`, label: "Announcements" }}
+        back={{ to: `${base}/announcements`, label: "Announcements", className: "lg:hidden" }}
         title={announcement.subject}
         description={`Sent by ${senderName} · ${formatMessageDateTime(announcement.createdAt)} · ${stats.total} ${stats.total === 1 ? "family" : "families"}`}
       />
@@ -184,7 +184,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
         </Alert>
       )}
 
-      <div className={cx("grid gap-6", panel && "lg:grid-cols-[minmax(0,1fr)_420px]")}>
+      <div className={cx("grid gap-6", panel && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
         <div className="min-w-0">
           {/* Summary */}
           <Card className="mb-4 p-5" data-tour="tracker-summary">
@@ -318,7 +318,8 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
 
 // ---------------------------------------------------------------------------
 // Family panel: their thread, a reply box, mark done, and notes. A sheet on
-// phones, a sticky column on desktop.
+// phones and narrow desktops, a sticky column beside the list from xl (it
+// sits in the Messages pane, beside the announcements list).
 
 type Panel = NonNullable<Route.ComponentProps["loaderData"]["panel"]>;
 
@@ -374,10 +375,10 @@ function FamilyPanel({
   return (
     <>
       {/* Phone backdrop */}
-      <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-30 bg-ink/30 lg:hidden" />
+      <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-30 bg-ink/30 xl:hidden" />
       <aside
         aria-label={r.familyLabel}
-        className="fixed inset-x-0 bottom-0 z-40 flex max-h-[88dvh] flex-col rounded-t-2xl bg-surface shadow-2xl ring-1 ring-line lg:sticky lg:top-4 lg:inset-auto lg:z-auto lg:max-h-[calc(100dvh-2rem)] lg:rounded-2xl lg:shadow-card"
+        className="fixed inset-x-0 bottom-0 z-40 flex max-h-[88dvh] flex-col rounded-t-2xl bg-surface shadow-2xl ring-1 ring-line xl:sticky xl:top-4 xl:inset-auto xl:z-auto xl:max-h-[calc(100dvh-14rem)] xl:rounded-2xl xl:shadow-card"
       >
         <header className="flex items-start gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0 flex-1">

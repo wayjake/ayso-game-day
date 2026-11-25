@@ -133,7 +133,8 @@ export function PageHeader({
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
-  back?: { to: string; label: string };
+  /** `className` e.g. hides it where a list beside the page already does the job (lg:hidden) */
+  back?: { to: string; label: string; className?: string };
   className?: string;
 }) {
   return (
@@ -141,7 +142,7 @@ export function PageHeader({
       {back && (
         <Link
           to={back.to}
-          className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-ink"
+          className={cx("mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-ink", back.className)}
         >
           <ArrowLeft size={16} weight="bold" />
           {back.label}
