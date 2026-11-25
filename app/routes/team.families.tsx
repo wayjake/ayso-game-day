@@ -27,6 +27,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const account = staffAccount(f.userIds, staffRoles);
     return {
       ...f,
+      // A coach invite link is the owner's to share, like on Settings
+      inviteUrl: f.staffInvite && role !== "owner" ? null : f.inviteUrl,
       account: account
         ? { userId: account, staffRole: staffRoles.get(account) ?? null, isOwner: account === team.coachId }
         : null,

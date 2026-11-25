@@ -125,7 +125,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (g.remove) continue;
       const email = normalizeEmail(g.email);
       const was = before?.guardians.find((b) => g.originalEmail && b.email === normalizeEmail(g.originalEmail));
-      const fresh = !was || was.email !== email || was.status === "not-invited" || was.status === "expired";
+      const fresh =
+        !was ||
+        was.email !== email ||
+        was.status === "not-invited" ||
+        was.status === "expired" ||
+        // Their coach invite was just cancelled, so they join as a parent instead
+        (myRole === "owner" && !!was.staffInvite && g.role === "parent");
       // A parent just invited as a coach joins through that invite instead
       const coachInvite = myRole === "owner" && !was?.userId && parseStaffRole(g.role);
       if (!fresh || coachInvite) continue;
@@ -155,6 +161,8 @@ type Row = {
   key: string;
   original: HouseholdGuardian | null;
   removed: boolean;
+  // The Team role picked on the card, once the owner changes it
+  role?: string;
 };
 
 let nextKey = 0;
@@ -177,8 +185,11 @@ function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
   const selected = new Set(household?.playerIds ?? preselect);
   const live = rows.filter((r) => !r.removed);
   const saving = busy ? String(navigation.formData?.get("_action") ?? "") : null;
-  // Someone here still needs an invite
-  const canInvite = live.some((r) => !r.original || r.original.status === "not-invited" || r.original.status === "expired");
+  // Someone here still needs an invite, including a parent whose coach
+  // invite is being taken back (they'll need a parent invite instead)
+  const canInvite = live.some(
+    (r) => !r.original || r.original.status === "not-invited" || r.original.status === "expired" || (r.original.staffInvite && r.role === "parent")
+  );
   const update = (key: string, patch: Partial<Row>) => setRows((all) => all.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   return (
@@ -208,6 +219,7 @@ function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
                     canRemove={live.length > 1 || row.removed}
                     onRemove={() => (row.original ? update(row.key, { removed: true }) : setRows((all) => all.filter((r) => r.key !== row.key)))}
                     onUndo={() => update(row.key, { removed: false })}
+                    onRoleChange={(role) => update(row.key, { role })}
                   />
                 ))}
               </ul>
@@ -302,6 +314,7 @@ function GuardianCard({
   canRemove,
   onRemove,
   onUndo,
+  onRoleChange,
 }: {
   index: number;
   row: Row;
@@ -309,6 +322,7 @@ function GuardianCard({
   canRemove: boolean;
   onRemove: () => void;
   onUndo: () => void;
+  onRoleChange: (role: string) => void;
 }) {
   const g = row.original;
   const field = (name: string) => `g${index}.${name}`;
@@ -366,7 +380,7 @@ function GuardianCard({
         {isOwner && (
           <div className="sm:col-span-2">
             <label htmlFor={id("role")} className={labelClass}>Team role</label>
-            <select id={id("role")} name={field("role")} value={role} onChange={(e) => setRole(e.target.value)} className={cx(inputClass, "sm:w-auto sm:pr-10")}>
+            <select id={id("role")} name={field("role")} value={role} onChange={(e) => { setRole(e.target.value); onRoleChange(e.target.value); }} className={cx(inputClass, "sm:w-auto sm:pr-10")}>
               {!g?.isTeamOwner && <option value="parent">Parent</option>}
               {STAFF_ROLES.map((r) => (
                 <option key={r} value={r}>{staffRoleLabel(r)}</option>

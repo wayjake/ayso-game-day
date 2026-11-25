@@ -79,7 +79,8 @@ export async function getFamilyContext(teamId: number, family: Family, notesEmai
     parentNames: family.parentNames,
     kids: family.kids,
     status: family.status,
-    inviteUrl: family.inviteUrl,
+    // Coach invite links are only shown to the owner, on Families and Settings
+    inviteUrl: family.staffInvite ? null : family.inviteUrl,
     reach: family.status !== "joined" ? "email" : withPush.size > 0 ? "push" : "app",
     upcoming,
     announcements,
