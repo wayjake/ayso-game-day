@@ -106,6 +106,22 @@ export function formatMessageTime(value: string, now = new Date()) {
   return new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, month: "short", day: "numeric" }).format(date);
 }
 
+// Read receipts, Telegram style: "today at 3:42 PM", "yesterday at 9:05 AM",
+// "Tue at 3:42 PM", "Nov 3 at 3:42 PM"
+export function formatReadTime(value: string, now = new Date()) {
+  const date = parseDbTimestamp(value);
+  const dayKey = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const days = daysBetween(dayKey(date), dayKey(now));
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, hour: "numeric", minute: "2-digit" }).format(date);
+  const day =
+    days <= 0 ? "today"
+    : days === 1 ? "yesterday"
+    : days < 7 ? new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, weekday: "short" }).format(date)
+    : new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, month: "short", day: "numeric" }).format(date);
+  return `${day} at ${time}`;
+}
+
 // "Tue, Nov 3 at 3:42 PM" for message timestamps
 export function formatMessageDateTime(value: string) {
   return new Intl.DateTimeFormat("en-US", {

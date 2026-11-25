@@ -7,6 +7,7 @@ import {
   conversationMembers,
   conversations,
   conversationReads,
+  conversationReadMarks,
   guardians,
   inboundEmails,
   messageReactions,
@@ -105,6 +106,8 @@ async function mergeConversation(from: typeof conversations.$inferSelect, into: 
   await db.update(announcementRecipients).set({ conversationId: into.id }).where(eq(announcementRecipients.conversationId, from.id));
   await db.update(inboundEmails).set({ conversationId: into.id }).where(eq(inboundEmails.conversationId, from.id));
   await db.delete(conversationReads).where(eq(conversationReads.conversationId, from.id));
+  // Read times describe that thread's messages only; carried over they'd mark the other thread's as read
+  await db.delete(conversationReadMarks).where(eq(conversationReadMarks.conversationId, from.id));
   await db.delete(conversations).where(eq(conversations.id, from.id));
 
   const [last] = await db
@@ -908,8 +911,17 @@ export async function latestMessageId(conversationId: number) {
   return Number(row?.id ?? 0);
 }
 
+// Moves this person's read marker up to lastMessageId. Returns whether it
+// moved; each move is also logged in conversationReadMarks, which is where
+// read receipts get the time a message was read.
 export async function markRead(conversationId: number, userId: number, lastMessageId: number) {
-  if (!lastMessageId) return;
+  if (!lastMessageId) return false;
+  const [current] = await db
+    .select({ upTo: conversationReads.lastReadMessageId })
+    .from(conversationReads)
+    .where(and(eq(conversationReads.conversationId, conversationId), eq(conversationReads.userId, userId)))
+    .limit(1);
+  if (current && current.upTo >= lastMessageId) return false;
   await db
     .insert(conversationReads)
     .values({ conversationId, userId, lastReadMessageId: lastMessageId })
@@ -921,6 +933,8 @@ export async function markRead(conversationId: number, userId: number, lastMessa
         updatedAt: sql`CURRENT_TIMESTAMP`,
       },
     });
+  await db.insert(conversationReadMarks).values({ conversationId, userId, upToMessageId: lastMessageId, readAt: new Date().toISOString() });
+  return true;
 }
 
 export function preview(body: string, length = 120) {

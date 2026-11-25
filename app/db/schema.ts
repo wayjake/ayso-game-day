@@ -431,6 +431,19 @@ export const conversationReads = sqliteTable('conversation_reads', {
   uniqueIndex('conversation_reads_idx').on(t.conversationId, t.userId),
 ]);
 
+// Every time someone's read marker moves forward: they had read everything up
+// to upToMessageId at readAt. The first mark at or past a message is when they
+// read it (read receipts). conversationReads keeps only the latest marker.
+export const conversationReadMarks = sqliteTable('conversation_read_marks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  upToMessageId: integer('up_to_message_id').notNull(),
+  readAt: text('read_at').notNull(), // ISO
+}, (t) => [
+  index('conversation_read_marks_idx').on(t.conversationId, t.userId, t.upToMessageId),
+]);
+
 // An email blast from a coach to families. Each family gets its own email
 // (so replies and opens can be tracked per family) and a copy in their
 // private thread with the coaches.

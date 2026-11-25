@@ -99,6 +99,13 @@
       "when": 1795627435838,
       "tag": "0013_group_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1795634512961,
+      "tag": "0014_read_marks",
+      "breakpoints": true
     }
   ]
 }
