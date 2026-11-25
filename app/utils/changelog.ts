@@ -13,6 +13,14 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "A proper start on iPhone",
+    summary: "The app opens to the BenchTalk logo instead of a blank screen.",
+    changes: [
+      { kind: "improved", text: "On iPhone, BenchTalk opens with its logo while it loads, instead of a blank screen. Remove BenchTalk from your Home Screen and add it again to get it." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Tasks for families",
     summary: "Ask families to pay a fee, sign a form or anything else, and see at a glance who has done it.",
     changes: [
