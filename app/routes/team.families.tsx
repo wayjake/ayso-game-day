@@ -94,7 +94,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "message") {
     const family = findFamily(await listFamilies(null, teamId), { email: String(formData.get("email") ?? "") });
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
-    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0]);
+    // Your own private thread with them
+    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], user.id);
     return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
   }
 

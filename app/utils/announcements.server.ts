@@ -60,13 +60,13 @@ function announcementEmail({
     ask === "ack"
       ? `Tap to let ${coachName} know you've seen this: ${ackUrl}`
       : ask === "reply"
-        ? `Please reply to this email. It goes to the coaches only.`
+        ? `Please reply to this email. Only ${coachName} sees your reply.`
         : "";
   const text = [
     reminder ? "Reminder:" : null,
     body.trim(),
     askText ? `\n${askText}` : null,
-    `\n--\n${teamName} · Replies go to the coaches only.`,
+    `\n--\n${teamName} · Replies go only to ${coachName}.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -75,7 +75,7 @@ function announcementEmail({
     ask === "ack"
       ? `<p style="margin:24px 0"><a href="${escapeHtml(ackUrl)}" style="display:inline-block;background:#2251c4;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px">Got it ✓</a></p>`
       : ask === "reply"
-        ? `<p style="margin:24px 0;padding:12px 14px;background:#e9eefb;border-radius:10px;color:#1a3e9c">Please reply to this email. It goes to the coaches only.</p>`
+        ? `<p style="margin:24px 0;padding:12px 14px;background:#e9eefb;border-radius:10px;color:#1a3e9c">Please reply to this email. Only ${escapeHtml(coachName)} sees your reply.</p>`
         : "";
 
   const html = `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;color:#0f172a;max-width:560px">
@@ -83,7 +83,7 @@ function announcementEmail({
   <h1 style="margin:0 0 18px;font-size:20px;line-height:1.3">${escapeHtml(subject)}</h1>
   ${textToHtml(body)}
   ${button}
-  <p style="margin:28px 0 0;font-size:12px;color:#64748b">Sent by ${escapeHtml(coachName)} with BenchTalk. Replies go to the coaches only.</p>
+  <p style="margin:28px 0 0;font-size:12px;color:#64748b">Sent by ${escapeHtml(coachName)} with BenchTalk. Replies go only to ${escapeHtml(coachName)}.</p>
 </div>`;
   return { text, html };
 }
@@ -172,7 +172,8 @@ export async function sendAnnouncement({
   // Rows first, so a crash mid-send leaves a record of who was and wasn't sent
   const prepared: { recipient: typeof announcementRecipients.$inferSelect; userIds: number[]; conversationId: number }[] = [];
   for (const family of families) {
-    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0]);
+    // The copy goes in the sender's own private thread with the family, and so do their replies
+    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], coach.id);
     const [message] = await db
       .insert(messages)
       .values({ conversationId: conversation.id, senderId: coach.id, body: `${subject}\n\n${body}`, announcementId: announcement.id })
@@ -181,7 +182,7 @@ export async function sendAnnouncement({
       .update(conversations)
       .set({ lastMessageAt: message.createdAt, lastMessagePreview: preview(subject) })
       .where(eq(conversations.id, conversation.id));
-    await publishConversation(teamId, conversation.id, { kind: "message" });
+    await publishConversation(conversation, { kind: "message" });
     await markRead(conversation.id, coach.id, message.id);
 
     const [recipient] = await db
@@ -267,9 +268,11 @@ export function awaitingResponse(r: RecipientView, ask: Ask) {
   return !r.openedAt && !r.seenInApp && !r.repliedAt;
 }
 
+// Only the sender reminds: replies to a reminder land in the sender's private
+// threads, so one from anyone else would have families answering the wrong person
 export async function remindAnnouncement(request: Request, announcementId: number, teamId: number, coach: User) {
-  const tracker = await getAnnouncementTracker(announcementId, teamId);
-  if (!tracker) return { reminded: 0 };
+  const tracker = await getAnnouncementTracker(announcementId, teamId, coach.id);
+  if (!tracker || tracker.announcement.sentBy !== coach.id) return { reminded: 0 };
   const targets = tracker.recipients.filter((r) => awaitingResponse(r, tracker.announcement.ask));
   const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
   const rows = targets.length
@@ -354,7 +357,10 @@ export type RecipientView = {
   familyEmail: string;
   familyLabel: string;
   sentToEmail: string;
+  /** The family's private thread with the sender; null unless the viewer sent it */
   conversationId: number | null;
+  /** The viewer sent this announcement, so the family's thread (and its replies) is theirs */
+  mine: boolean;
   onApp: boolean;
   /** Gets a push for messages in their thread, so a coach's reply needn't be emailed */
   pushReady: boolean;
@@ -429,7 +435,10 @@ export async function familyAnnouncements(teamId: number, familyEmail: string, l
   }));
 }
 
-export async function getAnnouncementTracker(announcementId: number, teamId: number) {
+// Every staff member can follow delivery, opens and "Got it". What a family
+// wrote back is in their private thread with the sender, so only the sender
+// sees replies (`mine` on each recipient).
+export async function getAnnouncementTracker(announcementId: number, teamId: number, viewerId: number) {
   if (!Number.isInteger(announcementId)) return null;
   const [announcement] = await db
     .select()
@@ -445,6 +454,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
       r: announcementRecipients,
       needsReply: conversations.needsReply,
       currentParent: conversations.parentUserId,
+      staffUserId: conversations.staffUserId,
       lastRead: conversationReads.lastReadMessageId,
     })
     .from(announcementRecipients)
@@ -460,8 +470,8 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
     .where(eq(announcementRecipients.announcementId, announcementId))
     .orderBy(asc(announcementRecipients.familyLabel));
 
-  // The family's latest message after the announcement, for the row preview
-  const conversationIds = rows.flatMap((x) => (x.r.conversationId ? [x.r.conversationId] : []));
+  // The family's latest message after the announcement, for the row preview (sender only)
+  const conversationIds = rows.flatMap((x) => (x.r.conversationId && x.staffUserId === viewerId ? [x.r.conversationId] : []));
   const firstMessageId = Math.min(...rows.map((x) => x.r.messageId ?? Infinity));
   const replies = conversationIds.length
     ? await db
@@ -481,12 +491,13 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
 
   const withPush = await usersWithPush(rows.flatMap((x) => (x.currentParent ? [x.currentParent] : [])));
   const now = Date.now();
-  const recipients: RecipientView[] = rows.map(({ r, needsReply, currentParent, lastRead }) => {
+  const recipients: RecipientView[] = rows.map(({ r, needsReply, currentParent, staffUserId, lastRead }) => {
+    const mine = staffUserId === viewerId;
     const seenInApp = isSeenInApp(r, currentParent, lastRead);
     const state = recipientState(r, seenInApp);
     const quiet = !r.openedAt && !seenInApp && !r.repliedAt && !r.acknowledgedAt;
     const stale = r.sentAt ? now - new Date(r.sentAt).getTime() > NOT_OPENED_AFTER_HOURS * 3600_000 : false;
-    const replyWaiting = Boolean(needsReply && (r.repliedAt || latestReply.has(r.conversationId ?? -1)));
+    const replyWaiting = mine && Boolean(needsReply && (r.repliedAt || latestReply.has(r.conversationId ?? -1)));
 
     let needsYouReason: string | null = null;
     if (state === "failed") needsYouReason = "Email didn't send";
@@ -499,13 +510,14 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
       familyEmail: r.familyEmail,
       familyLabel: r.familyLabel,
       sentToEmail: r.sentToEmail,
-      conversationId: r.conversationId,
+      conversationId: mine ? r.conversationId : null,
+      mine,
       onApp: Boolean(currentParent),
       pushReady: Boolean(currentParent && withPush.has(currentParent)),
       state,
       needsYou: needsYouReason !== null,
       needsYouReason,
-      needsReply: Boolean(needsReply),
+      needsReply: mine && Boolean(needsReply),
       seenInApp,
       lastReply: r.conversationId ? latestReply.get(r.conversationId) ?? null : null,
       error: r.error,

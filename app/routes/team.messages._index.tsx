@@ -55,7 +55,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (!conversation) return data({ error: "That email is already sorted" }, { status: 404 });
       return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
     }
-    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0]);
+    // Your own private thread with them
+    const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], user.id);
     return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
   }
 

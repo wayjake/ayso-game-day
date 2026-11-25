@@ -25,8 +25,13 @@ export function isRealtimeConfigured() {
   return Boolean(process.env.ABLY_API_KEY);
 }
 
-export function conversationChannel(teamId: number, conversationId: number) {
-  return `team:${teamId}:conversation:${conversationId}`;
+// The team chat lives under team:<id>:, which all staff can read. A direct
+// thread is one-to-one, so it gets a channel outside that namespace (dm:<id>)
+// and only its two people are given it.
+type ConversationRef = { id: number; teamId: number; kind: "team" | "direct" };
+
+export function conversationChannel(conversation: ConversationRef) {
+  return conversation.kind === "direct" ? `dm:${conversation.id}` : `team:${conversation.teamId}:conversation:${conversation.id}`;
 }
 
 // New posts, likes, comments and deletes on a team's photo feed
@@ -50,19 +55,19 @@ export type ConversationEvent = { kind: "message" | "reaction"; threadId?: numbe
 
 // Awaited by callers (serverless hosts may drop work left after the response).
 // Never throws: a realtime hiccup only means pages catch up on their next poll.
-export async function publishConversation(teamId: number, conversationId: number, event: ConversationEvent) {
+export async function publishConversation(conversation: ConversationRef, event: ConversationEvent) {
   const ably = client();
   if (!ably) return;
   try {
-    await ably.channels.get(conversationChannel(teamId, conversationId)).publish("changed", event);
+    await ably.channels.get(conversationChannel(conversation)).publish("changed", event);
   } catch (error) {
     console.error("Realtime publish failed:", (error as Error).message);
   }
 }
 
-// What this person may listen to: every conversation on teams they coach, and
-// on teams where they're a parent, the team chat, their own thread and the
-// team's photo feed. Coaches get the feed through team:<id>:*.
+// What this person may listen to. Staff: everything under team:<id>: on teams
+// they coach (the team chat and the photo feed), plus their own direct threads
+// there. Parents: the team chat, their own direct threads and the photo feed.
 async function capabilityFor(userId: number) {
   const capability: Record<string, string[]> = {};
   const allow = ["subscribe", "presence"];
@@ -79,17 +84,25 @@ async function capabilityFor(userId: number) {
     ),
   ];
   for (const teamId of parentTeamIds) capability[feedChannel(teamId)] = ["subscribe"];
+
+  const conditions = [];
+  if (coachedIds.size > 0) {
+    conditions.push(and(inArray(conversations.teamId, [...coachedIds]), eq(conversations.kind, "direct"), eq(conversations.staffUserId, userId)));
+  }
   if (parentTeamIds.length > 0) {
+    conditions.push(
+      and(
+        inArray(conversations.teamId, parentTeamIds),
+        or(eq(conversations.kind, "team"), and(eq(conversations.kind, "direct"), eq(conversations.parentUserId, userId)))
+      )
+    );
+  }
+  if (conditions.length > 0) {
     const visible = await db
-      .select({ id: conversations.id, teamId: conversations.teamId })
+      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind })
       .from(conversations)
-      .where(
-        and(
-          inArray(conversations.teamId, parentTeamIds),
-          or(eq(conversations.kind, "team"), eq(conversations.parentUserId, userId))
-        )
-      );
-    for (const c of visible) capability[conversationChannel(c.teamId, c.id)] = allow;
+      .where(or(...conditions));
+    for (const c of visible) capability[conversationChannel(c)] = allow;
   }
   return capability;
 }

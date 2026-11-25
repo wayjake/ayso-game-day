@@ -140,7 +140,7 @@ function Body({
           RSVP for games and practices in one tap
         </Benefit>
         <Benefit icon={<ChatsCircle size={20} weight="fill" />} tone="text-pitch">
-          Team chat and your private thread with the coaches
+          Team chat and private messages with each coach
         </Benefit>
         <Benefit icon={<Lightning size={20} weight="fill" />} tone="text-warning">
           Opens full screen and stays signed in

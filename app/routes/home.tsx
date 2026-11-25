@@ -163,12 +163,12 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <SectionLabel>Messages</SectionLabel>
             <h2 className="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">Talk to families without the group text</h2>
             <p className="mt-3 max-w-xl text-lg text-muted">
-              A team chat for everyone, and a private thread between each family and the coaches. Every thread says
-              who can see it.
+              A team chat for everyone, and one-to-one messages between a family and any coach or team manager.
+              Every thread says who can see it.
             </p>
             <ul className="mt-8 space-y-5">
-              <Point icon={<Lock size={20} />} title="Private with the coaches">
-                A parent writes once and every coach on the team sees it. No more forwarding texts to your assistant.
+              <Point icon={<Lock size={20} />} title="One-to-one means one-to-one">
+                A message between a parent and a coach is theirs alone. Nobody else on the staff can read it, the head coach included.
               </Point>
               <Point icon={<EnvelopeSimple size={20} />} title="Families on email still get it">
                 Not everyone will join an app. They get your message by email, and their reply lands back in the thread.
@@ -200,7 +200,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                 Delivered, opened, replied or bounced, so you know who to follow up with.
               </Point>
               <Point icon={<Megaphone size={20} />} title="Replies stay private">
-                When a family answers, it goes to the coaches only, never reply-all.
+                When a family answers, it goes only to whoever sent it, never reply-all.
               </Point>
             </ul>
           </div>
@@ -395,17 +395,17 @@ const faqs = [
   {
     question: "What if a family never signs up?",
     answer:
-      "They still get your messages and announcements by email. When they reply, it lands in their thread with the coaches, just like a message from the app.",
+      "They still get your messages and announcements by email. When they reply, it lands in their private thread with you, just like a message from the app.",
   },
   {
     question: "Who can see my messages?",
     answer:
-      "The team chat is for the coaches and all families on the app. A family's thread is private between that family and the team's coaches. Every thread says so at the top.",
+      "The team chat is for the coaches and all families on the app. Direct messages are one-to-one: only that family and that coach or team manager can read them, not the rest of the staff. Every thread says so at the top.",
   },
   {
     question: "Can my assistant coach help?",
     answer:
-      "Yes. Invite them from your team's settings. They see every family thread and can manage the schedule, roster and games with you.",
+      "Yes. Invite them from your team's settings. They're in the team chat and can manage the schedule, roster and games with you. Families can message them directly too, and those messages are private to them.",
   },
   {
     question: "Do you still do lineups?",
@@ -489,7 +489,7 @@ function Bubble({ from, mine = false, children }: { from: string; mine?: boolean
 // Hero: next practice with RSVPs above a private family thread
 function HeroPreview() {
   return (
-    <div className="relative mx-auto w-full max-w-md lg:max-w-none" role="img" aria-label="A practice with RSVP counts, and a private message thread between a family and the coaches">
+    <div className="relative mx-auto w-full max-w-md lg:max-w-none" role="img" aria-label="A practice with RSVP counts, and a private message thread between a family and their coach">
       <div aria-hidden className="absolute -right-3 -bottom-3 left-8 top-10 rotate-2 rounded-2xl bg-coral sm:-right-5 sm:-bottom-5" />
       <div aria-hidden className="absolute -top-4 -left-4 size-16 rounded-full bg-coral-soft" />
       <Card className="relative overflow-hidden shadow-overlay">
@@ -516,7 +516,7 @@ function HeroPreview() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <div className="font-semibold">Patel family</div>
-              <div className="text-xs text-muted">Sofia · private with the coaches</div>
+              <div className="text-xs text-muted">Sofia · private: only you and this family</div>
             </div>
             <Lock size={16} className="text-muted" aria-hidden />
           </div>
@@ -568,9 +568,9 @@ function SchedulePreview({ className }: { className?: string }) {
 function InboxPreview() {
   const rows = [
     { name: "Team chat", detail: "Coaches and all families on the app", last: "Coach Jake: Bring a white shirt Saturday.", icon: <UsersThree size={18} /> },
-    { name: "Chen family", detail: "Lily · private with the coaches", last: "Can Lily ride with the Riveras?", needsReply: true },
+    { name: "Chen family", detail: "Lily · private", last: "Can Lily ride with the Riveras?", needsReply: true },
     { name: "Okafor family", detail: "Liam · by email, not on the app yet", last: "Thanks, we'll be there at 8:30.", email: true },
-    { name: "Patel family", detail: "Sofia · private with the coaches", last: "You: No problem. We scrimmage from 5:30." },
+    { name: "Patel family", detail: "Sofia · private", last: "You: No problem. We scrimmage from 5:30." },
   ];
   return (
     <Card className="mx-auto w-full max-w-md overflow-hidden shadow-overlay" role="img" aria-label="Example message list with a team chat and family threads">

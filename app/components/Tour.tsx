@@ -402,7 +402,7 @@ function TourRunner({
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Where do families' email replies go?",
-    a: "Into that family's private thread in Messages, the same place their app messages go. Other families never see them.",
+    a: "Into that family's private thread with whoever they're answering, the same place their app messages go. Nobody else sees them: not other families, not the rest of the staff.",
   },
   {
     q: "Why does it say “Probably opened”?",
