@@ -269,11 +269,13 @@ p {
 }
 
 /* Tabs, and push/back on wide screens: a quick cross-fade */
+/* Same length and curve on both sides: then whatever is identical on both
+   pages (the coach header and team tabs) holds perfectly still */
 html[data-nav]::view-transition-old(root) {
-	animation: vt-fade-out 100ms ease-out both;
+	animation: vt-fade-out 160ms linear both;
 }
 html[data-nav]::view-transition-new(root) {
-	animation: vt-fade-in 180ms ease-out both;
+	animation: vt-fade-in 160ms linear both;
 }
 /* Phones: open slides the new screen in over the old one, back slides it away */
 @media (max-width: 39.99rem) {

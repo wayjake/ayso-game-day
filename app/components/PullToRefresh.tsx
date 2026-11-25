@@ -8,11 +8,25 @@ import { cx } from "~/components/ui";
 // Only in the installed app: Safari and Chrome tabs have their own. It never
 // stops the page's own scrolling or iOS's rubber band; it reads the finger and
 // shows a disc that slides out from under the top bar. Touches that start in
-// a dialog, a sheet or anything marked data-no-pull are left alone.
+// a dialog, an overlay, an inner scroller or anything marked data-no-pull
+// (the lineup planner, where dragging players is the point) are left alone.
 
 const ARM_AT = 72; // px of (damped) pull that arms a refresh
 const MAX_PULL = 120;
 const MIN_SPIN_MS = 600; // long enough to read as "it refreshed"
+
+// A touch that starts inside its own scroller (a modal, a list pane) or on
+// something pinned to the screen (overlays, the tab bar) is that thing's, not the page's
+function startsInsideSomethingElse(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("dialog, [role=dialog], [data-no-pull]")) return true;
+  for (let el: Element | null = target; el && el !== document.body; el = el.parentElement) {
+    const { overflowY, position } = getComputedStyle(el);
+    if (position === "fixed") return true;
+    if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight) return true;
+  }
+  return false;
+}
 
 function isInstalledApp() {
   return (
@@ -43,7 +57,7 @@ export function PullToRefresh({ top = "calc(3.5rem + var(--safe-top))" }: { top?
     const onStart = (e: TouchEvent) => {
       reset();
       if (refreshingRef.current || e.touches.length !== 1 || window.scrollY > 0 || !isInstalledApp()) return;
-      if (e.target instanceof Element && e.target.closest("dialog, [role=dialog], [data-no-pull]")) return;
+      if (startsInsideSomethingElse(e.target)) return;
       start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     };
 
