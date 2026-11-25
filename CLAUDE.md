@@ -622,8 +622,9 @@ Do feature development in a git worktree, never in the main checkout, so several
 - **Once the branch is merged and pushed, clean up straight away:**
   1. Stop every background task the session started for it: the worktree's dev server and anything else still running (stop the task, or kill whatever listens on its port).
   2. Remove the worktree with `git worktree remove .claude/worktrees/<name>`. That deletes its files, including its `node_modules`, `.env` and `data/dev.db` copies.
-  3. Only clean up what this session created. Leave other sessions' worktrees and dev servers alone.
-  4. If `git worktree remove` refuses because of uncommitted or untracked changes, stop and tell the user. Don't use `--force`.
+  3. Delete the merged branch with `git branch -d <branch>`, and its remote copy with `git push origin --delete <branch>` if it was pushed. `-d` refuses an unmerged branch; never use `-D`.
+  4. Only clean up what this session created. Leave other sessions' worktrees and dev servers alone.
+  5. If `git worktree remove` or `git branch -d` refuses because of uncommitted or untracked changes, stop and tell the user. Don't use `--force`.
 
 ### After every push, update the local checkout
 
