@@ -106,7 +106,7 @@ export default function NewAnnouncement({ loaderData, actionData }: Route.Compon
 
   return (
     <Page width="narrow">
-      <PageHeader back={{ to: `${base}/announcements`, label: "Announcements" }} title="New announcement" />
+      <PageHeader back={{ to: `${base}/announcements`, label: "Announcements", className: "lg:hidden" }} title="New announcement" />
 
       {!emailConfigured && <Alert className="mb-4">Email isn't set up on this server, so announcements can't be sent.</Alert>}
       {redirectedTo && (

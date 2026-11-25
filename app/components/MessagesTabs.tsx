@@ -1,16 +1,17 @@
 import { NavLink } from "react-router";
 import { cx } from "~/components/ui";
 
-// Inbox | Announcements switch at the top of the Messages tab
+// Inbox | Announcements switch at the top of the Messages tab. Two equal
+// halves at every width, so the selected pill always fills its side.
 export function MessagesTabs({ teamId, needsReply = 0, className }: { teamId: number; needsReply?: number; className?: string }) {
   const base = `/dashboard/team/${teamId}`;
   const tab = ({ isActive }: { isActive: boolean }) =>
     cx(
-      "min-w-0 flex-1 rounded-lg px-3 py-2 text-center text-sm font-semibold break-words transition sm:flex-none sm:px-4",
+      "flex min-w-0 items-center justify-center rounded-lg px-3 py-2 text-center text-sm font-semibold break-words transition",
       isActive ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-muted hover:text-ink"
     );
   return (
-    <nav aria-label="Messages" className={cx("mb-6 flex gap-1 rounded-xl bg-surface-2 p-1 ring-1 ring-line sm:inline-flex", className)} data-tour="messages-tabs">
+    <nav aria-label="Messages" className={cx("mb-6 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1 ring-1 ring-line", className)} data-tour="messages-tabs">
       <NavLink to={`${base}/messages`} className={tab}>
         Inbox
         {needsReply > 0 && (
