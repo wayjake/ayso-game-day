@@ -4,7 +4,7 @@ import { Form, Link, data, redirect, useNavigate, useNavigation } from "react-ro
 import { getUser } from "~/utils/auth.server";
 import { getStaffRoles, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
 import { StaffBadge } from "~/components/StaffBadge";
-import { STAFF_ROLES, parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
+import { STAFF_ROLES, parseStaffRole, staffRoleLabel } from "~/utils/team-roles";
 import { db, contacts, players } from "~/db";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
 import { inviteFamily, listFamilies } from "~/utils/parent-invites.server";
@@ -13,6 +13,7 @@ import { formatMessageTime } from "~/utils/dates";
 import { handleNoteAction } from "~/utils/announcements.server";
 import { getOrCreateFamilyConversation } from "~/utils/messages.server";
 import { findFamily, getFamilyContext } from "~/utils/family-context.server";
+import { staffAccountFor } from "~/utils/family-admin.server";
 import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
 import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
@@ -52,11 +53,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({ team, me: user.id, families, missing, panel, isOwner: role === "owner", emailConfigured: isEmailConfigured() });
 }
 
-// The family's account that a staff role applies to: the one already on staff,
-// else the first linked one. Null until the family is on the app.
-function staffAccount(userIds: number[], staffRoles: Map<number, StaffRole>) {
-  return userIds.find((id) => staffRoles.has(id)) ?? userIds[0] ?? null;
-}
+const staffAccount = staffAccountFor;
 
 type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | "no-players"; url?: string; linkedCount?: number };
 
