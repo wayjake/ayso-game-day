@@ -8,6 +8,7 @@ import { desc } from "drizzle-orm";
 import { SignOut } from "@phosphor-icons/react";
 import { AppMark } from "~/components/AppMark";
 import { buttonClass, cx } from "~/components/ui";
+import { PullToRefresh } from "~/components/PullToRefresh";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -50,7 +51,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       >
         Skip to content
       </a>
-      <header className="shrink-0 border-b border-line bg-surface">
+      <header className="relative z-30 shrink-0 border-b border-line bg-surface pt-[var(--safe-top)]">
         <nav className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link to="/" aria-label="BenchTalk home">
             <AppMark />
@@ -67,6 +68,8 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
           </div>
         </nav>
       </header>
+
+      <PullToRefresh />
 
       <main id="main" className={cx(workspace && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
         <Outlet />

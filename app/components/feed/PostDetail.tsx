@@ -7,6 +7,7 @@ import { useRealtimeEvents } from "~/hooks/useConversationRealtime";
 import { Card, EmptyState, buttonClass, cx } from "~/components/ui";
 import { AuthorName, PersonAvatar, PostActions, PostMedia } from "~/components/feed/PostMedia";
 import { PostHeader } from "~/components/feed/FeedTimeline";
+import { setNavMotion } from "~/utils/nav-motion";
 
 // One post with its likes and comments, for the family app and the coach
 // dashboard. Comments are flat and optimistic: each send carries a clientId,
@@ -45,7 +46,11 @@ export function PostDetail({ post, comments, likers, me, feedHref, showTeamName,
     // From the feed, step back so it keeps its place; from a notification, go to it
     <button
       type="button"
-      onClick={() => (state?.fromFeed ? navigate(-1) : navigate(feedHref))}
+      onClick={() => {
+        setNavMotion("back");
+        if (state?.fromFeed) navigate(-1);
+        else navigate(feedHref, { viewTransition: true });
+      }}
       className="-ml-2 mb-3 flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-ink"
     >
       <ArrowLeft size={18} />

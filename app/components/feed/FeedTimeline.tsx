@@ -7,6 +7,7 @@ import { sendPostAction, type FeedPage, type FeedPost, type FeedScope, type Post
 import { Button, Card, EmptyState, cx } from "~/components/ui";
 import { Composer } from "~/components/feed/Composer";
 import { AuthorName, PersonAvatar, PostActions, PostMedia } from "~/components/feed/PostMedia";
+import { navMotion } from "~/utils/nav-motion";
 
 // The team feed page body, shared by the family app and the coach dashboard.
 
@@ -40,7 +41,7 @@ export function FeedTimeline({
         <button
           type="button"
           onClick={feed.showNew}
-          className="fixed left-1/2 top-[calc(4.5rem+env(safe-area-inset-top))] z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card"
+          className="fixed left-1/2 top-[calc(4.5rem+var(--safe-top))] z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card"
         >
           <ArrowUp size={16} weight="bold" />
           {feed.newCount} new {feed.newCount === 1 ? "post" : "posts"}
@@ -113,7 +114,7 @@ function PostCard({
       <PostActions postId={post.id} stats={post.stats} onStats={(stats) => onStats(post.id, stats)} commentsTo={href} />
       {post.caption && <p className="whitespace-pre-wrap break-words px-4 pb-2 text-[15px]">{post.caption}</p>}
       {post.stats.comments > 0 ? (
-        <Link to={href} state={{ fromFeed: true, focusComment: true }} className="block px-4 pb-3 text-sm text-muted hover:text-ink">
+        <Link to={href} state={{ fromFeed: true, focusComment: true }} {...navMotion("push")} className="block px-4 pb-3 text-sm text-muted hover:text-ink">
           View {post.stats.comments === 1 ? "1 comment" : `all ${post.stats.comments} comments`}
         </Link>
       ) : (

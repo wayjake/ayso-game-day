@@ -266,7 +266,7 @@ function ThreadPanel({
   }, [lastId, pendingBody]);
 
   return (
-    <div role="dialog" aria-label="Thread" className="fixed inset-0 z-50 flex flex-col bg-canvas pt-[env(safe-area-inset-top)]">
+    <div role="dialog" aria-label="Thread" className="fixed inset-0 z-50 flex flex-col bg-canvas pt-[var(--safe-top)]">
       <div className="border-b border-line bg-canvas/95 backdrop-blur">
         <div className={cx("mx-auto flex w-full items-center gap-3 px-4 py-3 sm:px-6", widthClass)}>
           <Link

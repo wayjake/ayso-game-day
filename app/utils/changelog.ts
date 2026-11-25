@@ -13,6 +13,19 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Private messages, and an app that feels like an app",
+    summary: "Messages with a coach are now between the two of you, announcements to everyone go in the team chat, and the app moves like a phone app.",
+    changes: [
+      { kind: "improved", text: "Direct messages are one-to-one. A family's message to a coach, assistant coach or team manager is seen by that person only, not the rest of the staff." },
+      { kind: "new", text: "Families can message any coach, assistant coach or team manager on their own, with each person's role shown next to their name." },
+      { kind: "improved", text: "An announcement to every family is posted in the team chat, and replies, even ones sent by email, go under it there. An announcement to a few families stays private, with replies only the sender sees." },
+      { kind: "new", text: "See who tapped \"Got it\" on an announcement, by name, in the tracker and right under the announcement in Messages." },
+      { kind: "improved", text: "On iPhone, the top bar now reaches behind the notch, screens slide in and out, sheets drag away like a native app's, and you can pull down to refresh." },
+      { kind: "improved", text: "Tapping no longer flashes grey or zooms into text boxes, and buttons and tabs respond the moment you touch them." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Families with more than one parent",
     summary: "Every parent and guardian of a player now lives in one family, and inviting them takes one click.",
     changes: [

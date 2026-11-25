@@ -1,12 +1,13 @@
 import type { Route } from "./+types/family";
 import { useCallback, useEffect, useState } from "react";
-import { Form, Link, NavLink, Outlet, data, useMatches, useSearchParams } from "react-router";
+import { Form, Link, NavLink, Outlet, data, useMatches, useNavigation, useSearchParams } from "react-router";
 import { db, teams } from "~/db";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { requireParent } from "~/utils/family.server";
 import { parentConversationIds, totalUnread } from "~/utils/messages.server";
 import { getNotifyPrefs, vapidPublicKey } from "~/utils/push.server";
 import { detectPlatform } from "~/utils/pwa";
+import { navMotion } from "~/utils/nav-motion";
 import { usePush } from "~/hooks/usePush";
 import type { FamilyContext } from "~/hooks/useFamily";
 import { AppMark } from "~/components/AppMark";
@@ -15,6 +16,7 @@ import { NotificationsMenu } from "~/components/NotificationsMenu";
 import { NotifyPrompt } from "~/components/NotifyPrompt";
 import { buttonClass, cx } from "~/components/ui";
 import { CalendarCheck, ChatsCircle, ClipboardText, GearSix, ImagesSquare, SignOut } from "@phosphor-icons/react";
+import { PullToRefresh } from "~/components/PullToRefresh";
 
 // The family app: what parents see. Built phone-first, since most open it from
 // a notification or their Home Screen.
@@ -45,6 +47,12 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   const inThread = useMatches().some((m) => m.id === "routes/family.messages.thread");
 
   const push = usePush(loaderData.vapidPublicKey, loaderData.notifyPrefs);
+
+  // Light the tapped tab straight away, not once its page has loaded: while a
+  // navigation is under way the link it's heading to (isPending) is the lit one
+  const navigating = Boolean(useNavigation().location);
+  const lit = ({ isActive, isPending }: { isActive: boolean; isPending: boolean }) =>
+    navigating ? isPending : isActive;
 
   // Just signed in (?install=1): on a phone that isn't running the installed
   // app, start with how to add it to the Home Screen. The session cookie is
@@ -101,7 +109,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="min-h-dvh bg-canvas text-ink">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-4">
           <Link to="/family" aria-label="Schedule">
             <AppMark />
@@ -114,10 +122,11 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
                 to={to}
                 end={end}
                 prefetch="intent"
-                className={({ isActive }) =>
+                {...navMotion("tab")}
+                className={(state) =>
                   cx(
                     "relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
-                    isActive ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
+                    lit(state) ? "bg-primary-soft text-primary-ink" : "text-muted hover:bg-surface-2 hover:text-ink",
                   )
                 }
               >
@@ -145,6 +154,8 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
         </div>
       </header>
 
+      <PullToRefresh />
+
       <main id="main" className={cx("mx-auto w-full max-w-3xl px-4", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
         <Outlet context={{ push, openInstall } satisfies FamilyContext} />
       </main>
@@ -158,7 +169,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       {/* Phone tab bar */}
       {!inThread && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+          className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
           aria-label="Family"
         >
           {tabs.map(({ label, to, end, icon: Icon, badge }) => (
@@ -167,17 +178,18 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
               to={to}
               end={end}
               prefetch="intent"
-              className={({ isActive }) =>
+              {...navMotion("tab")}
+              className={(state) =>
                 cx(
-                  "relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold",
-                  isActive ? "text-primary" : "text-muted",
+                  "group relative flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150",
+                  lit(state) ? "text-primary" : "text-muted",
                 )
               }
             >
-              {({ isActive }) => (
+              {(state) => (
                 <>
-                  <span className="relative">
-                    <Icon size={24} weight={isActive ? "fill" : "regular"} />
+                  <span className="relative transition-transform duration-150 ease-out group-active:scale-85">
+                    <Icon size={24} weight={lit(state) ? "fill" : "regular"} />
                     {badge > 0 && <UnreadDot count={badge} className="absolute -top-1.5 -right-3" />}
                   </span>
                   {label}

@@ -28,6 +28,7 @@ import { EmailToggle } from "~/components/EmailToggle";
 import { taskDraftFor } from "~/utils/tasks.server";
 import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple } from "@phosphor-icons/react";
+import { navMotion } from "~/utils/nav-motion";
 import { ackSummaries } from "~/utils/announcements.server";
 
 async function access(request: Request, teamId: number, conversationId: number) {
@@ -170,10 +171,11 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
     // Phones: a page of its own, as before. lg: fills the pane beside the list. xl: plus the family details.
     <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 lg:flex lg:min-h-0 lg:max-w-none lg:flex-1 lg:p-0">
       <div className="lg:flex lg:min-w-0 lg:flex-1 lg:flex-col">
-        <div className="sticky top-0 z-20 -mx-4 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:mx-0 sm:px-0 lg:static lg:mx-0 lg:shrink-0 lg:bg-surface lg:px-6">
+        <div className="sticky top-[var(--safe-top)] z-20 -mx-4 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:mx-0 sm:px-0 lg:static lg:mx-0 lg:shrink-0 lg:bg-surface lg:px-6">
           <div className="flex items-center gap-3">
             <Link
               to={`/dashboard/team/${params.teamId}/messages${location.search}`}
+              {...navMotion("back")}
               className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink lg:hidden"
               aria-label="All messages"
             >

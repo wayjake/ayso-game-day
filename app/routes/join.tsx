@@ -197,7 +197,7 @@ export default function Join({ loaderData, actionData, params }: Route.Component
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center bg-canvas px-4 py-10 text-ink sm:py-16">
+    <div className="canvas-top flex min-h-dvh flex-col items-center bg-canvas px-4 py-10 text-ink sm:py-16">
       <a href="/" aria-label="BenchTalk home" className="mb-8">
         <AppMark />
       </a>
