@@ -3,7 +3,8 @@ import { Bell, BellSlash, DeviceMobile } from "@phosphor-icons/react";
 import { Alert, Button } from "~/components/ui";
 import { NotificationsBlockedSheet } from "~/components/NotificationsBlockedSheet";
 import { NotifyCategories } from "~/components/NotifyCategories";
-import { usePush, type PushState } from "~/hooks/usePush";
+import { usePush, type PushState, type PushTestOutcome } from "~/hooks/usePush";
+import { PushTestResult } from "~/components/PushTestResult";
 import type { NotifyPrefs } from "~/utils/notify";
 
 // Turns Web Push on or off for this browser. PushToggle keeps its own state
@@ -24,7 +25,7 @@ export function PushControls({
   onInstall?: () => void;
   audience?: "family" | "coach";
 }) {
-  const [tested, setTested] = useState(false);
+  const [tested, setTested] = useState<PushTestOutcome | null>(null);
   const [blockedHelp, setBlockedHelp] = useState(false);
 
   return (
@@ -92,7 +93,7 @@ export function PushControls({
         </div>
       )}
 
-      {tested && push.status === "on" && <Alert tone="success">Sent. It should arrive in a few seconds.</Alert>}
+      {tested && push.status === "on" && <PushTestResult outcome={tested} />}
       {push.error && <Alert tone="danger">{push.error}</Alert>}
       {blockedHelp && <NotificationsBlockedSheet onClose={() => setBlockedHelp(false)} />}
     </div>

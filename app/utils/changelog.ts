@@ -13,6 +13,19 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Group chats",
+    summary: "Message several families at once, or start a group with other parents, for carpools, snacks or anything else.",
+    changes: [
+      { kind: "new", text: "Start a group chat from New message: pick several families, coaches or team managers and give it a name if you like. Pick just one family and it's your private message with them, as before." },
+      { kind: "new", text: "Families can start groups too, with other families or with staff, from the New button in Messages." },
+      { kind: "new", text: "Only the people in a group can see it. A group of parents stays between them, unless they add a coach." },
+      { kind: "new", text: "Whoever starts a group can rename it and add or remove people, and anyone can leave. Families not on BenchTalk yet can be added, and they see the whole conversation once they join." },
+      { kind: "improved", text: "\"Send a test\" notification now tells you whether it really went out, and where your phone or computer settings might be hiding notifications." },
+      { kind: "fixed", text: "Notifications that had stopped arriving on some devices start working again on their own." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "A proper start on iPhone",
     summary: "The app opens to the BenchTalk logo instead of a blank screen.",
     changes: [

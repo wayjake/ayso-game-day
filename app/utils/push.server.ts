@@ -1,6 +1,6 @@
 import { sendNotification, WebPushError } from "web-push";
 import { db, pushSubscriptions, users } from "~/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { isSwitchableKind, parseNotifyPrefs, wantsNotification, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
 
 // Web Push with VAPID. Nothing is sent unless VAPID_PUBLIC_KEY,
@@ -55,24 +55,31 @@ export async function setNotifyPref(userId: number, kind: NotifyKind, on: boolea
   return prefs;
 }
 
-// Sends to every device of every user given who wants this kind of
-// notification (see utils/notify.ts). Awaited by callers on purpose: on
-// serverless hosts work left running after the response may never finish.
-// Failures are logged, never thrown, so a push problem can't break the action.
-export async function sendPush(userIds: number[], kind: NotifyKind, payload: PushPayload) {
-  let ids = [...new Set(userIds)];
-  if (ids.length === 0 || !isPushConfigured()) return;
+// What happened to each device a push went to. Push services answer with an
+// HTTP status: 201 accepted, 404/410 the subscription is gone (deleted here),
+// 403 usually means it was made with a different VAPID public key.
+export type PushResult = {
+  sent: number;
+  failed: { service: string; status: number | null; reason: string }[];
+  removed: number;
+};
 
-  if (isSwitchableKind(kind)) {
-    const rows = await db.select({ id: users.id, prefs: users.notifyPrefs }).from(users).where(inArray(users.id, ids));
-    const wanted = new Set(rows.filter((r) => wantsNotification(parseNotifyPrefs(r.prefs), kind)).map((r) => r.id));
-    ids = ids.filter((id) => wanted.has(id));
-    if (ids.length === 0) return;
+const pushService = (endpoint: string) => {
+  try {
+    const host = new URL(endpoint).host;
+    if (host.includes("googleapis")) return "Google (Chrome)";
+    if (host.includes("apple")) return "Apple";
+    if (host.includes("mozilla")) return "Mozilla (Firefox)";
+    if (host.includes("windows") || host.includes("microsoft")) return "Microsoft (Edge)";
+    return host;
+  } catch {
+    return "the push service";
   }
+};
 
-  const subs = await db.select().from(pushSubscriptions).where(inArray(pushSubscriptions.userId, ids));
-  if (subs.length === 0) return;
-
+async function deliver(subs: (typeof pushSubscriptions.$inferSelect)[], payload: PushPayload): Promise<PushResult> {
+  const result: PushResult = { sent: 0, failed: [], removed: 0 };
+  if (subs.length === 0) return result;
   const body = JSON.stringify(payload);
   const options = {
     TTL: 60 * 60 * 24,
@@ -89,18 +96,53 @@ export async function sendPush(userIds: number[], kind: NotifyKind, payload: Pus
     subs.map(async (sub) => {
       try {
         await sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, body, options);
+        result.sent++;
       } catch (error) {
+        const status = error instanceof WebPushError ? error.statusCode : null;
+        const reason = (error instanceof WebPushError && error.body?.trim()) || (error as Error).message;
         // 404/410: the browser unsubscribed or the subscription expired
-        if (error instanceof WebPushError && (error.statusCode === 404 || error.statusCode === 410)) {
-          gone.push(sub.endpoint);
-        } else {
-          console.error("Push failed:", (error as Error).message);
-        }
+        if (status === 404 || status === 410) gone.push(sub.endpoint);
+        else console.error(`Push failed (${pushService(sub.endpoint)}, ${status ?? "no status"}):`, reason);
+        result.failed.push({ service: pushService(sub.endpoint), status, reason: reason.slice(0, 300) });
       }
     })
   );
 
   if (gone.length > 0) {
     await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.endpoint, gone));
+    result.removed = gone.length;
   }
+  return result;
+}
+
+// Sends to every device of every user given who wants this kind of
+// notification (see utils/notify.ts). Awaited by callers on purpose: on
+// serverless hosts work left running after the response may never finish.
+// Failures are logged and returned, never thrown, so a push problem can't
+// break the action.
+export async function sendPush(userIds: number[], kind: NotifyKind, payload: PushPayload): Promise<PushResult> {
+  const none: PushResult = { sent: 0, failed: [], removed: 0 };
+  let ids = [...new Set(userIds)];
+  if (ids.length === 0 || !isPushConfigured()) return none;
+
+  if (isSwitchableKind(kind)) {
+    const rows = await db.select({ id: users.id, prefs: users.notifyPrefs }).from(users).where(inArray(users.id, ids));
+    const wanted = new Set(rows.filter((r) => wantsNotification(parseNotifyPrefs(r.prefs), kind)).map((r) => r.id));
+    ids = ids.filter((id) => wanted.has(id));
+    if (ids.length === 0) return none;
+  }
+
+  const subs = await db.select().from(pushSubscriptions).where(inArray(pushSubscriptions.userId, ids));
+  return deliver(subs, payload);
+}
+
+// "Send a test" from one device: only to that device, if it's registered to
+// this account, with what the push service said
+export async function sendTestPush(userId: number, endpoint: string, payload: PushPayload) {
+  const subs = await db
+    .select()
+    .from(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)));
+  if (subs.length === 0) return null;
+  return deliver(subs, payload);
 }
