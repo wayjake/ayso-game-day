@@ -662,7 +662,7 @@ Merge these PRs with a merge commit, never squash: hand the user `! gh pr merge 
 
 Any time Claude pushes (a merge to `preview` or `main`, or a feature branch), bring the main checkout up to date straight after. The user's dev server on 5173 runs from it.
 
-1. In the main checkout, run `git fetch origin`, then `git pull --ff-only` on its current branch. If that branch is the one just pushed and it can't fast-forward, stop and tell the user. Don't reset or force anything.
+1. In the main checkout, run `git fetch origin`, then `git merge --ff-only origin/<branch>` for its current branch. Not `git pull`: sessions share `.git`, so another session's fetch (the SessionStart status runs one) can rewrite `FETCH_HEAD` mid-pull, and the pull fails with "Cannot fast-forward to multiple branches". If that branch is the one just pushed and it can't fast-forward, stop and tell the user. Don't reset or force anything.
 2. If the pushed changes touch `package.json`, run `npm install` there. If they add migrations, check they're applied to `data/dev.db` (see below).
 3. For worktrees still in use, tell the user if their branches are now behind. Only rebase or merge them when asked.
 4. Report the result: the branch, and the old and new commit.
