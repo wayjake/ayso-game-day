@@ -89,12 +89,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (myRole === "owner") {
     const notes: string[] = [];
     for (const g of input) {
+      // Removed parents' coach invites were cancelled with their contacts
+      if (g.remove) continue;
       const was = before?.guardians.find((b) => g.originalEmail && b.email === normalizeEmail(g.originalEmail));
-      // A removed parent's open coach invite goes with them
-      if (g.remove) {
-        if (was?.staffInvite) await setGuardianRole({ request, team, guardian: was, role: null, owner: user });
-        continue;
-      }
       if (g.role !== "parent" && !parseStaffRole(g.role)) continue;
       const email = normalizeEmail(g.email);
       const note = await setGuardianRole({
@@ -105,7 +102,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           name: g.name,
           userId: was?.userId ?? null,
           staffRole: was?.staffRole ?? null,
-          // An email change makes any old coach invite moot
+          // A new email cancelled the old address's coach invite
           staffInvite: was && was.email === email ? was.staffInvite : null,
         },
         role: parseStaffRole(g.role),

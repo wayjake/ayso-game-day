@@ -1,6 +1,7 @@
 import { db, contacts, conversations, familyNotes, guardians, parentInvites, players, teamInvites, users } from "~/db";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { createInvites, normalizeEmail, sendInviteEmail } from "~/utils/invites.server";
+import { familyDeliveryAddress } from "~/utils/email.server";
 import { listFamilies, type FamilyStatus } from "~/utils/parent-invites.server";
 import { getStaffRoles, removeFromStaff, setStaffRole } from "~/utils/team-access.server";
 import { staffRoleLabel, type StaffRole } from "~/utils/team-roles";
@@ -49,6 +50,13 @@ async function revokePendingInvites(teamId: number, email: string) {
     .update(parentInvites)
     .set({ status: "revoked" })
     .where(and(eq(parentInvites.teamId, teamId), eq(parentInvites.email, email), eq(parentInvites.status, "pending")));
+}
+
+async function revokeCoachInvites(teamId: number, email: string) {
+  await db
+    .update(teamInvites)
+    .set({ status: "revoked" })
+    .where(and(eq(teamInvites.teamId, teamId), eq(teamInvites.email, email), eq(teamInvites.status, "pending")));
 }
 
 export type SaveFamilyResult = { ok: true; email: string } | { ok: false; error: string };
@@ -125,6 +133,7 @@ export async function saveFamily({
   if (oldEmail && email !== oldEmail) {
     // An invite to the old address shouldn't still work
     await revokePendingInvites(teamId, oldEmail);
+    await revokeCoachInvites(teamId, oldEmail);
     // Coach notes and an email-only thread follow the family to its new address
     await db
       .update(familyNotes)
@@ -155,6 +164,7 @@ export async function deleteFamily(teamId: number, rawEmail: string) {
   await unlinkKids(teamId, email, [...new Set(existing.map((c) => c.playerId!))]);
   await db.delete(contacts).where(inArray(contacts.id, existing.map((c) => c.id)));
   await revokePendingInvites(teamId, email);
+  await revokeCoachInvites(teamId, email);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,17 +332,15 @@ export async function setGuardianRole({
 
   if (role === guardian.staffInvite) return null;
   if (!role) {
-    await db
-      .update(teamInvites)
-      .set({ status: "revoked" })
-      .where(and(eq(teamInvites.teamId, team.id), eq(teamInvites.email, guardian.email), eq(teamInvites.status, "pending")));
+    await revokeCoachInvites(team.id, guardian.email);
     return `Cancelled the coach invite to ${who}.`;
   }
   const { created } = await createInvites({ email: guardian.email, teamIds: [team.id], invitedBy: owner.id, role });
   if (created.length === 0) return null;
   const result = await sendInviteEmail({
     request,
-    to: guardian.email,
+    // Outside production this goes to the coach instead, like all family mail
+    to: familyDeliveryAddress(guardian.email, owner.email),
     shareCode: created[0].shareCode,
     inviterName: owner.name || owner.email,
     inviterEmail: owner.email,
