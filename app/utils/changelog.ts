@@ -13,6 +13,14 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Full-width top bar",
+    summary: "On a big screen, the bar along the top of the coach pages now runs the whole width of the window.",
+    changes: [
+      { kind: "improved", text: "On wide screens, the BenchTalk bar, team name and tabs stretch edge to edge, lining up with Messages instead of floating in the middle." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Read receipts",
     summary: "See when your messages have been read, and who in a group has seen them.",
     changes: [
