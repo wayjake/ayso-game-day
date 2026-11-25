@@ -128,7 +128,7 @@ function slug(value: string, max: number) {
     .replace(/-+$/, "");
 }
 
-// One address per coach per team, e.g. jake.thunder.12-3@aysogameday.com.
+// One address per coach per team, e.g. jake.thunder.12-3@benchtalk.app.
 // Only the trailing "<teamId>-<coachId>" identifies it; the names are for
 // people, so renaming a team or coach doesn't break replies to old mail.
 export function coachTeamAddress(
@@ -152,7 +152,7 @@ export function parseCoachTeamAddress(address: string) {
   return { teamId: Number(match[1]), coachId: Number(match[2]) };
 }
 
-// "Jake Berg" <jake@aysogameday.com> for an admin with their own address,
+// "Jake Berg" <jake@benchtalk.app> for an admin with their own address,
 // otherwise the coach+team address (or the shared one when there's no team)
 export function coachFromAddress(
   coach: { id: number; name: string | null; email: string; sendingEmail: string | null },

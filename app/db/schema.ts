@@ -12,7 +12,7 @@ export const users = sqliteTable('users', {
   gameFormat: text('game_format', { enum: ['7v7', '9v9', '11v11'] }),
   region: text('region'),
   // Address announcements and email replies go out from, on the app's sending
-  // domain (e.g. jake@aysogameday.com). Falls back to EMAIL_FROM.
+  // domain (e.g. jake@benchtalk.app). Falls back to EMAIL_FROM.
   sendingEmail: text('sending_email'),
   toursSeen: text('tours_seen'), // JSON: { [tourId]: version } for tours finished or dismissed
   notifyPrefs: text('notify_prefs'), // JSON: { [kind]: boolean } overrides; see utils/notify.ts
