@@ -24,7 +24,7 @@ import {
   referencedMessageIds,
   stripQuotedReply,
 } from "~/utils/email-reply";
-import { MAX_EMAIL_MESSAGE_LENGTH, getOrCreateFamilyConversation, notifyThreadReply, preview } from "~/utils/messages.server";
+import { MAX_EMAIL_MESSAGE_LENGTH, familyLabels, getOrCreateFamilyConversation, notifyThreadReply, preview } from "~/utils/messages.server";
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
@@ -242,6 +242,15 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
   return { teamId, familyEmail: address, recipientId: null, conversationId: null, by: "sender" };
 }
 
+// How a family's email reply is signed in the team chat, where every family
+// can see it: their name from the email, or their kids' names, never an address
+async function publicFamilyName(teamId: number, familyEmail: string, fromName: string | null) {
+  const name = fromName?.trim();
+  if (name && !name.includes("@")) return name;
+  const kids = (await familyLabels(teamId, [familyEmail])).get(familyEmail)?.kids ?? [];
+  return kids.length ? `${kids.join(" & ")}'s family` : "A family";
+}
+
 // Whose private thread a family's email goes to when nothing says: the staff
 // member who wrote to them most recently, else the team owner
 async function defaultStaffFor(teamId: number, familyEmail: string, parentUserId: number | null) {
@@ -315,7 +324,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       : [];
     if (recipient?.messageId && !inbound.isAutoReply) {
       rootId = recipient.messageId;
-      familyName = recipient.familyLabel;
+      familyName = await publicFamilyName(match.teamId, match.familyEmail, inbound.fromName);
     } else {
       conversation = undefined;
       staffUserId ??= recipient?.sentBy ?? null;
@@ -344,8 +353,8 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       conversationId: conversation!.id,
       senderId,
       senderEmail: inbound.fromEmail,
-      // In the team chat, a name instead of their email address
-      senderName: inbound.fromName || familyName,
+      // In the team chat, a name that can't be their email address
+      senderName: rootId ? familyName : inbound.fromName,
       source: "email",
       body: text,
       parentId: rootId,
@@ -385,7 +394,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   if (!inbound.isAutoReply) {
     if (rootId) {
       // Like any reply in a thread: the people in it hear about it
-      await notifyThreadReply(conversation, rootId, senderId, inbound.fromName || familyName || "A family", text);
+      await notifyThreadReply(conversation, rootId, senderId, familyName ?? "A family", text);
     } else {
       const who = inbound.fromName || inbound.fromEmail;
       // Only the staff member whose thread it is
