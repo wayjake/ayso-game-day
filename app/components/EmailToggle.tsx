@@ -83,7 +83,7 @@ function HelpTip({ text }: { text: string }) {
         aria-label="Why?"
         aria-describedby={id}
         onClick={() => setOpen(!open)}
-        className="flex size-6 items-center justify-center rounded-full text-subtle hover:bg-surface-2 hover:text-ink"
+        className="tap flex size-6 items-center justify-center rounded-full text-subtle hover:bg-surface-2 hover:text-ink"
       >
         <Question size={14} weight="bold" />
       </button>

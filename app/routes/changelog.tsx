@@ -17,7 +17,7 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-const container = "mx-auto w-full max-w-3xl px-4 sm:px-6";
+const container = "mx-auto w-full max-w-3xl px-safe";
 
 const kindBadge: Record<ChangeKind, { label: string; tone: "primary" | "success" | "warning" }> = {
   new: { label: "New", tone: "primary" },
@@ -37,7 +37,7 @@ export default function Changelog({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="sticky top-0 z-50 border-b border-line bg-surface/90 pt-[var(--safe-top)] backdrop-blur">
-        <nav className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        <nav className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-safe">
           <a href="/" aria-label="BenchTalk home">
             <AppMark />
           </a>

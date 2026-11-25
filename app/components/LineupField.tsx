@@ -213,7 +213,7 @@ export function QuarterBar({ current, onChange }: { current: number; onChange: (
     <>
       <div className="h-24 sm:hidden" aria-hidden />
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-8px_rgb(16_27_45/0.15)] sm:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-8px_rgb(16_27_45/0.15)] sm:hidden"
         aria-label="Quarter"
       >
         <div className="grid grid-cols-4">

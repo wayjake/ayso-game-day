@@ -82,7 +82,7 @@ export default function MessagesIndex({ loaderData, actionData }: Route.Componen
   }, [composing]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-16 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pt-10">
+    <div className="mx-auto w-full max-w-2xl px-safe pb-16 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pt-10">
       {/* Desktop only: what this pane is for before a thread is open */}
       <div className="mb-8 hidden text-center lg:block">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">

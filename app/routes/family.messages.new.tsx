@@ -49,7 +49,7 @@ export default function FamilyNewMessage({ loaderData, actionData }: Route.Compo
         <Link
           to="/family/messages"
           {...navMotion("back")}
-          className="-ml-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+          className="tap -ml-2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
           aria-label="All messages"
         >
           <ArrowLeft size={20} weight="bold" />

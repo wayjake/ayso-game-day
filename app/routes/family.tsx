@@ -110,7 +110,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="vt-topbar sticky top-0 z-30 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-4">
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-safe">
           <Link to="/family" aria-label="Schedule">
             <AppMark />
           </Link>
@@ -156,7 +156,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
 
       <PullToRefresh />
 
-      <main id="main" className={cx("mx-auto w-full max-w-3xl px-4", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
+      <main id="main" className={cx("mx-auto w-full max-w-3xl px-safe", inThread ? "pb-0" : "pb-28 sm:pb-16")}>
         <Outlet context={{ push, openInstall } satisfies FamilyContext} />
       </main>
 
@@ -169,7 +169,7 @@ export default function FamilyLayout({ loaderData }: Route.ComponentProps) {
       {/* Phone tab bar */}
       {!inThread && (
         <nav
-          className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+          className="vt-tabbar fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-surface/95 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] backdrop-blur sm:hidden"
           aria-label="Family"
         >
           {tabs.map(({ label, to, end, icon: Icon, badge }) => (

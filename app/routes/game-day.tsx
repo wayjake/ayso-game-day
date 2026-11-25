@@ -114,7 +114,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
     <div className="min-h-dvh bg-canvas text-ink">
       {/* Slim header */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 pt-[var(--safe-top)] backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-2 sm:px-4">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-safe">
           <Link to={base} className={buttonClass({ variant: "ghost", size: "icon" })} aria-label="Back to team">
             <ArrowLeft size={20} weight="bold" />
           </Link>
@@ -131,7 +131,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-4 pb-36 sm:px-6">
+      <main className="mx-auto max-w-6xl px-safe pt-4 pb-36">
         {nothingPlanned ? (
           <Card className="mt-6">
             <EmptyState
@@ -250,7 +250,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
           className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-8px_rgb(16_27_45/0.15)]"
           aria-label="Quarter controls"
         >
-          <div className="mx-auto flex max-w-6xl gap-2 px-4 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-6xl gap-2 px-safe py-3">
             {quarter > 1 && (
               <button type="button" onClick={() => goTo(quarter - 1)} className={buttonClass({ variant: "secondary", size: "lg", className: "px-4" })}>
                 <CaretLeft size={20} weight="bold" />

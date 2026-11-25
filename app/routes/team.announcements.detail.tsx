@@ -388,7 +388,7 @@ function FamilyPanel({
             </p>
           </div>
           <StateBadge r={r} opensTracked={opensTracked} />
-          <button type="button" onClick={onClose} className="-mr-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
+          <button type="button" onClick={onClose} className="tap -mr-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
             <X size={18} weight="bold" />
           </button>
         </header>
@@ -505,7 +505,7 @@ function FamilyPanel({
                   </done.Form>
                 )}
                 {r.conversationId && (
-                  <Link to={`/dashboard/team/${teamId}/messages/${r.conversationId}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Open full thread">
+                  <Link to={`/dashboard/team/${teamId}/messages/${r.conversationId}`} className="tap flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Open full thread">
                     <ArrowSquareOut size={18} />
                   </Link>
                 )}

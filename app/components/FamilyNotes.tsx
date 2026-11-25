@@ -64,7 +64,7 @@ export function FamilyNotes({ notes, familyEmail, meId }: { notes: FamilyNoteVie
                   <fetcher.Form method="post">
                     <input type="hidden" name="_action" value="deleteNote" />
                     <input type="hidden" name="noteId" value={n.id} />
-                    <button type="submit" className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-danger" aria-label="Delete note">
+                    <button type="submit" className="tap flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-danger" aria-label="Delete note">
                       <Trash size={14} />
                     </button>
                   </fetcher.Form>

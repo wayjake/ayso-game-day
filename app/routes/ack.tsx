@@ -39,7 +39,7 @@ export default function Ack({ loaderData, actionData }: Route.ComponentProps) {
   const done = loaderData.done || actionData?.ok;
 
   return (
-    <main className="canvas-top flex min-h-dvh items-center justify-center bg-canvas px-4 py-12">
+    <main className="canvas-top flex min-h-dvh items-center justify-center bg-canvas px-safe py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
           <AppMark />

@@ -247,7 +247,7 @@ function BoardCell({ task, playerId, playerName, cell }: { task: TaskSummary; pl
         type="submit"
         aria-label={label}
         title={label}
-        className={cx("mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition hover:bg-surface-2", fetcher.state !== "idle" && "opacity-70")}
+        className={cx("mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition hover:bg-surface-2 pointer-coarse:size-11", fetcher.state !== "idle" && "opacity-70")}
       >
         <StatusMark state={shown.state} confirmed={shown.confirmed} />
       </button>

@@ -188,7 +188,7 @@ export default function TaskDetail({ loaderData }: Route.ComponentProps) {
       </div>
 
       {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-safe pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur">
           <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2">
             <span className="mr-auto text-sm font-semibold">
               {selected.size} selected
@@ -234,13 +234,16 @@ function PlayerRow({ row: r, coachConfirms, selected, onSelect }: { row: TaskDet
 
   return (
     <div className={cx("flex items-start gap-3 px-4 py-3", selected && "bg-primary-soft")}>
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={(e) => onSelect(e.target.checked)}
-        aria-label={`Select ${r.name}`}
-        className="mt-1.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
-      />
+      {/* The whole left strip of the row, edge to edge and top to bottom, is the checkbox's target */}
+      <label className="-my-3 -ml-4 flex shrink-0 cursor-pointer self-stretch py-3 pr-1 pl-4">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onSelect(e.target.checked)}
+          aria-label={`Select ${r.name}`}
+          className="mt-1.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+        />
+      </label>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <StatusMark state={state} confirmed={confirmed} size={18} />

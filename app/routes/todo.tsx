@@ -55,7 +55,7 @@ export async function action({ params, request }: Route.ActionArgs) {
 
 export default function Todo({ loaderData }: Route.ComponentProps) {
   return (
-    <main className="min-h-dvh bg-canvas px-4 py-10">
+    <main className="canvas-top min-h-dvh bg-canvas px-safe pt-[calc(2.5rem+var(--safe-top))] pb-10">
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-6 flex justify-center">
           <AppMark />

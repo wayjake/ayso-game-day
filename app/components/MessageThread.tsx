@@ -171,7 +171,7 @@ export function MessageThread({
       {readOnly ? (
         <p
           className={cx(
-            "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-muted backdrop-blur",
+            "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 px-safe pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-muted backdrop-blur",
             pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
           )}
         >
@@ -185,7 +185,7 @@ export function MessageThread({
             "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur",
             pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
           )}
-          innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass, pane && "lg:max-w-none")}
+          innerClassName={cx("mx-auto w-full px-safe", widthClass, pane && "lg:max-w-none")}
           extra={composerExtra}
           initialDraft={initialDraft}
           onTyping={live.setTyping}
@@ -268,12 +268,12 @@ function ThreadPanel({
   return (
     <div role="dialog" aria-label="Thread" className="fixed inset-0 z-50 flex flex-col bg-canvas pt-[var(--safe-top)]">
       <div className="border-b border-line bg-canvas/95 backdrop-blur">
-        <div className={cx("mx-auto flex w-full items-center gap-3 px-4 py-3 sm:px-6", widthClass)}>
+        <div className={cx("mx-auto flex w-full items-center gap-3 px-safe py-3", widthClass)}>
           <Link
             to={pathname}
             replace
             preventScrollReset
-            className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            className="tap -ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
             aria-label="Back to the chat"
           >
             <ArrowLeft size={20} weight="bold" />
@@ -286,7 +286,7 @@ function ThreadPanel({
       </div>
 
       <div ref={scroller} className="flex-1 overflow-y-auto overscroll-contain">
-        <div className={cx("mx-auto w-full px-4 pb-4 sm:px-6", widthClass)}>
+        <div className={cx("mx-auto w-full px-safe pb-4", widthClass)}>
           <MessageList messages={[root]} meId={meId} showEmailDetails={showEmailDetails} acks={acks} ackHref={ackHref} />
           <div className="my-3 flex items-center gap-3 text-xs font-semibold text-subtle">
             <span className="h-px flex-1 bg-line" />
@@ -308,7 +308,7 @@ function ThreadPanel({
           onTyping={onTyping}
           typists={typists}
           className="border-t border-line bg-canvas pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-          innerClassName={cx("mx-auto w-full px-4 sm:px-6", widthClass)}
+          innerClassName={cx("mx-auto w-full px-safe", widthClass)}
         />
       )}
     </div>

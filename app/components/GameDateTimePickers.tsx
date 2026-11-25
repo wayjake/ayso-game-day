@@ -22,7 +22,7 @@ const chipBase = "rounded-full border px-3 py-1.5 text-sm font-medium transition
 const chipIdle = "border-line-strong bg-surface text-ink hover:border-primary hover:text-primary";
 const chipActive = "border-primary bg-primary text-white";
 const iconClass = "shrink-0 text-muted";
-const navButtonClass = "flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink";
+const navButtonClass = "tap flex h-9 w-9 items-center justify-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-ink";
 
 // Open state for a popover that closes on any click outside it
 function usePopover() {

@@ -40,7 +40,7 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-const container = "mx-auto w-full max-w-7xl px-4 sm:px-6";
+const container = "mx-auto w-full max-w-7xl px-safe";
 
 export default function Home({ loaderData }: Route.ComponentProps) {
   const { isLoggedIn } = loaderData;
