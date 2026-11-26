@@ -1,12 +1,14 @@
 import type { Route } from "./+types/team.money.items-new";
 import { useState } from "react";
 import { data, redirect, useFetcher } from "react-router";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { db, ledgerItems } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { getMembers, loadBook, memberKey } from "~/utils/ledger.server";
-import { saveShares } from "~/utils/billing.server";
+import { saveExpenseGames, saveShares } from "~/utils/billing.server";
+import { games } from "~/db";
+import { formatGameDate, todayISO } from "~/utils/dates";
 import { FormError, newFormKey, readCents, readShares, readText } from "~/utils/ledger-forms.server";
 import { CATEGORY_LABELS, FULL_SHARE, ITEM_CATEGORIES, LedgerError, type ItemCategory } from "~/utils/ledger";
 import { parseCents } from "~/utils/money";
@@ -26,6 +28,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teamId: team.id,
     formKey: newFormKey(),
     members: members.map((m) => ({ key: memberKey(m.member), label: m.name, detail: m.detail ?? undefined })),
+    upcomingGames: await db
+      .select({ id: games.id, opponent: games.opponent, gameDate: games.gameDate })
+      .from(games)
+      .where(and(eq(games.teamId, team.id), gte(games.gameDate, todayISO())))
+      .orderBy(asc(games.gameDate), asc(games.gameTime)),
   });
 }
 
@@ -69,6 +76,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       .returning({ id: ledgerItems.id });
     try {
       await saveShares(team.id, item.id, shares);
+      await saveExpenseGames(team.id, item.id, formData.getAll("gameId").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0));
     } catch (e) {
       // Nothing points at it yet, so take it back out
       await db.delete(ledgerItems).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
@@ -82,7 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function NewExpense({ loaderData }: Route.ComponentProps) {
-  const { teamId, formKey, members } = loaderData;
+  const { teamId, formKey, members, upcomingGames } = loaderData;
   const fetcher = useFetcher<{ error?: string }>();
   const busy = fetcher.state !== "idle";
   const [mode, setMode] = useState<"split" | "fixed">("split");
@@ -180,6 +188,28 @@ export default function NewExpense({ loaderData }: Route.ComponentProps) {
             </>
           )}
         </Card>
+
+        {upcomingGames.length > 0 && (
+          <Card className="p-5">
+            <details>
+              <summary className="cursor-pointer font-semibold">
+                Games it's for <span className="font-normal text-muted">(optional)</span>
+              </summary>
+              <p className="mt-1 text-sm text-muted">Shows the cost on your schedule and each family's share on theirs.</p>
+              <ul className="mt-3 max-h-60 divide-y divide-line overflow-y-auto rounded-xl ring-1 ring-line">
+                {upcomingGames.map((g) => (
+                  <li key={g.id}>
+                    <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-surface-2">
+                      <input type="checkbox" name="gameId" value={g.id} />
+                      <span className="w-28 shrink-0 text-muted">{formatGameDate(g.gameDate, { weekday: "short", month: "short", day: "numeric" })}</span>
+                      <span className="min-w-0 truncate">vs {g.opponent}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </Card>
+        )}
 
         <Card className="space-y-3 p-5">
           <p className="font-semibold">Who shares it</p>

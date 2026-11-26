@@ -49,9 +49,11 @@ import {
 import { allocate, formatCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton } from "~/components/money";
-import { expenseTargets, reopenExpense, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
+import { cantGoToExpense, expenseTargets, getExpenseGames, reopenExpense, saveExpenseGames, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
+import { games as gamesTable } from "~/db";
+import { formatGameDate } from "~/utils/dates";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowBendUpLeft, ArrowRight, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, UsersThree } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowRight, CalendarBlank, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree } from "@phosphor-icons/react";
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.item.name ?? "Expense"} - Finances - BenchTalk` }];
@@ -127,6 +129,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
     shareTotal: targets.reduce((a, t) => a + t.cents, 0),
     settle,
+    linkedGames: await getExpenseGames(team.id, item.id),
+    teamGames: await db
+      .select({ id: gamesTable.id, opponent: gamesTable.opponent, gameDate: gamesTable.gameDate })
+      .from(gamesTable)
+      .where(eq(gamesTable.teamId, team.id))
+      .orderBy(gamesTable.gameDate),
+    cantGo: await cantGoToExpense(team.id, item.id).then((c) => ({ games: c.games, keys: c.playerIds.map((id) => `player:${id}`) })),
     notInvoiced: rows.reduce((a, r) => a + r.notInvoiced, 0),
     activity: describeBook(book.filter((t) => t.itemId === item.id), names).reverse(),
   });
@@ -232,6 +241,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "reopen":
         await reopenExpense(team.id, item.id);
         return;
+      case "games":
+        await saveExpenseGames(team.id, item.id, formData.getAll("gameId").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0));
+        return;
       case "credit": {
         if (item.settledAt) throw new LedgerError("This expense is settled, so refunds are worked out for you. Record the refund received instead.");
         if (!item.refundable) throw new LedgerError("This expense isn't refundable. To pay for someone, cover it from a fund instead.");
@@ -290,7 +302,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle } = loaderData;
+  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo } = loaderData;
   const base = `/dashboard/team/${teamId}/finances`;
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -311,6 +323,17 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         }
       />
       {item.details && <p className="-mt-3 mb-6 max-w-prose text-muted">{item.details}</p>}
+      {linkedGames.length > 0 && (
+        <p className="-mt-3 mb-6 flex flex-wrap items-center gap-1.5 text-sm text-muted">
+          <SoccerBall size={16} className="text-subtle" />
+          For
+          {linkedGames.map((g) => (
+            <Link key={g.id} to={`/dashboard/team/${teamId}/games/${g.id}/lineup`} className="rounded-md bg-surface px-2 py-0.5 font-medium text-ink ring-1 ring-line hover:ring-line-strong">
+              {formatGameDate(g.gameDate, { weekday: "short", month: "short", day: "numeric" })} vs {g.opponent}
+            </Link>
+          ))}
+        </p>
+      )}
       {item.settledAt && settle && (
         <Card className="mb-6 flex flex-wrap items-center gap-3 p-4 text-sm">
           <CheckCircle size={22} weight="fill" className="shrink-0 text-success" />
@@ -424,6 +447,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                   totalCents={item.totalCents}
                   rounding={item.rounding}
                   unitCents={item.unitCents}
+                  cantGo={cantGo}
                 />
                 {item.unitCents !== null && (
                   <p className={hintClass}>
@@ -513,6 +537,27 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
               )}
             </>
           )}
+
+          <ActionPanel title="Games" hint="Which games it's for: shows the cost on your schedule and each family's share on theirs." icon={<CalendarBlank size={18} />}>
+            <LedgerForm intent="games" formKey={formKey} submitLabel="Save">
+              {teamGames.length === 0 ? (
+                <p className="text-sm text-muted">No games on the schedule yet.</p>
+              ) : (
+                <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-xl ring-1 ring-line">
+                  {teamGames.map((g) => (
+                    <li key={g.id}>
+                      <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-surface-2">
+                        <input type="checkbox" name="gameId" value={g.id} defaultChecked={linkedGames.some((l) => l.id === g.id)} />
+                        <span className="w-24 shrink-0 text-muted">{formatGameDate(g.gameDate, { weekday: "short", month: "short", day: "numeric" })}</span>
+                        <span className="min-w-0 truncate">vs {g.opponent}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className={hintClass}>Then Match RSVPs in “Who shares it” leaves off anyone who can't make them.</p>
+            </LedgerForm>
+          </ActionPanel>
 
           <ActionPanel title="Edit details" icon={<PencilSimple size={18} />}>
             <LedgerForm intent="edit" formKey={formKey} submitLabel="Save">

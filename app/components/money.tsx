@@ -187,12 +187,15 @@ export function ShareEditor({
   totalCents,
   rounding,
   unitCents = null,
+  cantGo,
 }: {
   mode: "split" | "fixed";
   options: ShareOption[];
   totalCents: Cents | null;
   rounding: Rounding;
   unitCents?: Cents | null;
+  // From RSVPs to the expense's games: players who can't make any of them
+  cantGo?: { games: number; keys: string[] };
 }) {
   const [rows, setRows] = useState(() =>
     Object.fromEntries(
@@ -226,6 +229,20 @@ export function ShareEditor({
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="text-muted">{picked.length} of {options.length} picked</span>
         <span className="flex gap-3">
+          {cantGo && cantGo.games > 0 && (
+            <button
+              type="button"
+              className="tap font-semibold text-primary"
+              title={cantGo.keys.length ? `Leaves off ${cantGo.keys.length} who can't make ${cantGo.games === 1 ? "the game" : "any of the games"}` : "Nobody has said they can't go"}
+              onClick={() =>
+                setRows((r) =>
+                  Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { ...v, checked: k.startsWith("player:") ? !cantGo.keys.includes(k) : v.checked }]))
+                )
+              }
+            >
+              Match RSVPs{cantGo.keys.length ? ` (−${cantGo.keys.length})` : ""}
+            </button>
+          )}
           <button type="button" className="tap font-semibold text-primary" onClick={() => setRows((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { ...v, checked: true }])))}>
             Everyone
           </button>

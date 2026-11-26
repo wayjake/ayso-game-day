@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Expenses on the schedule",
+    summary: "Link an expense to the games it's for, and everyone sees what each game costs.",
+    changes: [
+      { kind: "new", text: "Coaches: pick the games an expense is for, like every game of a tournament. Its cost shows on those games in your schedule." },
+      { kind: "new", text: "Families see their share on each of those games in their schedule." },
+      { kind: "new", text: "Match RSVPs: when picking who shares an expense, one tap leaves off anyone whose family said they can't make any of its games." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Settle up",
     summary: "When a tournament or trip is done, settle up and everyone pays exactly their share of what it really cost.",
     changes: [

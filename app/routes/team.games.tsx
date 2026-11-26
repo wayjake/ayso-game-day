@@ -17,11 +17,15 @@ import {
   MapPin,
   Note,
   PencilSimple,
+  Coins,
   Play,
   Plus,
   Printer,
   SoccerBall,
 } from "@phosphor-icons/react";
+
+import { expensesByGame } from "~/utils/billing.server";
+import { formatCents } from "~/utils/money";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -79,6 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     practices: teamPractices,
     counts,
     today,
+    expenses: await expensesByGame(teamId),
   });
 }
 
@@ -95,7 +100,7 @@ type PracticeRow = Route.ComponentProps["loaderData"]["practices"][number];
 type UpcomingItem = { kind: "game"; date: string; time: string | null; game: GameRow } | { kind: "practice"; date: string; time: string | null; practice: PracticeRow };
 
 export default function TeamGames({ loaderData }: Route.ComponentProps) {
-  const { team, games, practices, counts, today } = loaderData;
+  const { team, games, practices, counts, today, expenses } = loaderData;
   const base = `/dashboard/team/${team.id}`;
 
   // Separate upcoming and past games; most recent past game first
@@ -170,7 +175,7 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                 <ul className="divide-y divide-line">
                   {upcoming.map((item) =>
                     item.kind === "game" ? (
-                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} base={base} today={today} counts={counts[`game-${item.game.id}`]} />
+                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} base={base} today={today} counts={counts[`game-${item.game.id}`]} expenses={expenses[`game-${item.game.id}`]} />
                     ) : (
                       <UpcomingPracticeRow key={`p${item.practice.id}`} practice={item.practice} base={base} today={today} counts={counts[`practice-${item.practice.id}`]} />
                     )
@@ -286,7 +291,19 @@ function UpcomingPracticeRow({
   );
 }
 
-function UpcomingGameRow({ game, base, today, counts }: { game: GameRow; base: string; today: string; counts?: RsvpCounts }) {
+function UpcomingGameRow({
+  game,
+  base,
+  today,
+  counts,
+  expenses,
+}: {
+  game: GameRow;
+  base: string;
+  today: string;
+  counts?: RsvpCounts;
+  expenses?: { itemId: number; name: string; cents: number }[];
+}) {
   const notes = gameNotesText(game.notes);
   const soon = relativeGameDay(game.gameDate, today);
 
@@ -322,6 +339,12 @@ function UpcomingGameRow({ game, base, today, counts }: { game: GameRow; base: s
             </p>
           )}
           <RsvpSummary counts={counts} href={`${base}/rsvps/game/${game.id}`} />
+          {expenses?.map((e) => (
+            <Link key={e.itemId} to={`${base}/finances/items/${e.itemId}`} className="mt-1 flex items-center gap-1.5 text-sm text-muted hover:underline">
+              <Coins size={16} className="text-subtle" />
+              {e.name} · {formatCents(e.cents)}
+            </Link>
+          ))}
         </div>
       </div>
 

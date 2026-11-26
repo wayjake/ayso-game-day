@@ -13,7 +13,10 @@ import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   contacts,
+  games,
   guardians,
+  ledgerItemEvents,
+  rsvps,
   ledgerEntries,
   ledgerFunds,
   ledgerInvoiceLines,
@@ -307,6 +310,83 @@ export async function reopenExpense(teamId: number, itemId: number) {
     .limit(1);
   if (posted) throw new LedgerError("The settle-up is already on invoices, so it can't be reopened");
   await db.update(ledgerItems).set({ settledAt: null, settledBy: null, updatedAt: new Date().toISOString() }).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId)));
+}
+
+// ---------------------------------------------------------------------------
+// Games an expense is for (a tournament is several games). Optional, and only
+// for showing: the cost on the coach's schedule, a family's share on theirs,
+// and who to leave off when their family said they can't go.
+
+export async function getExpenseGames(teamId: number, itemId: number) {
+  return db
+    .select({ id: games.id, opponent: games.opponent, gameDate: games.gameDate, gameTime: games.gameTime })
+    .from(ledgerItemEvents)
+    .innerJoin(games, eq(ledgerItemEvents.eventId, games.id))
+    .where(and(eq(ledgerItemEvents.teamId, teamId), eq(ledgerItemEvents.itemId, itemId), eq(ledgerItemEvents.eventType, "game")))
+    .orderBy(asc(games.gameDate), asc(games.gameTime));
+}
+
+export async function saveExpenseGames(teamId: number, itemId: number, gameIds: number[]) {
+  const [item] = await db.select({ id: ledgerItems.id }).from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
+  if (!item) throw new LedgerError("That expense isn't on this team");
+  const ids = [...new Set(gameIds)];
+  if (ids.length) {
+    const found = await db.select({ id: games.id }).from(games).where(and(eq(games.teamId, teamId), inArray(games.id, ids)));
+    if (found.length !== ids.length) throw new LedgerError("That game isn't on this team");
+  }
+  await db.transaction(async (tx) => {
+    await tx.delete(ledgerItemEvents).where(and(eq(ledgerItemEvents.itemId, itemId), eq(ledgerItemEvents.eventType, "game")));
+    if (ids.length) await tx.insert(ledgerItemEvents).values(ids.map((id) => ({ teamId, itemId, eventType: "game" as const, eventId: id })));
+  });
+}
+
+// Players whose family said they can't go to any of an expense's games
+export async function cantGoToExpense(teamId: number, itemId: number) {
+  const linked = await getExpenseGames(teamId, itemId);
+  if (linked.length === 0) return { games: 0, playerIds: [] as number[] };
+  const answers = await db
+    .select({ playerId: rsvps.playerId, eventId: rsvps.eventId, status: rsvps.status })
+    .from(rsvps)
+    .where(and(eq(rsvps.teamId, teamId), eq(rsvps.eventType, "game"), inArray(rsvps.eventId, linked.map((g) => g.id))));
+  const no = new Map<number, number>();
+  for (const a of answers) if (a.status === "no") no.set(a.playerId, (no.get(a.playerId) ?? 0) + 1);
+  return { games: linked.length, playerIds: [...no].filter(([, n]) => n === linked.length).map(([id]) => id) };
+}
+
+// For the coach's schedule: the expenses on each game, keyed "game-<id>"
+export async function expensesByGame(teamId: number) {
+  const rows = await db
+    .select({ eventId: ledgerItemEvents.eventId, itemId: ledgerItems.id, name: ledgerItems.name, totalCents: ledgerItems.totalCents, shareMode: ledgerItems.shareMode })
+    .from(ledgerItemEvents)
+    .innerJoin(ledgerItems, eq(ledgerItemEvents.itemId, ledgerItems.id))
+    .where(and(eq(ledgerItemEvents.teamId, teamId), eq(ledgerItemEvents.eventType, "game")));
+  const totals = await shareTotals(teamId);
+  const out: Record<string, { itemId: number; name: string; cents: Cents }[]> = {};
+  for (const r of rows) {
+    (out[`game-${r.eventId}`] ??= []).push({ itemId: r.itemId, name: r.name, cents: r.shareMode === "split" ? r.totalCents ?? 0 : totals.get(r.itemId) ?? 0 });
+  }
+  return out;
+}
+
+// For a family's schedule: what their kids have been invoiced for each game's
+// expenses, keyed "game-<id>". Only invoiced amounts, as on their Finances page.
+export async function familySharesByGame(kids: { playerId: number; teamId: number }[]) {
+  const out: Record<string, { name: string; cents: Cents }[]> = {};
+  for (const teamId of [...new Set(kids.map((k) => k.teamId))]) {
+    const rows = await db
+      .select({ eventId: ledgerItemEvents.eventId, itemId: ledgerItems.id, name: ledgerItems.name })
+      .from(ledgerItemEvents)
+      .innerJoin(ledgerItems, eq(ledgerItemEvents.itemId, ledgerItems.id))
+      .where(and(eq(ledgerItemEvents.teamId, teamId), eq(ledgerItemEvents.eventType, "game")));
+    if (rows.length === 0) continue;
+    const mine = new Set(kids.filter((k) => k.teamId === teamId).map((k) => `player:${k.playerId}`));
+    const billed = await billedByItem(db, teamId, [...SHARE_KINDS, "credit"]);
+    for (const r of rows) {
+      const cents = sumCents((billed.get(r.itemId) ?? []).filter((b) => mine.has(memberKey(b.member))).map((b) => b.cents));
+      if (cents !== 0) (out[`game-${r.eventId}`] ??= []).push({ name: r.name, cents });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
