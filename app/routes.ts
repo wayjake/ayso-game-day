@@ -86,6 +86,12 @@ export default [
       route("tasks/new", "routes/team.tasks-new.tsx"),
       route("tasks/:taskId", "routes/team.tasks.detail.tsx"),
       route("tasks/:taskId/edit", "routes/team.tasks.edit.tsx"),
+      route("money", "routes/team.money.tsx"),
+      route("money/items/new", "routes/team.money.items-new.tsx"),
+      route("money/items/:itemId", "routes/team.money.item.tsx"),
+      route("money/funds", "routes/team.money.funds.tsx"),
+      // :memberType is "player" or "staff"
+      route("money/:memberType/:memberId", "routes/team.money.member.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;

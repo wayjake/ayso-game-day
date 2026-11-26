@@ -32,6 +32,7 @@ test("plainAmount and formatCents", () => {
   assert.equal(plainAmount(-150), "-1.50");
   assert.equal(formatCents(10235), "$102.35");
   assert.equal(formatCents(123456789), "$1,234,567.89");
+  assert.equal(formatCents(-0), "$0.00"); // -(0) from flipping a sign
 });
 
 test("percentOf rounds the way the caller asks", () => {

@@ -19,7 +19,6 @@ import {
   statement,
   transferLines,
   vendorRefundLines,
-  type ItemInfo,
   type Line,
   type MemberLine,
   type TxnKind,
@@ -60,12 +59,6 @@ function book() {
     },
   };
 }
-
-const items: ItemInfo[] = [
-  { id: 10, name: "Ref fees", dueDate: "2027-01-15", refundable: false },
-  { id: 11, name: "Surf Cup hotel", dueDate: "2027-02-01", refundable: true },
-  { id: 12, name: "Tournament entry", dueDate: null, refundable: false },
-];
 
 test("assertBalanced rejects anything that doesn't net to zero or isn't whole cents", () => {
   assert.throws(() => assertBalanced([{ account: { type: "cash", id: null }, cents: 100 }]), LedgerError);
@@ -198,21 +191,23 @@ test("a reversal undoes a transaction on every account", () => {
   assert.deepEqual(balances(b.txns.flatMap((t) => t.lines)), snapshot);
 });
 
-test("statement: payments pay off items by due date; covers and credits stick to their item", () => {
+test("statement: payments pay off the oldest charge first, and stay put when a newer charge comes", () => {
   const b = book();
-  b.post("charge", chargeLines(12, [{ member: ava, cents: 5000 }]), 12); // no due date: paid last
-  b.post("charge", chargeLines(11, [{ member: ava, cents: 20000 }]), 11);
+  b.post("charge", chargeLines(11, [{ member: ava, cents: 20000 }]), 11); // hotel, due Feb 1
+  b.post("payment", paymentLines(20000, [{ member: ava, owedCents: 20000 }]));
+  // Ref fees are due sooner, but the hotel payment is still the hotel's
   b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
-  b.post("payment", paymentLines(10000, [{ member: ava, owedCents: 33500 }]));
+  b.post("charge", chargeLines(12, [{ member: ava, cents: 5000 }]), 12);
+  b.post("payment", paymentLines(10000, [{ member: ava, owedCents: 13500 }]));
 
-  const s = statement(b.memberLines(ava), items);
+  const s = statement(b.memberLines(ava));
   assert.deepEqual(s.items.map((i) => [i.itemId, i.paid, i.remaining]), [
-    [10, 8500, 0], // due first
-    [11, 1500, 18500],
-    [12, 0, 5000],
+    [11, 20000, 0],
+    [10, 8500, 0],
+    [12, 1500, 3500],
   ]);
-  assert.equal(s.balance, 23500);
-  assert.equal(s.owed, 23500);
+  assert.equal(s.balance, 3500);
+  assert.equal(s.owed, 3500);
   assert.equal(s.dueBack, 0);
 });
 
@@ -223,7 +218,7 @@ test("statement: a cover after the family already paid turns into credit", () =>
   b.post("payment", paymentLines(8500, [{ member: ava, owedCents: 8500 }]));
   b.post("cover", coverLines(1, [{ member: ava, cents: 8500 }]), 10);
 
-  const s = statement(b.memberLines(ava), items);
+  const s = statement(b.memberLines(ava));
   assert.equal(s.items[0].covered, 8500);
   assert.equal(s.items[0].remaining, 0);
   assert.equal(s.balance, -8500);
@@ -236,7 +231,7 @@ test("statement: reversed transactions drop out, and the balance still matches t
   b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
   const wrong = b.post("charge", chargeLines(11, [{ member: ava, cents: 99999 }]), 11);
   b.reverse(wrong);
-  const s = statement(b.memberLines(ava), items);
+  const s = statement(b.memberLines(ava));
   assert.deepEqual(s.items.map((i) => i.itemId), [10]);
   assert.equal(s.balance, 8500);
 });
@@ -269,7 +264,7 @@ test("statement invariants hold over random seasons", () => {
       }
     }
     const lines = b.memberLines(ava);
-    const s = statement(lines, items);
+    const s = statement(lines);
     // Balance is exactly the sum of the member's lines
     assert.equal(s.balance, sumCents(lines.map((l) => l.cents)));
     // ...and exactly what's left on items, less unused credit, plus anything owed outside items

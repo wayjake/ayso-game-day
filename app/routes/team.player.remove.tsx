@@ -5,6 +5,7 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, guardians, rsvps, contacts, taskAssignments } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { deletePlayerImage } from "~/utils/upload.server";
+import { hasLedgerHistory } from "~/utils/ledger.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
@@ -41,6 +42,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
     
+    // Money history has to outlive the roster, so a player with any stays
+    if (await hasLedgerHistory(playerId)) {
+      return data(
+        { success: false, error: `${player.name} has money history on this team (charges or payments), so they can't be removed.` },
+        { status: 400 }
+      );
+    }
+
     // All or nothing: foreign keys are enforced, so a player with lineup
     // history still can't be deleted, and then nothing else changes either
     await db.transaction(async (tx) => {

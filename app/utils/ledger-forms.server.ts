@@ -1,0 +1,85 @@
+// Reading Money form fields, and running a ledger action so rule errors come
+// back to the form instead of as a 500.
+
+import crypto from "node:crypto";
+import { data } from "react-router";
+import { LedgerError } from "~/utils/ledger";
+import { PAYMENT_METHODS, type Member, type PaymentMethod } from "~/utils/ledger";
+import { parseCents, type Cents } from "~/utils/money";
+import { todayISO } from "~/utils/dates";
+
+export class FormError extends Error {}
+
+export function readCents(formData: FormData, name: string, label = "the amount"): Cents {
+  const raw = String(formData.get(name) ?? "");
+  const cents = parseCents(raw);
+  if (cents === null || cents <= 0) throw new FormError(`Enter ${label} in dollars, like 85 or 85.50`);
+  return cents;
+}
+
+export function readOptionalCents(formData: FormData, name: string): Cents | null {
+  const raw = String(formData.get(name) ?? "").trim();
+  if (!raw) return null;
+  const cents = parseCents(raw);
+  if (cents === null) throw new FormError("Enter amounts in dollars, like 85 or 85.50");
+  return cents;
+}
+
+export function readMethod(formData: FormData): PaymentMethod {
+  const value = String(formData.get("method") ?? "venmo");
+  return (PAYMENT_METHODS as readonly string[]).includes(value) ? (value as PaymentMethod) : "other";
+}
+
+export function readDate(formData: FormData, name = "occurredOn") {
+  const value = String(formData.get(name) ?? "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : todayISO();
+}
+
+export function readText(formData: FormData, name: string, max = 200) {
+  const value = String(formData.get(name) ?? "").trim();
+  return value ? value.slice(0, max) : null;
+}
+
+export function readId(formData: FormData, name: string) {
+  const id = Number(formData.get(name));
+  if (!Number.isSafeInteger(id) || id <= 0) throw new FormError("Something's missing from the form. Reload and try again.");
+  return id;
+}
+
+export function readClientKey(formData: FormData) {
+  return String(formData.get("clientKey") ?? "");
+}
+
+// "player:12" / "staff:3"
+export function parseMember(value: string): Member | null {
+  const m = value.match(/^(player|staff):(\d+)$/);
+  return m ? { type: m[1] as Member["type"], id: Number(m[2]) } : null;
+}
+
+export function readMembers(formData: FormData, name = "member"): Member[] {
+  const seen = new Set<string>();
+  const out: Member[] = [];
+  for (const v of formData.getAll(name)) {
+    const m = parseMember(String(v));
+    if (m && !seen.has(String(v))) {
+      seen.add(String(v));
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+// A fresh key for each render of a page's forms (see LedgerForm)
+export const newFormKey = () => crypto.randomUUID();
+
+export async function runLedgerAction(fn: () => Promise<unknown>) {
+  try {
+    await fn();
+    return data({ ok: true as const, error: undefined });
+  } catch (e) {
+    if (e instanceof LedgerError || e instanceof FormError) {
+      return data({ ok: false as const, error: e.message }, { status: 400 });
+    }
+    throw e;
+  }
+}

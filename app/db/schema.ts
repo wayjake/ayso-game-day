@@ -41,6 +41,8 @@ export const teams = sqliteTable('teams', {
   season: text('season'), // e.g., Fall 2024
   region: text('region'),
   teamNumber: text('team_number'), // AYSO team # printed on game cards
+  // Where families send money (personal Venmo, without the @). See the Money page.
+  venmoHandle: text('venmo_handle'),
   // Archived (a past season): left out of the team switcher, the /dashboard
   // redirect and the main teams list, for everyone on staff. Still opens and
   // works as before; All teams lists it under Archived. Only the owner sets it.
@@ -730,3 +732,107 @@ export type PostMedia = typeof postMedia.$inferSelect;
 
 export type Task = typeof tasks.$inferSelect;
 export type TaskAssignment = typeof taskAssignments.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Team money ledger (utils/ledger.ts holds the rules, ledger.server.ts the
+// reads and writes). Double entry: every transaction's entries add up to zero,
+// amounts are whole cents, and nothing is edited or deleted; a mistake is
+// undone with a reversal. Balances are always summed from the entries.
+// The enums repeat the lists in utils/ledger.ts; ledger.server.ts checks at
+// compile time that they match.
+
+// What money is collected for: ref fees, a tournament, the hotel
+export const ledgerItems = sqliteTable('ledger_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  name: text('name').notNull(),
+  category: text('category', { enum: ['ref_fees', 'tournament', 'lodging_travel', 'uniform', 'other'] }).notNull().default('other'),
+  details: text('details'), // Shown to families
+  // Money can come back to families from it (a hotel deposit, a cancelled tournament)
+  refundable: integer('refundable', { mode: 'boolean' }).notNull().default(false),
+  dueDate: text('due_date'), // YYYY-MM-DD
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('ledger_items_team_idx').on(t.teamId)]);
+
+// The team fund, and any others (savings). Families see a fund's balance
+// unless the team hides it.
+export const ledgerFunds = sqliteTable('ledger_funds', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  name: text('name').notNull(),
+  visibleToFamilies: integer('visible_to_families', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('ledger_funds_team_idx').on(t.teamId)]);
+
+export const ledgerTxns = sqliteTable('ledger_txns', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  kind: text('kind', {
+    enum: ['charge', 'payment', 'cover', 'donation', 'transfer', 'expense', 'reimburse', 'credit', 'refund', 'vendor_refund', 'reversal'],
+  }).notNull(),
+  itemId: integer('item_id').references(() => ledgerItems.id), // What it was for
+  fundId: integer('fund_id').references(() => ledgerFunds.id),
+  memo: text('memo'), // Shown to the families on it
+  method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }), // Money that moved outside the app
+  // Who the money came from. A payer's name is shown only to that payer and staff,
+  // since two households can share a kid.
+  payerUserId: integer('payer_user_id').references(() => users.id),
+  payerName: text('payer_name'),
+  occurredOn: text('occurred_on').notNull(), // YYYY-MM-DD
+  reversesId: integer('reverses_id'), // Unique: a transaction is reversed at most once
+  clientKey: text('client_key').notNull(), // One per form, so a double submit posts once
+  createdBy: integer('created_by').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('ledger_txns_team_idx').on(t.teamId, t.id),
+  index('ledger_txns_item_idx').on(t.itemId),
+  uniqueIndex('ledger_txns_reverses_idx').on(t.reversesId),
+  uniqueIndex('ledger_txns_client_key_idx').on(t.teamId, t.clientKey),
+]);
+
+// One line of a transaction. Exactly one of player/user/item/fund is set,
+// matching accountType; cash has none. Positive is a debit (see ledger.ts).
+// The foreign keys keep a player with money history from being deleted.
+export const ledgerEntries = sqliteTable('ledger_entries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  txnId: integer('txn_id').notNull().references(() => ledgerTxns.id),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  accountType: text('account_type', { enum: ['player', 'staff', 'item', 'fund', 'cash'] }).notNull(),
+  playerId: integer('player_id').references(() => players.id),
+  userId: integer('user_id').references(() => users.id), // Staff accounts
+  itemId: integer('item_id').references(() => ledgerItems.id),
+  fundId: integer('fund_id').references(() => ledgerFunds.id),
+  cents: integer('cents').notNull(),
+}, (t) => [
+  index('ledger_entries_txn_idx').on(t.txnId),
+  index('ledger_entries_team_account_idx').on(t.teamId, t.accountType),
+  index('ledger_entries_player_idx').on(t.playerId),
+]);
+
+// "I sent it": a family says they paid. Nothing is posted until staff confirm
+// it, with the amount that actually arrived.
+export const ledgerClaims = sqliteTable('ledger_claims', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  userId: integer('user_id').notNull().references(() => users.id), // The parent
+  playerIds: text('player_ids').notNull(), // JSON array: the kids it's for
+  cents: integer('cents').notNull(),
+  method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }).notNull(),
+  note: text('note'),
+  status: text('status', { enum: ['pending', 'confirmed', 'dismissed'] }).notNull().default('pending'),
+  txnId: integer('txn_id').references(() => ledgerTxns.id),
+  clientKey: text('client_key').notNull(),
+  resolvedBy: integer('resolved_by').references(() => users.id),
+  resolvedAt: text('resolved_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('ledger_claims_team_status_idx').on(t.teamId, t.status),
+  uniqueIndex('ledger_claims_client_key_idx').on(t.teamId, t.clientKey),
+]);
+
+export type LedgerItem = typeof ledgerItems.$inferSelect;
+export type LedgerFund = typeof ledgerFunds.$inferSelect;
+export type LedgerTxn = typeof ledgerTxns.$inferSelect;
+export type LedgerClaim = typeof ledgerClaims.$inferSelect;

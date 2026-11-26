@@ -234,8 +234,6 @@ export type MemberLine = {
   reversed: boolean; // this transaction was reversed (it and its reversal are both left out)
 };
 
-export type ItemInfo = { id: number; name: string; dueDate: string | null; refundable: boolean };
-
 export type ItemStatus = {
   itemId: number;
   charged: Cents;
@@ -255,11 +253,12 @@ export type Statement = {
 };
 
 // Charges, covers and credits are tied to an item. Payments aren't: they pay
-// off items in due-date order (no due date last, then oldest item), so a
-// family sees which fees are done. Covers or credits beyond what's left on an
-// item (it was already paid) become credit on the account, the same as an
-// overpayment. Balance always equals the sum of the lines.
-export function statement(lines: MemberLine[], items: ItemInfo[]): Statement {
+// off items in the order they were charged, oldest first, so what a family
+// already paid for stays paid when a new charge comes along (even one due
+// sooner). Covers or credits beyond what's left on an item (it was already
+// paid) become credit on the account, the same as an overpayment. Balance
+// always equals the sum of the lines.
+export function statement(lines: MemberLine[]): Statement {
   const live = lines.filter((l) => !l.reversed && l.kind !== "reversal");
   const byItem = new Map<number, ItemStatus>();
   const status = (itemId: number) => {
@@ -283,12 +282,14 @@ export function statement(lines: MemberLine[], items: ItemInfo[]): Statement {
     if (net < 0) pool += -net;
   }
 
-  const info = new Map(items.map((i) => [i.id, i]));
-  const order = [...byItem.values()].sort((a, b) => {
-    const da = info.get(a.itemId)?.dueDate ?? "9999-99-99";
-    const db = info.get(b.itemId)?.dueDate ?? "9999-99-99";
-    return da < db ? -1 : da > db ? 1 : a.itemId - b.itemId;
-  });
+  // When each item was first charged to this member (or first touched at all)
+  const firstSeen = new Map<number, number>();
+  for (const l of live) {
+    if (l.itemId === null) continue;
+    const seen = firstSeen.get(l.itemId);
+    if (seen === undefined || l.txnId < seen) firstSeen.set(l.itemId, l.txnId);
+  }
+  const order = [...byItem.values()].sort((a, b) => (firstSeen.get(a.itemId) ?? 0) - (firstSeen.get(b.itemId) ?? 0) || a.itemId - b.itemId);
 
   for (const s of order) {
     if (pool <= 0) break;

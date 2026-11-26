@@ -49,8 +49,8 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const tabs = [
     { label: "Overview", to: base, end: true, icon: House, badge: 0 },
     { label: "Schedule", to: `${base}/games`, end: false, icon: CalendarBlank, badge: 0, tour: "tab-schedule" },
-    // Families and Tasks hang off the Roster page
-    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0, also: [`${base}/families`, `${base}/tasks`] },
+    // Families, Tasks and Money hang off the Roster page
+    { label: "Roster", to: `${base}/roster`, end: false, icon: UsersThree, badge: 0, also: [`${base}/families`, `${base}/tasks`, `${base}/money`] },
     // Announcements live under Messages, so keep the tab lit there too
     { label: "Messages", to: `${base}/messages`, end: false, icon: ChatsCircle, badge: unread, tour: "tab-messages", also: [`${base}/announcements`] },
     { label: "Feed", to: `${base}/feed`, end: false, icon: ImagesSquare, badge: 0 },
@@ -65,7 +65,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const turns: TransitionTab[] = [
     { to: base, end: true, skeleton: "overview", frame: wide },
     { to: `${base}/games`, skeleton: "events", frame: wide },
-    { to: `${base}/roster`, also: [`${base}/families`, `${base}/tasks`], skeleton: "people", frame: wide },
+    { to: `${base}/roster`, also: [`${base}/families`, `${base}/tasks`, `${base}/money`], skeleton: "people", frame: wide },
     { to: `${base}/messages`, also: [`${base}/announcements`], skeleton: "inbox", frame: inbox },
     { to: `${base}/feed`, skeleton: "feed", frame: narrow },
     { to: `${base}/settings`, skeleton: "form", frame: narrow },

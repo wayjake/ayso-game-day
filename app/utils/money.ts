@@ -23,7 +23,7 @@ const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" 
 
 // For showing only. Dividing a whole number of cents by 100 always formats to the right two decimals.
 export function formatCents(cents: Cents): string {
-  return usd.format(cents / 100);
+  return usd.format((cents || 0) / 100); // || 0 turns -0 into 0, never "-$0.00"
 }
 
 // "102.35" for a form field or a payment link, without float formatting
