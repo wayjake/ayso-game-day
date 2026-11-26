@@ -4,7 +4,7 @@
 import crypto from "node:crypto";
 import { data } from "react-router";
 import { LedgerError } from "~/utils/ledger";
-import { PAYMENT_METHODS, type Member, type PaymentMethod } from "~/utils/ledger";
+import { FULL_SHARE, PAYMENT_METHODS, type Member, type PaymentMethod, type ShareSpec } from "~/utils/ledger";
 import { parseCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 
@@ -67,6 +67,22 @@ export function readMembers(formData: FormData, name = "member"): Member[] {
     }
   }
   return out;
+}
+
+// Who shares an expense, from ShareEditor: a ticked "share" box per person,
+// with "weight:<key>" (2 full, 1 half) or "amount:<key>" (their own amount)
+export function readShares(formData: FormData, mode: "split" | "fixed"): ShareSpec[] {
+  return readMembers(formData, "share").map((member) => {
+    const key = `${member.type}:${member.id}`;
+    if (mode === "fixed") {
+      const raw = String(formData.get(`amount:${key}`) ?? "").trim();
+      const cents = raw ? parseCents(raw) : null;
+      if (cents === null || cents < 0) throw new FormError("Enter each person's amount in dollars, like 49 or 49.50");
+      return { member, weight: FULL_SHARE, fixedCents: cents };
+    }
+    const weight = Number(formData.get(`weight:${key}`) ?? FULL_SHARE);
+    return { member, weight: weight === 1 ? 1 : FULL_SHARE, fixedCents: null };
+  });
 }
 
 // A fresh key for each render of a page's forms (see LedgerForm)

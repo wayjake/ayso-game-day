@@ -124,7 +124,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
       <PageHeader
         back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }}
         title="Funds"
-        description="Money the team keeps for anyone: sponsor gifts, donations, savings. Use it to cover people's charges or pay for things."
+        description="Money the team keeps for anyone: sponsor gifts, donations, savings. Use it to cover people's shares or pay for things."
       />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_24rem]">
@@ -256,7 +256,7 @@ function FundCard({ fund, formKey }: { fund: { id: number; name: string; visible
             <input type="checkbox" name="visible" value="1" defaultChecked={fund.visible} />
             <span className="text-sm font-medium">Families can see its balance</span>
           </label>
-          <p className={hintClass}>When a hidden fund covers someone's charge, their family sees it as covered by the team.</p>
+          <p className={hintClass}>When a hidden fund covers someone's share, their family sees it as covered by the team.</p>
         </LedgerForm>
       </details>
     </Card>

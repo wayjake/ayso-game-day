@@ -3,6 +3,7 @@ import { data } from "react-router";
 import { useState } from "react";
 import { getCoachUserIds, requireParent, requireParentOnTeam } from "~/utils/family.server";
 import { createClaim, getFamilyMoney, withdrawClaim, type FamilyTeamMoney } from "~/utils/ledger.server";
+import { familyInvoices, type InvoiceView } from "~/utils/billing.server";
 import { FormError, newFormKey, readCents, readClientKey, readId, readMethod, readText, runLedgerAction } from "~/utils/ledger-forms.server";
 import { sendPush } from "~/utils/push.server";
 import { METHOD_LABELS } from "~/utils/ledger";
@@ -17,7 +18,10 @@ export function meta() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, kids } = await requireParent(request);
-  const teams = await getFamilyMoney(user.id, kids);
+  const money = await getFamilyMoney(user.id, kids);
+  const teams = await Promise.all(
+    money.map(async (t) => ({ ...t, invoices: await familyInvoices(t.teamId, kids.filter((k) => k.teamId === t.teamId).map((k) => k.playerId)) }))
+  );
   return data({ teams, formKey: newFormKey(), multipleTeams: teams.length > 1 });
 }
 
@@ -80,10 +84,10 @@ function venmoLink(handle: string, cents: number, note: string) {
   return `https://venmo.com/${encodeURIComponent(handle)}?${params.toString()}`;
 }
 
-function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formKey: string; showTeam: boolean }) {
+function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { invoices: InvoiceView[] }; formKey: string; showTeam: boolean }) {
   const [telling, setTelling] = useState(false);
   const note = `${money.teamName} · ref ${money.refCode}`;
-  const nothingYet = money.history.length === 0 && money.pending.length === 0;
+  const nothingYet = money.history.length === 0 && money.pending.length === 0 && money.invoices.length === 0;
 
   return (
     <section className="space-y-4">
@@ -91,16 +95,11 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
 
       <Card className="p-5">
         {nothingYet ? (
-          <p className="text-muted">Nothing to pay yet. When the coach adds a fee, it shows up here.</p>
+          <p className="text-muted">Nothing to pay yet. When the coach sends an invoice, it shows up here.</p>
         ) : money.owed > 0 ? (
           <>
             <p className="text-sm text-muted">You owe</p>
             <p className="font-display text-4xl font-bold"><Amount cents={money.owed} /></p>
-            {money.dueBack > 0 && (
-              <p className="mt-1 text-sm text-muted">
-                And the team owes you <Amount cents={money.dueBack} className="font-semibold text-success" /> on another player's account. Ask the coach if you'd like it to count toward this.
-              </p>
-            )}
             {money.venmoHandle ? (
               <div className="mt-4 space-y-3">
                 <a href={venmoLink(money.venmoHandle, money.owed, note)} className={buttonClass({ size: "lg", className: "w-full sm:w-auto" })}>
@@ -118,7 +117,7 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
           <>
             <p className="text-sm text-muted">The team owes you</p>
             <p className="font-display text-4xl font-bold text-success"><Amount cents={money.dueBack} /></p>
-            <p className="mt-1 text-sm text-muted">The coach pays it back, or it counts toward the next fee.</p>
+            <p className="mt-1 text-sm text-muted">The coach pays it back, or it counts toward your next invoice.</p>
           </>
         ) : (
           <p className="flex items-center gap-2 font-semibold text-success">
@@ -151,8 +150,20 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
         )}
       </Card>
 
+      {money.invoices.length > 0 && (
+        <section>
+          <h3 className="mb-2 font-semibold">Invoices</h3>
+          <ul className="space-y-3">
+            {money.invoices.map((inv) => (
+              <InvoiceCard key={inv.id} inv={inv} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       {money.kids.some((k) => k.statement.items.length > 0) && (
         <Card>
+          <h3 className="px-5 pt-4 font-semibold">Your shares</h3>
           <ul className="divide-y divide-line">
             {money.kids.flatMap((k) =>
               k.statement.items.map((s) => {
@@ -161,6 +172,7 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
                   <li key={`${k.playerId}-${s.itemId}`} className="px-5 py-3.5">
                     <div className="flex items-baseline justify-between gap-3">
                       <p className="min-w-0 font-semibold">
+                        <span className="font-normal text-muted">Your share of </span>
                         {item?.name}
                         {money.kids.length > 1 && <span className="ml-1.5 font-normal text-muted">{k.name.split(" ")[0]}</span>}
                       </p>
@@ -174,7 +186,7 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
                         <Badge tone="danger">{formatCents(s.remaining)} left</Badge>
                       )}
                       {s.covered > 0 && s.covered < s.charged && <Badge>{formatCents(s.covered)} covered by the team</Badge>}
-                      {s.credited > 0 && <Badge tone="primary">{formatCents(s.credited)} came back</Badge>}
+                      {s.credited > 0 && <Badge tone="primary">{formatCents(s.credited)} refunded</Badge>}
                       {item?.dueDate && s.remaining > 0 && <span className="text-muted">Due {item.dueDate}</span>}
                     </p>
                   </li>
@@ -222,6 +234,45 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney; formK
         </details>
       )}
     </section>
+  );
+}
+
+function InvoiceCard({ inv }: { inv: InvoiceView }) {
+  const open = inv.remaining > 0;
+  const status =
+    inv.totalCents <= 0 ? <Badge tone="success">Money back</Badge>
+    : inv.remaining === 0 ? <Badge tone="success">Paid</Badge>
+    : inv.paid > 0 ? <Badge tone="warning">{formatCents(inv.remaining)} left</Badge>
+    : <Badge tone="danger">Due</Badge>;
+  return (
+    <li>
+      <Card className="overflow-hidden">
+        <details className="group" open={open}>
+          <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Invoice #{inv.number}</span>
+              <span className="block text-xs text-muted">{inv.issuedAt.slice(0, 10)}</span>
+            </span>
+            {status}
+            <span className={cx("font-semibold tabular", inv.totalCents < 0 && "text-success")}>
+              {inv.totalCents < 0 ? "−" : ""}
+              {formatCents(Math.abs(inv.totalCents))}
+            </span>
+          </summary>
+          <ul className="space-y-1.5 border-t border-line px-5 py-3 text-sm">
+            {inv.lines.map((l, i) => (
+              <li key={i} className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">{l.label}</span>
+                <span className={cx("shrink-0 tabular", l.cents < 0 && "text-success")}>
+                  {l.cents < 0 ? "−" : ""}
+                  {formatCents(Math.abs(l.cents))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      </Card>
+    </li>
   );
 }
 

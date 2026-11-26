@@ -1,18 +1,20 @@
 import type { Route } from "./+types/team.money.items-new";
+import { useState } from "react";
 import { data, redirect, useFetcher } from "react-router";
-import { and, eq } from "drizzle-orm";
-import { db, ledgerItems, ledgerTxns } from "~/db";
+import { and, eq, sql } from "drizzle-orm";
+import { db, ledgerItems } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
-import { getMembers, loadBook, memberKey, postTxn } from "~/utils/ledger.server";
-import { FormError, newFormKey, readCents, readClientKey, readMembers, readText } from "~/utils/ledger-forms.server";
-import { CATEGORY_LABELS, ITEM_CATEGORIES, LedgerError, chargeLines, type ItemCategory } from "~/utils/ledger";
-import { allocate } from "~/utils/money";
-import { Choice, MemberChecklist, MoneyField } from "~/components/money";
-import { Alert, Button, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
+import { getMembers, loadBook, memberKey } from "~/utils/ledger.server";
+import { saveShares } from "~/utils/billing.server";
+import { FormError, newFormKey, readCents, readShares, readText } from "~/utils/ledger-forms.server";
+import { CATEGORY_LABELS, FULL_SHARE, ITEM_CATEGORIES, LedgerError, type ItemCategory } from "~/utils/ledger";
+import { parseCents } from "~/utils/money";
+import { ShareEditor } from "~/components/money";
+import { Alert, Button, Card, Page, PageHeader, cx, inputClass, labelClass } from "~/components/ui";
 
 export function meta() {
-  return [{ title: "New charge - BenchTalk" }];
+  return [{ title: "New expense - BenchTalk" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -23,7 +25,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     teamId: team.id,
     formKey: newFormKey(),
-    members: members.map((m) => ({ key: memberKey(m.member), type: m.member.type, label: m.name, detail: m.detail ?? undefined })),
+    members: members.map((m) => ({ key: memberKey(m.member), label: m.name, detail: m.detail ?? undefined })),
   });
 }
 
@@ -33,16 +35,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   try {
     const name = readText(formData, "name", 120);
-    if (!name) throw new FormError("Give it a name, like “Spring ref fees”");
+    if (!name) throw new FormError("Give it a name, like “Surf Cup hotel”");
     const categoryRaw = String(formData.get("category") ?? "other");
     const category: ItemCategory = (ITEM_CATEGORIES as readonly string[]).includes(categoryRaw) ? (categoryRaw as ItemCategory) : "other";
     const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(formData.get("dueDate"))) ? String(formData.get("dueDate")) : null;
-    const members = readMembers(formData);
-    if (members.length === 0) throw new FormError("Pick who pays it");
-    const cents = readCents(formData, "cents");
-    const split = formData.get("mode") === "split";
-    const amounts = split ? allocate(cents, members.map(() => 1)) : members.map(() => cents);
-    if (amounts.some((a) => a === 0)) throw new FormError("That total is too small to split between that many people");
+    const mode = formData.get("mode") === "fixed" ? "fixed" : "split";
+    const totalCents = mode === "split" ? readCents(formData, "total", "the total") : null;
+    const shares = readShares(formData, mode);
+    if (shares.length === 0) throw new FormError("Pick who shares it");
+
+    // A double submit: the same person made the same expense a moment ago
+    const [recent] = await db
+      .select({ id: ledgerItems.id })
+      .from(ledgerItems)
+      .where(and(eq(ledgerItems.teamId, team.id), eq(ledgerItems.name, name), eq(ledgerItems.createdBy, user.id), sql`${ledgerItems.createdAt} > datetime('now', '-30 seconds')`))
+      .limit(1);
+    if (recent) return redirect(`/dashboard/team/${team.id}/finances/items/${recent.id}`);
 
     const [item] = await db
       .insert(ledgerItems)
@@ -53,30 +61,18 @@ export async function action({ request, params }: Route.ActionArgs) {
         details: readText(formData, "details", 1000),
         refundable: formData.get("refundable") === "1",
         dueDate,
+        shareMode: mode,
+        totalCents,
+        rounding: formData.get("rounding") === "dollar" ? "dollar" : "cent",
         createdBy: user.id,
       })
       .returning({ id: ledgerItems.id });
-
-    let posted: Awaited<ReturnType<typeof postTxn>>;
     try {
-      posted = await postTxn({
-        teamId: team.id,
-        kind: "charge",
-        itemId: item.id,
-        lines: chargeLines(item.id, members.map((m, i) => ({ member: m, cents: amounts[i] }))),
-        createdBy: user.id,
-        clientKey: readClientKey(formData),
-      });
+      await saveShares(team.id, item.id, shares);
     } catch (e) {
-      // Nothing points at the new item yet, so take it back out
+      // Nothing points at it yet, so take it back out
       await db.delete(ledgerItems).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
       throw e;
-    }
-    if (posted.duplicate) {
-      // A double submit: the first one already made the item and its charges
-      await db.delete(ledgerItems).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
-      const [first] = await db.select({ itemId: ledgerTxns.itemId }).from(ledgerTxns).where(eq(ledgerTxns.id, posted.txnId)).limit(1);
-      return redirect(`/dashboard/team/${team.id}/finances${first?.itemId ? `/items/${first.itemId}` : ""}`);
     }
     return redirect(`/dashboard/team/${team.id}/finances/items/${item.id}`);
   } catch (e) {
@@ -85,17 +81,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 }
 
-export default function NewCharge({ loaderData }: Route.ComponentProps) {
+export default function NewExpense({ loaderData }: Route.ComponentProps) {
   const { teamId, formKey, members } = loaderData;
   const fetcher = useFetcher<{ error?: string }>();
   const busy = fetcher.state !== "idle";
+  const [mode, setMode] = useState<"split" | "fixed">("split");
+  const [total, setTotal] = useState("");
+  const [rounding, setRounding] = useState<"cent" | "dollar">("dollar");
 
   return (
     <Page width="narrow">
-      <PageHeader back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }} title="New charge" description="What it's for, who pays it and how much." />
+      <PageHeader back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }} title="New expense" description="What it's for, what it costs and who shares it. Families see their share once you send invoices." />
 
       <fetcher.Form method="post" className="space-y-6">
-        <input type="hidden" name="clientKey" value={`${formKey}:charge`} />
+        <input type="hidden" name="clientKey" value={`${formKey}:expense`} />
         {fetcher.data?.error && <Alert>{fetcher.data.error}</Alert>}
 
         <Card className="space-y-4 p-5">
@@ -123,37 +122,78 @@ export default function NewCharge({ loaderData }: Route.ComponentProps) {
             <label htmlFor="details" className={labelClass}>
               Details for families <span className="font-normal text-muted">(optional)</span>
             </label>
-            <textarea id="details" name="details" rows={2} maxLength={1000} className={cx(inputClass, "h-auto min-h-16 py-2.5")} placeholder="Two nights at the Hilton, split by player" />
+            <textarea id="details" name="details" rows={2} maxLength={1000} className={cx(inputClass, "h-auto min-h-16 py-2.5")} placeholder="Entry fee plus the $400 referee deposit" />
           </div>
           <label className="flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 ring-line transition hover:bg-surface-2 has-[:checked]:bg-primary-soft has-[:checked]:ring-primary">
             <input type="checkbox" name="refundable" value="1" className="mt-0.5" />
             <span>
               <span className="block text-sm font-semibold">Refundable</span>
-              <span className="block text-sm text-muted">Money can come back to families from it, like a hotel deposit or a cancelled tournament.</span>
+              <span className="block text-sm text-muted">Money can come back from it, like a referee deposit or a cancelled tournament.</span>
             </span>
           </label>
         </Card>
 
         <Card className="space-y-4 p-5">
-          <p className="font-semibold">Who pays</p>
-          <MemberChecklist options={members} defaultChecked={(o) => o.key.startsWith("player:")} />
-          <p className={hintClass}>Players stand for their families. Tick staff to charge them their own share.</p>
+          <fieldset className="space-y-2">
+            <legend className="mb-2 font-semibold">How it's shared</legend>
+            {(
+              [
+                { value: "split", label: "Split a total", hint: "A full or half share each. People added later pay the same share." },
+                { value: "fixed", label: "Each person's own amount", hint: "Like a merch order, where everyone owes something different." },
+              ] as const
+            ).map((o) => (
+              <label key={o.value} className="flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 ring-line transition hover:bg-surface-2 has-[:checked]:bg-primary-soft has-[:checked]:ring-primary">
+                <input type="radio" name="mode" value={o.value} checked={mode === o.value} onChange={() => setMode(o.value)} className="mt-0.5" />
+                <span>
+                  <span className="block text-sm font-semibold">{o.label}</span>
+                  <span className="block text-sm text-muted">{o.hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {mode === "split" && (
+            <>
+              <div>
+                <label htmlFor="total" className={labelClass}>Total</label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted" aria-hidden>$</span>
+                  <input
+                    id="total"
+                    name="total"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    required
+                    value={total}
+                    onChange={(e) => setTotal(e.target.value)}
+                    placeholder="0.00"
+                    className={cx(inputClass, "pl-7 tabular")}
+                  />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input type="checkbox" name="rounding" value="dollar" checked={rounding === "dollar"} onChange={(e) => setRounding(e.target.checked ? "dollar" : "cent")} className="mt-0.5" />
+                <span className="text-sm">
+                  <span className="block font-semibold">Round shares up to the dollar</span>
+                  <span className="block text-muted">$116 instead of $115.79. The few extra dollars come back when you settle up.</span>
+                </span>
+              </label>
+            </>
+          )}
         </Card>
 
-        <Card className="space-y-4 p-5">
-          <Choice
-            name="mode"
-            defaultValue="each"
-            options={[
-              { value: "each", label: "Each person pays this amount" },
-              { value: "split", label: "Split this total evenly", hint: "Shares always add up to the total: any odd cents go to the first few people." },
-            ]}
+        <Card className="space-y-3 p-5">
+          <p className="font-semibold">Who shares it</p>
+          <ShareEditor
+            key={mode}
+            mode={mode}
+            totalCents={mode === "split" ? parseCents(total) : null}
+            rounding={rounding}
+            options={members.map((m) => ({ ...m, checked: m.key.startsWith("player:"), weight: FULL_SHARE, fixedCents: null }))}
           />
-          <MoneyField name="cents" label="Amount" />
         </Card>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Charge it"}</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Add expense"}</Button>
         </div>
       </fetcher.Form>
     </Page>

@@ -8,7 +8,7 @@
 // Sign: a positive line is a debit. What each account's balance means:
 //   player  (one per player)       > 0 the family owes the team, < 0 the team owes them
 //   staff   (one per staff member) > 0 they owe the team (their own share), < 0 the team owes them (fronted)
-//   item    (one per line item)    < 0 charged and not yet passed on to whoever it's for
+//   item    (one per expense)      < 0 billed to people and not yet paid out to whoever it's for
 //   fund    (team fund, savings)   < 0 money in the fund
 //   cash    (one per team)         > 0 money the team holds (Venmo, cash, checks)
 
@@ -35,6 +35,8 @@ export const TXN_KINDS = [
   "refund", // the team pays a member back what they're owed
   "vendor_refund", // whoever an item was for sends money back to the team
   "reversal", // undoes another transaction exactly
+  "adjust", // someone's share of an expense changed after it was first billed (joined, left, half to full)
+  "settle", // an expense closed: shares re-split on what was really paid out
 ] as const;
 export type TxnKind = (typeof TXN_KINDS)[number];
 
@@ -51,6 +53,24 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
 export const PAYMENT_METHODS = ["venmo", "cash", "check", "other"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export const METHOD_LABELS: Record<PaymentMethod, string> = { venmo: "Venmo", cash: "Cash", check: "Check", other: "Other" };
+
+// How staff read each kind in activity and undo messages. "Charge" is kept for
+// a card actually being charged, which the app doesn't do yet.
+export const KIND_LABELS: Record<TxnKind, string> = {
+  charge: "share",
+  payment: "payment",
+  cover: "covered by a fund",
+  donation: "money in",
+  transfer: "move between funds",
+  expense: "paid out",
+  reimburse: "paid back",
+  credit: "refund owed",
+  refund: "refund",
+  vendor_refund: "refund received",
+  reversal: "undo",
+  adjust: "share change",
+  settle: "settle-up",
+};
 
 export class LedgerError extends Error {}
 
@@ -190,6 +210,122 @@ export function vendorRefundLines(itemId: number, cents: Cents): Line[] {
   return [{ account: CASH, cents }, { account: { type: "item", id: itemId }, cents: -cents }];
 }
 
+// ---------------------------------------------------------------------------
+// Expenses and shares. Who shares an expense is a list that can change; what
+// each person should be billed comes from it, and only the difference from what
+// was already billed is ever posted (on the next invoice). Running it twice
+// posts nothing the second time.
+//
+// Weights are whole numbers so splits stay exact: 2 is a full share, 1 a half.
+
+export const FULL_SHARE = 2;
+export type Rounding = "cent" | "dollar";
+export type ExpenseSpec = {
+  mode: "split" | "fixed";
+  totalCents: Cents | null;
+  rounding: Rounding;
+  unitCents: Cents | null; // A full share's price, fixed when it was first invoiced
+};
+export type ShareSpec = { member: Member; weight: number; fixedCents: Cents | null };
+export type MemberCents = { member: Member; cents: Cents };
+
+const memberKeyOf = (m: Member) => `${m.type}:${m.id}`;
+
+function round(raw: number, rounding: Rounding): Cents {
+  // Up to the next whole dollar, or to the nearest cent. The 1e-9 keeps an
+  // exact dollar (11600.0000001 from float division) from rounding up a dollar.
+  return rounding === "dollar" ? Math.ceil(raw / 100 - 1e-9) * 100 : Math.round(raw);
+}
+
+// A full share's price: the total over the shares, rounded the expense's way
+export function unitPrice(totalCents: Cents, totalWeight: number, rounding: Rounding): Cents {
+  positive(totalCents, "The total");
+  if (!Number.isInteger(totalWeight) || totalWeight <= 0) throw new LedgerError("Pick at least one person to share it");
+  return round((totalCents * FULL_SHARE) / totalWeight, rounding);
+}
+
+export function shareAmount(unitCents: Cents, weight: number, rounding: Rounding): Cents {
+  return round((unitCents * weight) / FULL_SHARE, rounding);
+}
+
+// What each person on an expense should be billed in all, right now
+export function shareTargets(spec: ExpenseSpec, shares: ShareSpec[]): MemberCents[] {
+  for (const s of shares) {
+    if (!Number.isInteger(s.weight) || s.weight < 1 || s.weight > 20) throw new LedgerError("Each share must be a half, a full share or more");
+  }
+  if (spec.mode === "fixed") {
+    return shares.map((s) => {
+      if (s.fixedCents === null || !isCents(s.fixedCents) || s.fixedCents < 0) throw new LedgerError("Each person needs an amount");
+      return { member: s.member, cents: s.fixedCents };
+    });
+  }
+  if (shares.length === 0) return [];
+  if (spec.totalCents === null) throw new LedgerError("A split expense needs a total");
+  const unit = spec.unitCents ?? unitPrice(spec.totalCents, shares.reduce((a, s) => a + s.weight, 0), spec.rounding);
+  return shares.map((s) => ({ member: s.member, cents: shareAmount(unit, s.weight, spec.rounding) }));
+}
+
+// Each person's target less what they've already been billed for this expense.
+// Someone no longer sharing it has a target of zero.
+export function shareChanges(targets: MemberCents[], billed: MemberCents[]): MemberCents[] {
+  const out = new Map<string, MemberCents>();
+  for (const b of billed) out.set(memberKeyOf(b.member), { member: b.member, cents: -b.cents });
+  for (const t of targets) {
+    const key = memberKeyOf(t.member);
+    out.set(key, { member: t.member, cents: (out.get(key)?.cents ?? 0) + t.cents });
+  }
+  return [...out.values()].filter((c) => c.cents !== 0);
+}
+
+// Posts share changes: up adds to what someone owes, down takes it off
+export function shareLines(itemId: number, changes: MemberCents[]): Line[] {
+  const lines = tidy([
+    ...changes.map((c) => ({ account: member(c.member), cents: c.cents })),
+    { account: { type: "item", id: itemId } as Account, cents: -sumCents(changes.map((c) => c.cents)) },
+  ]);
+  if (lines.length < 2) throw new LedgerError("Nothing changed");
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Families and invoices
+
+// Players who share a contact email or a parent account are one family, and
+// get one invoice. Linked through any chain, so two brothers listed under mom's
+// email and dad's both land together.
+export function groupFamilies(playerIds: number[], links: { playerId: number; key: string }[]): number[][] {
+  const parent = new Map<number, number>(playerIds.map((id) => [id, id]));
+  const find = (id: number): number => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(id, root);
+    return root;
+  };
+  const firstWithKey = new Map<string, number>();
+  for (const { playerId, key } of links) {
+    if (!parent.has(playerId)) continue;
+    const other = firstWithKey.get(key);
+    if (other === undefined) firstWithKey.set(key, playerId);
+    else parent.set(find(playerId), find(other));
+  }
+  const groups = new Map<number, number[]>();
+  for (const id of playerIds) groups.set(find(id), [...(groups.get(find(id)) ?? []), id]);
+  return [...groups.values()].map((g) => g.sort((a, b) => a - b)).sort((a, b) => a[0] - b[0]);
+}
+
+// Money a family has paid in, applied to their invoices oldest first. An
+// invoice that comes to less than zero (a fund covered a share, a refund) pays
+// toward the others the same way.
+export function invoiceStatuses(invoices: { id: number; totalCents: Cents }[], paidIn: Cents) {
+  let pool = paidIn + sumCents(invoices.map((i) => Math.max(0, -i.totalCents)));
+  return invoices.map((inv) => {
+    const due = Math.max(0, inv.totalCents);
+    const paid = Math.max(0, Math.min(due, pool));
+    pool -= paid;
+    return { id: inv.id, paid, remaining: due - paid };
+  });
+}
+
 export function reversalLines(lines: Line[]): Line[] {
   return lines.map((l) => ({ account: l.account, cents: -l.cents }));
 }
@@ -269,7 +405,7 @@ export function statement(lines: MemberLine[]): Statement {
 
   let pool = 0; // credits not tied to an item, minus money paid back out
   for (const l of live) {
-    if (l.itemId !== null && l.kind === "charge") status(l.itemId).charged += l.cents;
+    if (l.itemId !== null && (l.kind === "charge" || l.kind === "adjust" || l.kind === "settle")) status(l.itemId).charged += l.cents;
     else if (l.itemId !== null && l.kind === "cover") status(l.itemId).covered -= l.cents;
     else if (l.itemId !== null && l.kind === "credit") status(l.itemId).credited -= l.cents;
     else pool -= l.cents; // payments, refunds paid out, donations of credit

@@ -751,10 +751,85 @@ export const ledgerItems = sqliteTable('ledger_items', {
   // Money can come back to families from it (a hotel deposit, a cancelled tournament)
   refundable: integer('refundable', { mode: 'boolean' }).notNull().default(false),
   dueDate: text('due_date'), // YYYY-MM-DD
+  // How shares are worked out (ledgerShares holds who): 'split' divides totalCents
+  // by weight, 'fixed' gives each person their own amount. Null on items made
+  // before shares existed, which were charged directly.
+  shareMode: text('share_mode', { enum: ['split', 'fixed'] }),
+  totalCents: integer('total_cents'), // The expense's total, for split
+  rounding: text('rounding', { enum: ['cent', 'dollar'] }).notNull().default('cent'),
+  // Price of a full share, fixed on the first invoice so later joiners pay the same
+  unitCents: integer('unit_cents'),
+  settledAt: text('settled_at'), // Closed and settled: shares re-split on what was really paid out
+  settledBy: integer('settled_by').references(() => users.id),
   createdBy: integer('created_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('ledger_items_team_idx').on(t.teamId)]);
+
+// Who shares an expense. Weight 2 is a full share and 1 a half (integers, so
+// splits stay exact); fixedCents is the person's own amount on a 'fixed'
+// expense. Editable: nothing reaches anyone's account until it's invoiced.
+export const ledgerShares = sqliteTable('ledger_shares', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  itemId: integer('item_id').notNull().references(() => ledgerItems.id),
+  playerId: integer('player_id').references(() => players.id),
+  userId: integer('user_id').references(() => users.id), // A staff member's own share
+  weight: integer('weight').notNull().default(2),
+  fixedCents: integer('fixed_cents'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('ledger_shares_item_idx').on(t.itemId),
+  uniqueIndex('ledger_shares_item_player_idx').on(t.itemId, t.playerId),
+  uniqueIndex('ledger_shares_item_user_idx').on(t.itemId, t.userId),
+]);
+
+// One family's bill: every share, change and cover not yet on an invoice, for
+// all their kids. Never edited; anything later goes on the next one.
+export const ledgerInvoices = sqliteTable('ledger_invoices', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  number: integer('number').notNull(), // Per team: 1, 2, 3...
+  familyKey: text('family_key').notNull(), // "players:3,7" or "staff:12", as sent
+  familyName: text('family_name').notNull(), // Snapshot, e.g. "Jacob & Benjamin McCutcheon"
+  totalCents: integer('total_cents').notNull(),
+  issuedBy: integer('issued_by').notNull().references(() => users.id),
+  issuedAt: text('issued_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  clientKey: text('client_key').notNull(),
+}, (t) => [
+  index('ledger_invoices_team_idx').on(t.teamId, t.id),
+  uniqueIndex('ledger_invoices_number_idx').on(t.teamId, t.number),
+  uniqueIndex('ledger_invoices_client_key_idx').on(t.teamId, t.clientKey),
+]);
+
+// What an invoice says, line by line, as it was when sent. Each ledger entry
+// goes on one invoice at most.
+export const ledgerInvoiceLines = sqliteTable('ledger_invoice_lines', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  invoiceId: integer('invoice_id').notNull().references(() => ledgerInvoices.id),
+  entryId: integer('entry_id').notNull().references(() => ledgerEntries.id),
+  playerId: integer('player_id').references(() => players.id),
+  userId: integer('user_id').references(() => users.id),
+  itemId: integer('item_id').references(() => ledgerItems.id),
+  label: text('label').notNull(), // "Your share of Quartz Hill Kickmas (Jacob)"
+  cents: integer('cents').notNull(),
+}, (t) => [
+  index('ledger_invoice_lines_invoice_idx').on(t.invoiceId),
+  uniqueIndex('ledger_invoice_lines_entry_idx').on(t.entryId),
+  index('ledger_invoice_lines_player_idx').on(t.playerId),
+]);
+
+// Games and practices an expense is for (a tournament is several games). Optional.
+export const ledgerItemEvents = sqliteTable('ledger_item_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id),
+  itemId: integer('item_id').notNull().references(() => ledgerItems.id),
+  eventType: text('event_type', { enum: ['game', 'practice'] }).notNull(),
+  eventId: integer('event_id').notNull(),
+}, (t) => [
+  uniqueIndex('ledger_item_events_idx').on(t.itemId, t.eventType, t.eventId),
+  index('ledger_item_events_event_idx').on(t.teamId, t.eventType, t.eventId),
+]);
 
 // The team fund, and any others (savings). Families see a fund's balance
 // unless the team hides it.
@@ -770,7 +845,7 @@ export const ledgerTxns = sqliteTable('ledger_txns', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teamId: integer('team_id').notNull().references(() => teams.id),
   kind: text('kind', {
-    enum: ['charge', 'payment', 'cover', 'donation', 'transfer', 'expense', 'reimburse', 'credit', 'refund', 'vendor_refund', 'reversal'],
+    enum: ['charge', 'payment', 'cover', 'donation', 'transfer', 'expense', 'reimburse', 'credit', 'refund', 'vendor_refund', 'reversal', 'adjust', 'settle'],
   }).notNull(),
   itemId: integer('item_id').references(() => ledgerItems.id), // What it was for
   fundId: integer('fund_id').references(() => ledgerFunds.id),
@@ -836,3 +911,6 @@ export type LedgerItem = typeof ledgerItems.$inferSelect;
 export type LedgerFund = typeof ledgerFunds.$inferSelect;
 export type LedgerTxn = typeof ledgerTxns.$inferSelect;
 export type LedgerClaim = typeof ledgerClaims.$inferSelect;
+export type LedgerShare = typeof ledgerShares.$inferSelect;
+export type LedgerInvoice = typeof ledgerInvoices.$inferSelect;
+export type LedgerInvoiceLine = typeof ledgerInvoiceLines.$inferSelect;

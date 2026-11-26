@@ -134,6 +134,13 @@
       "when": 1795708918166,
       "tag": "0018_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795723653673,
+      "tag": "0019_finances_shares_invoices",
+      "breakpoints": true
     }
   ]
 }
