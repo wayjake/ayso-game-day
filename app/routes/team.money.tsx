@@ -23,13 +23,13 @@ import {
 } from "~/utils/ledger.server";
 import { newFormKey, readCents, readClientKey, readDate, readId, readMethod, runLedgerAction } from "~/utils/ledger-forms.server";
 import { CATEGORY_LABELS, METHOD_LABELS } from "~/utils/ledger";
-import { sumCents } from "~/utils/money";
+import { formatCents, sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx, inputClass, labelClass, hintClass } from "~/components/ui";
 import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
-import { invoicePreview, shareTotals } from "~/utils/billing.server";
+import { invoicePreview, pendingShareChanges, shareTotals } from "~/utils/billing.server";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 
@@ -48,6 +48,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const activity = describeBook(book, names).reverse().slice(0, 30);
   const playerName = new Map(members.filter((m) => m.member.type === "player").map((m) => [m.member.id, m.name]));
 
+  // Shares not invoiced yet still count as owed, marked as such
+  const pending = await pendingShareChanges(db, team.id);
+  const pendingByItem = new Map(pending.map((p) => [p.item.id, sumCents(p.changes.map((c) => c.cents))]));
+  const pendingByMember = new Map<string, number>();
+  for (const p of pending) for (const c of p.changes) pendingByMember.set(memberKey(c.member), (pendingByMember.get(memberKey(c.member)) ?? 0) + c.cents);
   const players = members.filter((m) => m.member.type === "player");
   const staff = members.filter((m) => m.member.type === "staff");
   return data({
@@ -60,15 +65,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     funds: funds.map((f) => ({ id: f.id, name: f.name, visible: f.visibleToFamilies, balance: held.fund(f.id) })),
     totals: {
       owedToTeam: sumCents(members.map((m) => m.statement.owed)),
+      notInvoiced: sumCents([...pendingByMember.values()].filter((c) => c > 0)),
       dueBackToFamilies: sumCents(players.map((m) => m.statement.dueBack)),
       owedToStaff: sumCents(staff.map((m) => m.statement.dueBack)),
     },
     items: await shareTotals(team.id).then((totals) =>
-      summarizeItems(book, items, members).map((s) => ({ ...s, total: s.item.shareMode === "split" ? s.item.totalCents ?? 0 : totals.get(s.item.id) ?? s.charged }))
+      summarizeItems(book, items, members).map((s) => ({
+        ...s,
+        total: s.item.shareMode === "split" ? s.item.totalCents ?? 0 : totals.get(s.item.id) ?? s.charged,
+        notInvoiced: pendingByItem.get(s.item.id) ?? 0,
+      }))
     ),
     people: members
       .filter((m) => m.onTeam || m.statement.balance !== 0)
-      .map((m) => ({ key: memberKey(m.member), type: m.member.type, id: m.member.id, name: m.name, detail: m.detail, balance: m.statement.balance })),
+      .map((m) => ({
+        key: memberKey(m.member),
+        type: m.member.type,
+        id: m.member.id,
+        name: m.name,
+        detail: m.detail,
+        balance: m.statement.balance,
+        notInvoiced: pendingByMember.get(memberKey(m.member)) ?? 0,
+      })),
     claims: claims.map((c) => ({ ...c, forNames: c.playerIds.map((id) => playerName.get(id) ?? "a player") })),
     toInvoice: await invoicePreview(team.id).then((p) => ({ families: p.drafts.length, totalCents: p.totalCents })),
     activity,
@@ -157,8 +175,22 @@ export default function Money({ loaderData }: Route.ComponentProps) {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Team holds" cents={cash} hint="Collected on Venmo, in cash or by check, less what's been paid out" icon={<Bank size={18} />} />
-        <Stat label="Owed to the team" cents={totals.owedToTeam} hint="On invoices, not paid yet" icon={<HandCoins size={18} />} />
+        <Stat
+          label="Team balance"
+          cents={cash - totals.owedToStaff - totals.dueBackToFamilies}
+          hint={
+            totals.owedToStaff || totals.dueBackToFamilies
+              ? `${formatCents(cash)} held, less ${[totals.owedToStaff ? `${formatCents(totals.owedToStaff)} staff fronted` : "", totals.dueBackToFamilies ? `${formatCents(totals.dueBackToFamilies)} due back to families` : ""].filter(Boolean).join(" and ")}`
+              : "Collected, less what's been paid out"
+          }
+          icon={<Bank size={18} />}
+        />
+        <Stat
+          label="Owed to the team"
+          cents={totals.owedToTeam + totals.notInvoiced}
+          hint={totals.notInvoiced ? `${formatCents(totals.notInvoiced)} not invoiced yet` : "On invoices, not paid yet"}
+          icon={<HandCoins size={18} />}
+        />
         <Stat label="Due back to families" cents={totals.dueBackToFamilies} icon={<Receipt size={18} />} />
         <Stat label="Owed to staff" cents={totals.owedToStaff} hint="Money staff fronted" icon={<CurrencyDollar size={18} />} />
       </div>
@@ -227,9 +259,10 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         </div>
                         <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
                           <Figure label="Collected" cents={s.collected} />
-                          <Figure label="Still owed" cents={s.stillOwed} />
+                          <Figure label="Still owed" cents={s.stillOwed + Math.max(0, s.notInvoiced)} />
                           <Figure label="Paid out" cents={s.passedOn} />
                         </dl>
+                        {s.notInvoiced > 0 && <p className="mt-1 text-xs text-warning">{formatCents(s.notInvoiced)} not invoiced yet</p>}
                       </Link>
                     </li>
                   );
@@ -301,7 +334,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         {p.name}
                         {p.detail && <span className="ml-1.5 text-muted">{p.detail}</span>}
                       </span>
-                      <Balance cents={p.balance} />
+                      <Balance cents={p.balance + p.notInvoiced} note={p.notInvoiced ? "not invoiced" : undefined} />
                     </Link>
                   </li>
                 ))}

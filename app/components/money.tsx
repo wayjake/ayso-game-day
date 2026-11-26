@@ -422,11 +422,12 @@ export function memberLineText(row: { kind: TxnKind; cents: Cents; itemName: str
 
 
 // > 0 owes, < 0 is owed
-export function Balance({ cents }: { cents: number }) {
+// `note`: e.g. "not invoiced" when part of it hasn't been invoiced yet
+export function Balance({ cents, note }: { cents: number; note?: string }) {
   if (cents === 0) return <span className="text-muted">Settled</span>;
   return cents > 0 ? (
     <span className="text-right">
-      <Amount cents={cents} tone="owed" className="font-semibold" /> <span className="text-xs text-muted">owes</span>
+      <Amount cents={cents} tone="owed" className="font-semibold" /> <span className="text-xs text-muted">{note ? `owes · ${note}` : "owes"}</span>
     </span>
   ) : (
     <span className="text-right">

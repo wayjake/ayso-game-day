@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "What's owed, before you invoice",
+    summary: "Finances shows what families owe as soon as you add an expense, and whether the team is ahead or behind.",
+    changes: [
+      { kind: "improved", text: "Coaches: Still owed, Owed to the team and each person's balance now count shares you haven't invoiced yet, marked \"not invoiced\", instead of showing $0 or Settled." },
+      { kind: "improved", text: "Team balance replaces Team holds: money held less what the team owes staff who fronted payments and families due a refund. Pay a tournament yourself and it shows the team below zero until families pay." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Fees, receipts and one family at a time",
     summary: "Record a card fee with what you paid, keep the receipt with the expense, and send one family their invoice from their page.",
     changes: [
