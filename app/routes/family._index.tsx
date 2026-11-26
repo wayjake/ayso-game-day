@@ -9,10 +9,12 @@ import { sendPush, isPushConfigured } from "~/utils/push.server";
 import { formatGameDate, formatGameTime, formatTimeRange, relativeGameDay, todayISO } from "~/utils/dates";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { getFamilyMoney, type FamilyTeamMoney } from "~/utils/ledger.server";
+import { familySharesByGame } from "~/utils/billing.server";
+import { formatCents } from "~/utils/money";
 import { MoneyCard } from "~/components/money";
 import { familyTasks } from "~/utils/tasks.server";
 import { Alert, Badge, Card, DateTile, EmptyState, HomeAwayBadge, PlayerAvatar, buttonClass, cx } from "~/components/ui";
-import { Bell, CalendarBlank, CaretRight, Clock, ListChecks, MapPin, Note, Sneaker, SoccerBall } from "@phosphor-icons/react";
+import { Bell, CalendarBlank, CaretRight, Clock, Coins, ListChecks, MapPin, Note, Sneaker, SoccerBall } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -35,6 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     suggestPush: isPushConfigured() && !sub,
     openTasks: (await familyTasks(kids)).filter((t) => t.state === "open").length,
     money: summarizeMoney(await getFamilyMoney(user.id, kids)),
+    shares: await familySharesByGame(kids),
   });
 }
 
@@ -88,7 +91,7 @@ function summarizeMoney(teams: FamilyTeamMoney[]) {
 }
 
 export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
-  const { kids, events, answers, today, firstName, suggestPush, openTasks, money } = loaderData;
+  const { kids, events, answers, today, firstName, suggestPush, openTasks, money, shares } = loaderData;
   const [params] = useSearchParams();
   const multipleTeams = new Set(kids.map((k) => k.teamId)).size > 1;
 
@@ -160,6 +163,7 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
               answers={answers}
               today={today}
               showTeam={multipleTeams}
+              shares={shares[event.key]}
             />
           ))}
         </ul>
@@ -178,12 +182,14 @@ function EventCard({
   answers,
   today,
   showTeam,
+  shares,
 }: {
   event: ScheduleEvent;
   kids: LoaderData["kids"];
   answers: LoaderData["answers"];
   today: string;
   showTeam: boolean;
+  shares?: { name: string; cents: number }[];
 }) {
   const soon = relativeGameDay(event.date, today);
   const isGame = event.type === "game";
@@ -227,6 +233,12 @@ function EventCard({
                 <span className="whitespace-pre-line">{event.notes}</span>
               </p>
             )}
+            {shares?.map((sh) => (
+              <Link key={sh.name} to="/family/finances" {...navMotion("tab")} className="mt-1.5 flex items-center gap-1.5 text-sm text-muted hover:underline">
+                <Coins size={16} className="shrink-0 text-subtle" />
+                Your share of {sh.name}: <span className="font-semibold text-ink">{formatCents(sh.cents)}</span>
+              </Link>
+            ))}
           </div>
         </div>
 
