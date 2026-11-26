@@ -14,7 +14,8 @@ import { cx } from "~/components/ui";
 // are untouched. Everything comes from useNavigation(), with no state of its
 // own, so it can't get stuck after a redirect, an error or a cancel.
 
-export type SkeletonKind = "overview" | "events" | "people" | "chats" | "feed" | "form";
+/** "inbox" is the coach Messages workspace (a list column and a pane from lg); "chats" is the family's plain list */
+export type SkeletonKind = "overview" | "events" | "people" | "chats" | "inbox" | "feed" | "form";
 
 export type TransitionTab = {
   to: string;
@@ -119,6 +120,94 @@ function Rows({ count, lead }: { count: number; lead: "date" | "avatar" }) {
   );
 }
 
+// The Inbox | Announcements switch, Inbox picked
+function Switch({ className }: { className?: string }) {
+  return (
+    <div className={cx("grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1 ring-1 ring-line", className)}>
+      <div className="flex h-9 items-center justify-center rounded-lg bg-surface shadow-card ring-1 ring-line">
+        <Bar className="h-3 w-12" />
+      </div>
+      <div className="flex h-9 items-center justify-center">
+        <Bar className="h-3 w-24" />
+      </div>
+    </div>
+  );
+}
+
+function Pills({ widths, className }: { widths: string[]; className?: string }) {
+  return (
+    <div className={cx("flex gap-1.5", className)}>
+      {widths.map((w, i) => (
+        <div key={i} className={cx("skeleton-bar rounded-full", w)} />
+      ))}
+    </div>
+  );
+}
+
+// Coach Messages (team.messages.tsx): on phones the list as its own screen; from
+// lg the list column on the left and "Pick a conversation" beside it
+function Inbox() {
+  return (
+    <>
+      <div className="lg:hidden">
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <Bar className="h-8 w-40" />
+          <Box className="h-11 w-40" />
+        </div>
+        <Switch className="mb-6" />
+        <Pills widths={["h-9 w-14", "h-9 w-28"]} className="mb-3 gap-2" />
+        <Rows count={5} lead="avatar" />
+      </div>
+
+      <div className="hidden h-full lg:flex">
+        <div className="flex w-[340px] shrink-0 flex-col border-r border-line bg-surface">
+          <div className="border-b border-line px-4 pt-4 pb-3">
+            <div className="mb-3 flex h-9 items-center justify-between">
+              <Bar className="h-6 w-32" />
+              <Box className="h-9 w-24" />
+            </div>
+            <Switch className="mb-3" />
+            <Box className="mb-3 h-9 w-full rounded-lg" />
+            <Pills widths={["h-7 w-10", "h-7 w-24", "h-7 w-20", "h-7 w-20"]} />
+          </div>
+          <div className="divide-y divide-line overflow-hidden">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <div className="skeleton-bar h-10 w-10 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <Bar className={i % 2 ? "w-1/2" : "w-2/3"} />
+                  <Bar className={cx("h-3", i % 3 ? "w-3/4" : "w-5/6")} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="mx-auto w-full max-w-2xl px-safe pt-10">
+            <div className="mb-8 flex flex-col items-center gap-3">
+              <Box className="h-12 w-12 rounded-2xl" />
+              <Bar className="h-6 w-56" />
+              <Bar className="w-96 max-w-full" />
+            </div>
+            {/* New message, with its people picker */}
+            <Shell className="space-y-4 p-5">
+              <Bar className="h-4 w-32" />
+              <div className="space-y-2">
+                <Bar className="h-3 w-full" />
+                <Bar className="h-3 w-2/3" />
+              </div>
+              <Box className="h-10 w-full rounded-lg" />
+              <Box className="h-40 w-full" />
+              <Box className="h-10 w-40" />
+            </Shell>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function Skeleton({ kind }: { kind: SkeletonKind }) {
   switch (kind) {
     case "overview":
@@ -159,6 +248,8 @@ function Skeleton({ kind }: { kind: SkeletonKind }) {
           <Rows count={5} lead="avatar" />
         </>
       );
+    case "inbox":
+      return <Inbox />;
     case "feed":
       return (
         <>
