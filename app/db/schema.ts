@@ -754,6 +754,8 @@ export const ledgerItems = sqliteTable('ledger_items', {
   details: text('details'), // Shown to families
   // Money can come back to families from it (a hotel deposit, a cancelled tournament)
   refundable: integer('refundable', { mode: 'boolean' }).notNull().default(false),
+  // How much of it can come back (the $400 referee deposit in a $1,100 entry); null is all of it
+  refundableCents: integer('refundable_cents'),
   dueDate: text('due_date'), // YYYY-MM-DD
   // How shares are worked out (ledgerShares holds who): 'split' divides totalCents
   // by weight, 'fixed' gives each person their own amount. Null on items made
@@ -823,6 +825,25 @@ export const ledgerInvoiceLines = sqliteTable('ledger_invoice_lines', {
   index('ledger_invoice_lines_player_idx').on(t.playerId),
 ]);
 
+// Receipts and invoices kept with an expense, for the records. Staff only;
+// families never see them. Public UploadThing URLs, like the feed: access is
+// checked on the pages that list them.
+export const ledgerItemFiles = sqliteTable('ledger_item_files', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  itemId: text('item_id').notNull().references(() => ledgerItems.id),
+  fileKey: text('file_key').notNull(),
+  url: text('url').notNull(),
+  name: text('name').notNull(),
+  size: integer('size').notNull().default(0),
+  type: text('type').notNull().default(''),
+  uploadedBy: text('uploaded_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('ledger_item_files_item_idx').on(t.itemId),
+  uniqueIndex('ledger_item_files_key_idx').on(t.fileKey),
+]);
+
 // Games and practices an expense is for (a tournament is several games). Optional.
 export const ledgerItemEvents = sqliteTable('ledger_item_events', {
   id: text('id').primaryKey().$defaultFn(() => newId()),
@@ -854,6 +875,8 @@ export const ledgerTxns = sqliteTable('ledger_txns', {
   itemId: text('item_id').references(() => ledgerItems.id), // What it was for
   fundId: text('fund_id').references(() => ledgerFunds.id),
   memo: text('memo'), // Shown to the families on it
+  // Of a payout, the part that was a service or card fee (shown, and part of the cost)
+  feeCents: integer('fee_cents'),
   method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }), // Money that moved outside the app
   // Who the money came from. A payer's name is shown only to that payer and staff,
   // since two households can share a kid.
@@ -916,5 +939,6 @@ export type LedgerFund = typeof ledgerFunds.$inferSelect;
 export type LedgerTxn = typeof ledgerTxns.$inferSelect;
 export type LedgerClaim = typeof ledgerClaims.$inferSelect;
 export type LedgerShare = typeof ledgerShares.$inferSelect;
+export type LedgerItemFile = typeof ledgerItemFiles.$inferSelect;
 export type LedgerInvoice = typeof ledgerInvoices.$inferSelect;
 export type LedgerInvoiceLine = typeof ledgerInvoiceLines.$inferSelect;

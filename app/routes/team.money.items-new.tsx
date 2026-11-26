@@ -9,10 +9,10 @@ import { getMembers, loadBook, memberKey } from "~/utils/ledger.server";
 import { saveExpenseGames, saveShares } from "~/utils/billing.server";
 import { games } from "~/db";
 import { formatGameDate, todayISO } from "~/utils/dates";
-import { FormError, newFormKey, readCents, readShares, readText } from "~/utils/ledger-forms.server";
+import { FormError, newFormKey, readCents, readRefundable, readShares, readText } from "~/utils/ledger-forms.server";
 import { CATEGORY_LABELS, FULL_SHARE, ITEM_CATEGORIES, LedgerError, type ItemCategory } from "~/utils/ledger";
 import { parseCents } from "~/utils/money";
-import { ShareEditor } from "~/components/money";
+import { RefundableField, ShareEditor } from "~/components/money";
 import { Alert, Button, Card, Page, PageHeader, cx, inputClass, labelClass } from "~/components/ui";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
@@ -70,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         name,
         category,
         details: readText(formData, "details", 1000),
-        refundable: formData.get("refundable") === "1",
+        ...readRefundable(formData, totalCents),
         dueDate,
         shareMode: mode,
         totalCents,
@@ -136,13 +136,7 @@ export default function NewExpense({ loaderData }: Route.ComponentProps) {
             </label>
             <textarea id="details" name="details" rows={2} maxLength={1000} className={cx(inputClass, "h-auto min-h-16 py-2.5")} placeholder="Entry fee plus the $400 referee deposit" />
           </div>
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 ring-line transition hover:bg-surface-2 has-[:checked]:bg-primary-soft has-[:checked]:ring-primary">
-            <input type="checkbox" name="refundable" value="1" className="mt-0.5" />
-            <span>
-              <span className="block text-sm font-semibold">Refundable</span>
-              <span className="block text-sm text-muted">Money can come back from it, like a referee deposit or a cancelled tournament.</span>
-            </span>
-          </label>
+          <RefundableField />
         </Card>
 
         <Card className="space-y-4 p-5">

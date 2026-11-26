@@ -13,6 +13,26 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Fees, receipts and one family at a time",
+    summary: "Record a card fee with what you paid, keep the receipt with the expense, and send one family their invoice from their page.",
+    changes: [
+      { kind: "new", text: "Coaches: when you pay a tournament by card, note the service fee. It counts toward what the expense really cost, and before anything's invoiced you can raise the total so families cover it in their share." },
+      { kind: "new", text: "Keep the tournament's receipt or invoice with the expense, as a photo or PDF. Only staff can see them." },
+      { kind: "new", text: "Send one family their invoice from their page, see their invoices there, copy their pay link or email it again." },
+    ],
+  },
+  {
+    date: "2026-11-26",
+    title: "Which part comes back",
+    summary: "A refundable expense now says how much of it can come back, like the referee deposit.",
+    changes: [
+      { kind: "improved", text: "Coaches: when an expense is refundable, say how much of it can come back. Its card reads \"$400 refundable\" instead of marking the whole thing." },
+      { kind: "improved", text: "Families see which part of their share can come back, and that it's shared out when the coach settles up." },
+      { kind: "fixed", text: "Signing in no longer gets stuck going round in circles for people who were signed in before this week's update." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Private links",
     summary: "Links to your team, messages and games no longer give anything away, and you'll need to sign in once.",
     changes: [

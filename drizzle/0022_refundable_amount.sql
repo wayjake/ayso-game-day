@@ -1,0 +1,1 @@
+ALTER TABLE `ledger_items` ADD `refundable_cents` integer;

@@ -87,6 +87,16 @@ export function readShares(formData: FormData, mode: "split" | "fixed"): ShareSp
   });
 }
 
+// The refundable checkbox and how much of it (null: all of it). Never more than the total.
+export function readRefundable(formData: FormData, totalCents: Cents | null) {
+  const refundable = formData.get("refundable") === "1";
+  if (!refundable) return { refundable: false, refundableCents: null };
+  const cents = readOptionalCents(formData, "refundableCents");
+  if (cents !== null && cents <= 0) throw new FormError("Enter how much can come back, or leave it empty if all of it can");
+  if (cents !== null && totalCents !== null && cents > totalCents) throw new FormError("The refundable part can't be more than the total");
+  return { refundable: true, refundableCents: cents !== null && cents === totalCents ? null : cents };
+}
+
 // A fresh key for each render of a page's forms (see LedgerForm)
 export const newFormKey = () => crypto.randomUUID();
 

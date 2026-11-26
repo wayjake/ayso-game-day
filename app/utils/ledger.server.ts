@@ -39,7 +39,7 @@ import {
   type Statement,
   type TxnKind,
 } from "~/utils/ledger";
-import { sumCents, type Cents } from "~/utils/money";
+import { formatCents, sumCents, type Cents } from "~/utils/money";
 import { getTeamStaff } from "~/utils/team-access.server";
 import { todayISO } from "~/utils/dates";
 import { parseIds } from "~/utils/ids";
@@ -151,6 +151,7 @@ export type PostInput = {
   itemId?: string | null;
   fundId?: string | null;
   memo?: string | null;
+  feeCents?: number | null; // A payout's service or card fee (part of the amount)
   method?: PaymentMethod | null;
   payerUserId?: string | null;
   payerName?: string | null;
@@ -227,6 +228,7 @@ export async function postTxnIn(tx: Tx, input: PostInput): Promise<{ txnId: stri
       itemId: input.itemId ?? null,
       fundId: input.fundId ?? null,
       memo: input.memo?.trim() || null,
+      feeCents: input.feeCents && input.feeCents > 0 ? input.feeCents : null,
       method: input.method ?? null,
       payerUserId: input.payerUserId ?? null,
       payerName: input.payerName?.trim() || null,
@@ -504,7 +506,7 @@ export type FamilyTeamMoney = {
   venmoHandle: string | null;
   refCode: string;
   kids: { playerId: string; name: string; statement: Statement }[];
-  items: Pick<LedgerItem, "id" | "name" | "details" | "dueDate" | "refundable" | "category">[];
+  items: Pick<LedgerItem, "id" | "name" | "details" | "dueDate" | "refundable" | "refundableCents" | "totalCents" | "category">[];
   history: FamilyHistoryRow[];
   funds: { id: string; name: string; balance: Cents }[];
   pending: Pick<LedgerClaim, "id" | "cents" | "method" | "createdAt">[];
@@ -602,7 +604,7 @@ export async function getFamilyMoney(userId: string, kids: { playerId: string; n
       venmoHandle: teamRows.find((t) => t.id === teamId)?.venmoHandle ?? null,
       refCode: familyRefCode(teamId, userId),
       kids: kidMoney,
-      items: teamItems.map((i) => ({ id: i.id, name: i.name, details: i.details, dueDate: i.dueDate, refundable: i.refundable, category: i.category })),
+      items: teamItems.map((i) => ({ id: i.id, name: i.name, details: i.details, dueDate: i.dueDate, refundable: i.refundable, refundableCents: i.refundableCents, totalCents: i.totalCents, category: i.category })),
       history,
       funds: visibleFunds.filter((f) => f.teamId === teamId).map((f) => ({ id: f.id, name: f.name, balance: fundTotal.get(f.id) ?? 0 })),
       pending: pending.filter((p) => p.teamId === teamId),
@@ -739,7 +741,7 @@ export function describeBook(
       case "expense":
         text = `Paid out for ${t.itemId ? item : fundOut ? `${names.fund(fundOut.account.id!)} spending` : "team costs"}${
           staffLine ? `, fronted by ${names.member({ type: "staff", id: staffLine.account.id! })}` : ""
-        }`;
+        }${t.feeCents ? ` (includes a ${formatCents(t.feeCents)} fee)` : ""}`;
         break;
       case "reimburse": text = `Paid back ${who}`; break;
       case "credit": text = `Refund on ${item} owed to ${who}`; break;

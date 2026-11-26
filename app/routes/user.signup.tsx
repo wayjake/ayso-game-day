@@ -1,7 +1,7 @@
 import type { Route } from "./+types/user.signup";
 import { Form, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
-import { createUser } from "~/utils/auth.server";
+import { createUser, getUser } from "~/utils/auth.server";
 import { Check } from "@phosphor-icons/react";
 import { Alert, Button, Card, hintClass, inputClass, labelClass } from "~/components/ui";
 
@@ -85,7 +85,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   
   // If already logged in, redirect to dashboard
   if (session.has("userId")) {
-    return redirect("/dashboard");
+    if (await getUser(request, false)) return redirect("/dashboard");
+    // A session whose user can't be found (signed in before ids changed, or a
+    // deleted account): sending it on to the dashboard would bounce straight back
+    // here, so start fresh instead
+    session.unset("userId");
+    session.unset("userEmail");
+    session.unset("userRole");
   }
   
   return data(

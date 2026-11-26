@@ -1,7 +1,7 @@
 import type { Route } from "./+types/user.login";
 import { Form, Link, data, redirect, useSearchParams } from "react-router";
 import { getSession, commitSession } from "~/sessions.server";
-import { authenticateUser, safeRedirect } from "~/utils/auth.server";
+import { authenticateUser, getUser, safeRedirect } from "~/utils/auth.server";
 import { Alert, Button, Card, buttonClass, inputClass, labelClass } from "~/components/ui";
 import { EnvelopeSimple } from "@phosphor-icons/react";
 
@@ -79,7 +79,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // If already logged in, go straight to where they were headed
   if (session.has("userId")) {
-    return redirect(safeRedirect(new URL(request.url).searchParams.get("redirectTo")));
+    if (await getUser(request, false)) return redirect(safeRedirect(new URL(request.url).searchParams.get("redirectTo")));
+    // A session whose user can't be found (signed in before ids changed, or a
+    // deleted account): sending it on to the dashboard would bounce straight back
+    // here, so start fresh instead
+    session.unset("userId");
+    session.unset("userEmail");
+    session.unset("userRole");
   }
 
   return data(
