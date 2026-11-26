@@ -29,7 +29,8 @@ import {
   runLedgerAction,
 } from "~/utils/ledger-forms.server";
 import { FULL_SHARE, LedgerError, donationLines, refundLines, reimburseLines, type Member } from "~/utils/ledger";
-import { getShares, saveShares } from "~/utils/billing.server";
+import { familyFor, getShares, invoicePreview, resendInvoice, saveShares, sendInvoices, teamInvoices } from "~/utils/billing.server";
+import { useState } from "react";
 import { parseCents } from "~/utils/money";
 import { formatCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
@@ -98,9 +99,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     )
     .reverse();
 
+  // This family's invoices, and what their next one would hold
+  const family = await familyFor(team.id, member);
+  const preview = family ? (await invoicePreview(team.id)).drafts.find((d) => d.familyKey === family.key) ?? null : null;
+  const familyKeys = new Set(family?.members.map(memberKey) ?? [memberKey(member)]);
+  const invoices = (await teamInvoices(team.id)).filter(
+    (inv) => (family && inv.familyKey === family.key) || inv.lines.some((l) => l.playerId && familyKeys.has(`player:${l.playerId}`))
+  );
+
   return data({
     teamId: team.id,
     teamCode: team.code,
+    family: family ? { key: family.key, name: family.name, size: family.members.length } : null,
+    preview,
+    invoices,
     member,
     name: me.name,
     detail: me.detail,
@@ -183,6 +195,19 @@ export async function action({ request, params }: Route.ActionArgs) {
         await saveShares(team.id, itemId, [...current, { member, weight, fixedCents }]);
         return;
       }
+      case "sendFamily": {
+        const family = await familyFor(team.id, member);
+        if (!family) throw new LedgerError("They're not on this team any more");
+        const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
+        const sent = await sendInvoices(team.id, user.id, clientKey.slice(0, 60), origin, family.key);
+        if (sent.length === 0) throw new LedgerError("There's nothing new to invoice for them");
+        return;
+      }
+      case "resendInvoice": {
+        const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
+        await resendInvoice(team.id, String(formData.get("invoiceId") ?? ""), user.id, origin);
+        return;
+      }
       case "reverse":
         await reverseTxn(team.id, readId(formData, "txnId"), user.id, clientKey);
         return;
@@ -193,7 +218,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberMoney({ loaderData }: Route.ComponentProps) {
-  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today } = loaderData;
+  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today, family, preview, invoices } = loaderData;
   const base = teamPath(teamCode, "finances");
   const itemName = new Map(items.map((i) => [i.id, i.name]));
   const isStaff = member.type === "staff";
@@ -291,6 +316,8 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
         </div>
 
         <aside className="space-y-3">
+          <FamilyInvoices family={family} preview={preview} invoices={invoices} formKey={formKey} />
+
           <ActionPanel title={isStaff ? "Record money they paid in" : "Record a payment"} hint="Venmo, cash or a check that reached the team." icon={<HandCoins size={18} />} defaultOpen={statement.owed > 0}>
             <LedgerForm intent="payment" formKey={formKey} submitLabel="Record payment">
               <MoneyField name="cents" label="Amount" defaultCents={statement.owed || null} />
@@ -376,5 +403,80 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
         </aside>
       </div>
     </Page>
+  );
+}
+
+type LoaderData = Route.ComponentProps["loaderData"];
+
+// Send just this family's invoice, and their sent ones with the pay link
+function FamilyInvoices({ family, preview, invoices, formKey }: { family: LoaderData["family"]; preview: LoaderData["preview"]; invoices: LoaderData["invoices"]; formKey: string }) {
+  if (!family) return null;
+  return (
+    <Card className="space-y-4 p-5">
+      <div>
+        <h2 className="font-semibold">Invoices</h2>
+        {family.size > 1 && <p className="text-sm text-muted">For the whole family: {family.name}.</p>}
+      </div>
+      {preview ? (
+        <div className="space-y-3 rounded-xl bg-primary-soft p-3 text-sm">
+          <p className="font-semibold">Not invoiced yet: {formatCents(preview.totalCents)}</p>
+          <ul className="space-y-1">
+            {preview.lines.map((l, i) => (
+              <li key={i} className="flex justify-between gap-3 text-muted">
+                <span className="min-w-0">
+                  {l.label}
+                  {family.size > 1 && <span className="text-subtle"> · {l.who.split(" ")[0]}</span>}
+                </span>
+                <Amount cents={l.cents} />
+              </li>
+            ))}
+          </ul>
+          <LedgerForm intent="sendFamily" formKey={formKey} submitLabel="Send their invoice">
+            <p className={hintClass}>Emails it to their parents with a link to pay on Venmo, and notifies them in the app. Only this family.</p>
+          </LedgerForm>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Nothing new to invoice.</p>
+      )}
+      {invoices.length > 0 && (
+        <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+          {invoices.map((inv) => (
+            <li key={inv.id} className="space-y-1.5 px-3 py-2.5 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">Invoice #{inv.number}</span>
+                <span className="tabular font-semibold">{formatCents(inv.totalCents)}</span>
+              </div>
+              <p className="text-xs text-muted">
+                {inv.issuedAt.slice(0, 10)} · {inv.totalCents <= 0 ? "money back" : inv.remaining === 0 ? "paid" : inv.paid > 0 ? `${formatCents(inv.remaining)} left` : "due"}
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {inv.payPath && <CopyLink path={inv.payPath} />}
+                <LedgerForm intent="resendInvoice" formKey={`${formKey}-${inv.id}`} submitLabel="Email it again" variant="secondary" className="space-y-0">
+                  <input type="hidden" name="invoiceId" value={inv.id} />
+                </LedgerForm>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function CopyLink({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(`${window.location.origin}${path}`).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="tap text-sm font-semibold text-primary hover:underline"
+    >
+      {copied ? "Copied" : "Copy pay link"}
+    </button>
   );
 }

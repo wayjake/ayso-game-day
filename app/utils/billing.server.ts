@@ -9,6 +9,7 @@
 // one locked invoice per family.
 
 import crypto from "node:crypto";
+import { UTApi } from "uploadthing/server";
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
@@ -16,6 +17,7 @@ import {
   games,
   guardians,
   ledgerItemEvents,
+  ledgerItemFiles,
   rsvps,
   ledgerEntries,
   ledgerFunds,
@@ -314,6 +316,33 @@ export async function reopenExpense(teamId: string, itemId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Receipts and invoices kept with an expense (staff only). Uploaded straight
+// to UploadThing (route expenseFile), which saves the row.
+
+export async function getExpenseFiles(teamId: string, itemId: string) {
+  return db
+    .select({ id: ledgerItemFiles.id, url: ledgerItemFiles.url, name: ledgerItemFiles.name, size: ledgerItemFiles.size, type: ledgerItemFiles.type, createdAt: ledgerItemFiles.createdAt })
+    .from(ledgerItemFiles)
+    .where(and(eq(ledgerItemFiles.teamId, teamId), eq(ledgerItemFiles.itemId, itemId)))
+    .orderBy(asc(ledgerItemFiles.createdAt));
+}
+
+export async function deleteExpenseFile(teamId: string, itemId: string, fileId: string) {
+  const [file] = await db
+    .select({ id: ledgerItemFiles.id, fileKey: ledgerItemFiles.fileKey })
+    .from(ledgerItemFiles)
+    .where(and(eq(ledgerItemFiles.id, fileId), eq(ledgerItemFiles.teamId, teamId), eq(ledgerItemFiles.itemId, itemId)))
+    .limit(1);
+  if (!file) throw new LedgerError("That file isn't on this expense");
+  await db.delete(ledgerItemFiles).where(eq(ledgerItemFiles.id, file.id));
+  try {
+    await new UTApi().deleteFiles([file.fileKey]);
+  } catch (error) {
+    console.error("UploadThing delete failed:", (error as Error).message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Games an expense is for (a tournament is several games). Optional, and only
 // for showing: the cost on the coach's schedule, a family's share on theirs,
 // and who to leave off when their family said they can't go.
@@ -601,16 +630,23 @@ export async function invoicePreview(teamId: string): Promise<{ drafts: DraftInv
 
 // Bills every share change, then puts everything not yet invoiced on one
 // invoice per family. All or nothing; sending the same form twice sends once.
-export async function sendInvoices(teamId: string, by: string, formKey: string, origin: string) {
+// `only`: one family's key, to send just their invoice (from their page)
+export async function sendInvoices(teamId: string, by: string, formKey: string, origin: string, only?: string) {
   const key = formKey.trim();
   if (!key || key.length > 60) throw new LedgerError("Reload the page and try again");
 
   // Reads that don't need to be in the transaction (Turso keeps those short)
   const families = await teamFamilies(db, teamId);
+  const onlyFamily = only ? families.find((f) => f.key === only) : null;
+  if (only && !onlyFamily) throw new LedgerError("That family isn't on this team");
+  const onlyKeys = onlyFamily ? new Set(onlyFamily.members.map(memberKey)) : null;
+  const mine = (m: Member) => !onlyKeys || onlyKeys.has(memberKey(m));
 
   const sent = await db.transaction(async (tx) => {
     const pending = await pendingShareChanges(tx, teamId);
     for (const p of pending) {
+      const changes = p.changes.filter((c) => mine(c.member));
+      if (changes.length === 0) continue;
       const spec = expenseSpec(p.item)!;
       // The first invoice fixes a full share's price, so people added later pay the same
       if (spec.mode === "split" && spec.unitCents === null && spec.totalCents !== null) {
@@ -622,14 +658,14 @@ export async function sendInvoices(teamId: string, by: string, formKey: string, 
       await postTxnIn(tx, {
         teamId,
         kind: p.firstBilling ? "charge" : p.item.settledAt ? "settle" : "adjust",
-        lines: shareLines(p.item.id, p.changes),
+        lines: shareLines(p.item.id, changes),
         createdBy: by,
         clientKey: `${key}:item:${p.item.id}`,
         itemId: p.item.id,
       });
     }
 
-    const open = await uninvoicedEntries(tx, teamId);
+    const open = (await uninvoicedEntries(tx, teamId)).filter((e) => mine(e.member));
     if (open.length === 0) return [];
     const n = await names(tx, teamId);
     const invoicedShares = new Set(
@@ -762,7 +798,7 @@ const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ({ "&": "&a
 // Each family's invoice by email, to every contact email on their kids, with
 // their pay link. Outside production it goes to the sender instead (see
 // familyDeliveryAddress). A failed email doesn't undo the send.
-export async function emailInvoices(team: { id: string; code: string; name: string }, by: string, invoiceIds: string[], origin: string) {
+export async function emailInvoices(team: { id: string; code: string; name: string }, by: string, invoiceIds: string[], origin: string, resend = false) {
   const [sender] = await db.select({ id: users.id, name: users.name, email: users.email, sendingEmail: users.sendingEmail }).from(users).where(eq(users.id, by)).limit(1);
   if (!sender) return;
   const from = coachFromAddress(sender, team);
@@ -824,10 +860,24 @@ ${mine.map((l) => `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;
         text,
         html,
         tags: [{ name: "kind", value: "invoice" }],
-        idempotencyKey: `invoice-${inv.id}-${email}`.slice(0, 250),
+        idempotencyKey: `invoice-${inv.id}-${email}${resend ? `-again-${Date.now()}` : ""}`.slice(0, 250),
       });
     }
   }
+}
+
+// Email a sent invoice again (from the family's page)
+export async function resendInvoice(teamId: string, invoiceId: string, by: string, origin: string) {
+  const [inv] = await db.select({ id: ledgerInvoices.id }).from(ledgerInvoices).where(and(eq(ledgerInvoices.id, invoiceId), eq(ledgerInvoices.teamId, teamId))).limit(1);
+  if (!inv) throw new LedgerError("That invoice isn't on this team");
+  const [team] = await db.select({ id: teams.id, code: teams.code, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  if (team) await emailInvoices(team, by, [inv.id], origin, true);
+}
+
+// The family a player or staff member belongs to, for their page
+export async function familyFor(teamId: string, member: Member) {
+  const key = memberKey(member);
+  return (await teamFamilies(db, teamId)).find((f) => f.members.some((m) => memberKey(m) === key)) ?? null;
 }
 
 // ---------------------------------------------------------------------------

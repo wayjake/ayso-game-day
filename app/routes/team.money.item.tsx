@@ -18,7 +18,7 @@ import {
   reverseTxn,
   summarizeItems,
 } from "~/utils/ledger.server";
-import { FormError, newFormKey, parseMember, readCents, readClientKey, readDate, readId, readMembers, readMethod, readShares, readText, runLedgerAction, readRefundable } from "~/utils/ledger-forms.server";
+import { FormError, newFormKey, parseMember, readCents, readClientKey, readDate, readId, readMembers, readMethod, readShares, readText, runLedgerAction, readRefundable, readOptionalCents } from "~/utils/ledger-forms.server";
 import {
   CATEGORY_LABELS,
   FULL_SHARE,
@@ -36,11 +36,12 @@ import {
 import { allocate, formatCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton, RefundableBadge, RefundableField } from "~/components/money";
-import { cantGoToExpense, expenseTargets, getExpenseGames, reopenExpense, saveExpenseGames, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
+import { cantGoToExpense, deleteExpenseFile, expenseTargets, getExpenseFiles, getExpenseGames, reopenExpense, saveExpenseGames, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
 import { games as gamesTable } from "~/db";
 import { formatGameDate } from "~/utils/dates";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowBendUpLeft, ArrowRight, CalendarBlank, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree } from "@phosphor-icons/react";
+import { ExpenseFiles } from "~/components/ExpenseFiles";
+import { ArrowBendUpLeft, ArrowRight, CalendarBlank, Paperclip, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 import { parseId, parseIds } from "~/utils/ids";
@@ -120,6 +121,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
     shareTotal: targets.reduce((a, t) => a + t.cents, 0),
     settle,
+    // Service and card fees in what was paid out
+    fees: book.filter((t) => t.itemId === item.id && t.kind === "expense" && !t.reversed).reduce((a, t) => a + (t.feeCents ?? 0), 0),
+    files: await getExpenseFiles(team.id, item.id),
     linkedGames: await getExpenseGames(team.id, item.id),
     teamGames: await db
       .select({ id: gamesTable.id, opponent: gamesTable.opponent, gameDate: gamesTable.gameDate })
@@ -229,6 +233,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         await settleExpense(team.id, item.id, user.id);
         return;
       }
+      case "matchTotal": {
+        // Paid out more than the total (a card fee) before anyone's invoiced: bill the real cost
+        if (item.shareMode !== "split" || item.unitCents !== null) throw new LedgerError("The total can't change once it's been invoiced. Settling up evens it out.");
+        const { cost } = await settlePreview(team.id, item);
+        if (cost <= 0) throw new LedgerError("Nothing has been paid out yet");
+        await db.update(ledgerItems).set({ totalCents: cost, updatedAt: new Date().toISOString() }).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
+        return;
+      }
+      case "deleteFile":
+        await deleteExpenseFile(team.id, item.id, String(formData.get("fileId") ?? ""));
+        return;
       case "reopen":
         await reopenExpense(team.id, item.id);
         return;
@@ -247,11 +262,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         const paidByRaw = String(formData.get("paidBy") ?? "cash");
         const staffMember = parseMember(paidByRaw);
         const paidBy = staffMember?.type === "staff" ? ({ type: "staff", userId: staffMember.id } as const) : ({ type: "cash" } as const);
+        const cents = readCents(formData, "cents");
+        const feeCents = readOptionalCents(formData, "feeCents");
+        if (feeCents !== null && (feeCents < 0 || feeCents >= cents)) throw new FormError("The fee is part of the amount, so it has to be less than it");
         await postTxn({
           teamId: team.id,
           kind: "expense",
           itemId: item.id,
-          lines: expenseLines({ type: "item", itemId: item.id }, readCents(formData, "cents"), paidBy),
+          lines: expenseLines({ type: "item", itemId: item.id }, cents, paidBy),
+          feeCents,
           method: readMethod(formData),
           occurredOn: readDate(formData),
           memo: readText(formData, "memo"),
@@ -293,7 +312,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo } = loaderData;
+  const { teamId, teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo, fees, files } = loaderData;
   const base = teamPath(teamCode, "finances");
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -339,6 +358,16 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
+      {item.shareMode === "split" && item.unitCents === null && item.totalCents !== null && settle && settle.cost > item.totalCents && (
+        <Card className="mb-6 flex flex-wrap items-center gap-3 p-4 text-sm">
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">The team paid {formatCents(settle.cost)}, {formatCents(settle.cost - item.totalCents)} more than the {formatCents(item.totalCents)} total.</span>
+            <span className="block text-muted">Nothing's invoiced yet, so you can raise the total and families cover it in their share now. Otherwise settling up adds it at the end.</span>
+          </p>
+          <LedgerForm intent="matchTotal" formKey={formKey} submitLabel={`Make the total ${formatCents(settle.cost)}`} variant="secondary" className="space-y-0" />
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Fig
           label={item.settledAt ? "Real cost" : "Shares"}
@@ -350,7 +379,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         <Fig
           label="Paid out"
           cents={summary.passedOn}
-          sub={`To the hotel, league or tournament${summary.returned ? ` · ${formatCents(summary.returned)} refunded` : ""}`}
+          sub={`${fees ? `Includes ${formatCents(fees)} in fees` : "To the hotel, league or tournament"}${summary.returned ? ` · ${formatCents(summary.returned)} refunded` : ""}`}
         />
       </div>
 
@@ -451,7 +480,10 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
 
           <ActionPanel title="Pay out" hint={`To the hotel, league or tournament. The team holds ${formatCents(cash)}.`} icon={<ArrowRight size={18} />}>
             <LedgerForm intent="expense" formKey={formKey} submitLabel="Record it">
-              <MoneyField name="cents" label="Amount" defaultCents={summary.notPassedOn > 0 ? Math.min(summary.notPassedOn, Math.max(cash, 0)) || null : null} />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <MoneyField name="cents" label="Amount charged" defaultCents={summary.notPassedOn > 0 ? Math.min(summary.notPassedOn, Math.max(cash, 0)) || null : null} />
+                <MoneyField name="feeCents" label="Of that, a fee" required={false} hint="A card or service fee, if any." />
+              </div>
               <div>
                 <label htmlFor="paidBy" className={labelClass}>Paid from</label>
                 <select id="paidBy" name="paidBy" defaultValue="cash" className={inputClass}>
@@ -528,6 +560,15 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
               )}
             </>
           )}
+
+          <ActionPanel
+            title="Receipts & invoices"
+            hint={files.length ? `${files.length} kept for the records` : "Keep the tournament's invoice or receipt here."}
+            icon={<Paperclip size={18} />}
+            defaultOpen={files.length > 0}
+          >
+            <ExpenseFiles teamId={teamId} itemId={item.id} files={files} formKey={formKey} />
+          </ActionPanel>
 
           <ActionPanel title="Games" hint="Which games it's for: shows the cost on your schedule and each family's share on theirs." icon={<CalendarBlank size={18} />}>
             <LedgerForm intent="games" formKey={formKey} submitLabel="Save">
