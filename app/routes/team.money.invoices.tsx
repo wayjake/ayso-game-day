@@ -9,6 +9,8 @@ import { formatCents } from "~/utils/money";
 import { Amount } from "~/components/money";
 import { Alert, Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, cx } from "~/components/ui";
 import { CaretDown, CheckCircle, Invoice, LinkSimple, PaperPlaneTilt } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export function meta() {
   return [{ title: "Invoices - Finances - BenchTalk" }];
@@ -16,14 +18,14 @@ export function meta() {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const [preview, sent] = await Promise.all([invoicePreview(team.id), teamInvoices(team.id)]);
-  return data({ teamId: team.id, formKey: newFormKey(), preview, sent });
+  return data({ teamId: team.id, teamCode: team.code, formKey: newFormKey(), preview, sent });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const formData = await request.formData();
   if (formData.get("_action") !== "send") return data({ ok: false as const, error: "Unknown action" }, { status: 400 });
   return runLedgerAction(async () => {
@@ -35,8 +37,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function Invoices({ loaderData }: Route.ComponentProps) {
-  const { teamId, formKey, preview, sent } = loaderData;
-  const base = `/dashboard/team/${teamId}/finances`;
+  const { teamCode, formKey, preview, sent } = loaderData;
+  const base = teamPath(teamCode, "finances");
 
   return (
     <Page>

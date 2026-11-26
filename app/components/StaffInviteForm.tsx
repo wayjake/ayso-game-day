@@ -18,9 +18,9 @@ export function StaffInviteForm({
   invite,
 }: {
   /** One team: the invite is for it, no picker */
-  teamId?: number;
+  teamId?: string;
   /** Several teams the user owns: pick any of them */
-  teams?: { id: number; name: string }[];
+  teams?: { id: string; name: string }[];
   emailConfigured: boolean;
   error?: string | null;
   invite?: StaffInviteResult | null;

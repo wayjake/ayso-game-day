@@ -22,9 +22,9 @@ export function RsvpButtons({
   disabled,
   size = "md",
 }: {
-  playerId: number;
+  playerId: string;
   eventType: "game" | "practice";
-  eventId: number;
+  eventId: string;
   status: RsvpStatus | null;
   label: string; // For screen readers: "Ricardo"
   disabled?: boolean;

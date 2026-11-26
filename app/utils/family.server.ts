@@ -8,16 +8,17 @@ import { getUser } from "~/utils/auth.server";
 // team-access.server.ts and is separate on purpose.
 
 export type Kid = {
-  playerId: number;
+  playerId: string;
   name: string;
   jerseyNumber: number | null;
   profilePicture: string | null;
-  teamId: number;
+  teamId: string;
+  teamCode: string; // The team's URL code (staff links)
   teamName: string;
   teamFormat: string;
 };
 
-export async function getKids(userId: number): Promise<Kid[]> {
+export async function getKids(userId: string): Promise<Kid[]> {
   return db
     .select({
       playerId: players.id,
@@ -25,6 +26,7 @@ export async function getKids(userId: number): Promise<Kid[]> {
       jerseyNumber: players.jerseyNumber,
       profilePicture: players.profilePicture,
       teamId: teams.id,
+      teamCode: teams.code,
       teamName: teams.name,
       teamFormat: teams.format,
     })
@@ -35,7 +37,7 @@ export async function getKids(userId: number): Promise<Kid[]> {
     .orderBy(teams.name, players.name);
 }
 
-export async function isParent(userId: number) {
+export async function isParent(userId: string) {
   const [row] = await db.select({ id: guardians.id }).from(guardians).where(eq(guardians.userId, userId)).limit(1);
   return Boolean(row);
 }
@@ -51,7 +53,7 @@ export async function requireParent(request: Request) {
 }
 
 // The parent's kids on one team, or a 404 when they have none there
-export async function requireParentOnTeam(request: Request, teamId: number) {
+export async function requireParentOnTeam(request: Request, teamId: string) {
   const ctx = await requireParent(request);
   const kidsOnTeam = ctx.kids.filter((k) => k.teamId === teamId);
   if (kidsOnTeam.length === 0) throw new Response("Team not found", { status: 404 });
@@ -59,7 +61,7 @@ export async function requireParentOnTeam(request: Request, teamId: number) {
 }
 
 // Owner plus active assistant coaches
-export async function getCoachUserIds(teamId: number) {
+export async function getCoachUserIds(teamId: string) {
   const [team] = await db.select({ coachId: teams.coachId }).from(teams).where(eq(teams.id, teamId)).limit(1);
   if (!team) return [];
   const members = await db
@@ -69,7 +71,7 @@ export async function getCoachUserIds(teamId: number) {
   return [...new Set([team.coachId, ...members.map((m) => m.userId)])];
 }
 
-export async function getParentUserIds(teamId: number) {
+export async function getParentUserIds(teamId: string) {
   const rows = await db
     .selectDistinct({ userId: guardians.userId })
     .from(guardians)
@@ -78,7 +80,7 @@ export async function getParentUserIds(teamId: number) {
 }
 
 // Parent user ids for specific players (e.g. to notify just those families)
-export async function getParentUserIdsForPlayers(playerIds: number[]) {
+export async function getParentUserIdsForPlayers(playerIds: string[]) {
   if (playerIds.length === 0) return [];
   const rows = await db
     .selectDistinct({ userId: guardians.userId })
@@ -87,8 +89,8 @@ export async function getParentUserIdsForPlayers(playerIds: number[]) {
   return rows.map((r) => r.userId);
 }
 
-export async function getUserNames(userIds: number[]) {
-  if (userIds.length === 0) return new Map<number, string>();
+export async function getUserNames(userIds: string[]) {
+  if (userIds.length === 0) return new Map<string, string>();
   const rows = await db
     .select({ id: users.id, name: users.name, email: users.email })
     .from(users)

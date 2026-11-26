@@ -6,6 +6,7 @@ import { getLastTeamId } from "~/utils/last-team.server";
 import { isParent } from "~/utils/family.server";
 import { db, teams } from "~/db";
 import { desc } from "drizzle-orm";
+import { teamPath } from "~/utils/team-path";
 
 // /dashboard is a doorway, not a page: coaches almost always want their
 // current team, so send them there and keep the all-teams list one click away.
@@ -13,7 +14,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
 
   const userTeams = await db
-    .select({ id: teams.id, archived: teams.archivedAt })
+    .select({ id: teams.id, code: teams.code, archived: teams.archivedAt })
     .from(teams)
     .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
@@ -21,9 +22,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const active = userTeams.filter((t) => !t.archived);
 
   const lastTeamId = await getLastTeamId(request);
-  if (lastTeamId && active.some((t) => t.id === lastTeamId)) {
-    throw redirect(`/dashboard/team/${lastTeamId}`);
-  }
+  const last = lastTeamId ? active.find((t) => t.id === lastTeamId) : undefined;
+  if (last) throw redirect(teamPath(last));
 
   // Parents who don't coach anything belong in the family app
   if (userTeams.length === 0 && (await isParent(user.id))) {
@@ -31,7 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   if (active.length === 1) {
-    throw redirect(`/dashboard/team/${active[0].id}`);
+    throw redirect(teamPath(active[0]));
   }
 
   throw redirect("/dashboard/teams");

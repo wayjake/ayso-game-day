@@ -12,20 +12,22 @@ import {
   publishPost,
 } from "~/utils/feed.server";
 import { MAX_CAPTION, MAX_FILES } from "~/utils/feed";
+import { isId } from "~/utils/ids";
 
 // The team feed's list, for paging and polling, and the composer's publish
 // and discard calls. JSON in and out.
 
-const id = z.coerce.number().int().positive();
+const id = z.string().refine((v) => isId(v), "Not an id");
 
 // ?team=<id> (coach view) or ?scope=family (every team the parent has kids on), then
-//   &since=<id>[&oldest=<id>]  new posts, ids still alive, fresh counts (polling)
+//   &since=<id>[&oldest=<id>]  new posts, ids still alive, fresh counts (polling);
+//                              since= (empty) when nothing is loaded yet
 //   &before=<id>               the next older page (infinite scroll)
 const query = z
   .object({
     team: id.optional(),
     scope: z.literal("family").optional(),
-    since: z.coerce.number().int().nonnegative().optional(),
+    since: z.union([id, z.literal("")]).optional(),
     oldest: id.optional(),
     before: id.optional(),
   })
@@ -44,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!parsed.success) throw new Response("Bad request", { status: 400 });
   const q = parsed.data;
 
-  let teamIds: number[];
+  let teamIds: string[];
   if (q.team) {
     if (!(await feedRole(user.id, q.team))) throw new Response("Not found", { status: 404 });
     teamIds = [q.team];
@@ -63,7 +65,7 @@ const key = z.string().min(1).max(200);
 const body = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("publish"),
-    teamId: z.number().int().positive(),
+    teamId: id,
     caption: z.string().trim().max(MAX_CAPTION).optional(),
     files: z
       .array(

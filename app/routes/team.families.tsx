@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.families";
 import { useState } from "react";
 import { Form, Link, data, redirect, useNavigate, useNavigation } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { getStaffRoles, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
+import { getStaffRoles, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole, teamIdFromCode } from "~/utils/team-access.server";
 import { StaffBadge } from "~/components/StaffBadge";
 import { STAFF_ROLES, parseStaffRole, staffRoleLabel } from "~/utils/team-roles";
 import { db, contacts, players } from "~/db";
@@ -17,10 +17,11 @@ import { groupHouseholds, sendCoachInvite, staffAccountFor } from "~/utils/famil
 import { FamilyContext, familyStatusBadge as statusBadge } from "~/components/FamilyContext";
 import { Alert, Button, Card, EmptyState, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { AddressBook, ChatCircleDots, Check, Copy, EnvelopeSimple, PaperPlaneTilt, PencilSimple, Plus, X } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team, role } = await requireTeamAccess(teamId, user.id);
   const staffRoles = await getStaffRoles(teamId);
   const families = (await listFamilies(request, teamId)).map((f) => {
@@ -71,7 +72,7 @@ type InviteOutcome = { email: string; result: "sent" | "link-only" | "linked" | 
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team: myTeam, role: myRole } = await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -105,7 +106,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
     // Your own private thread with them
     const conversation = await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], user.id);
-    return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
+    return redirect(teamPath(myTeam, `messages/${conversation.id}`));
   }
 
   const isOwner = myRole === "owner";
@@ -164,7 +165,7 @@ function CopyLink({ url }: { url: string }) {
 
 export default function Families({ loaderData, actionData }: Route.ComponentProps) {
   const { team, me, families, households, missing, panel, invited, isOwner, emailConfigured } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const navigate = useNavigate();
   const closePanel = () => navigate(`${base}/families`, { preventScrollReset: true });
   const panelHref = (email: string) => `${base}/families?family=${encodeURIComponent(email)}`;
@@ -273,7 +274,7 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
         </div>
 
         {panel ? (
-          <FamilyPanel key={panel.email} panel={panel} teamId={team.id} me={me} onClose={closePanel} />
+          <FamilyPanel key={panel.email} panel={panel} teamCode={team.code} me={me} onClose={closePanel} />
         ) : (
           <Card className="sticky top-4 hidden p-6 text-center lg:block">
             <p className="font-semibold">Pick a family</p>
@@ -369,7 +370,7 @@ function ParentLine({ f, isOwner, busy, panelHref }: { f: FamilyRow; isOwner: bo
 type Panel = NonNullable<Route.ComponentProps["loaderData"]["panel"]>;
 
 // A sheet on phones, a sticky column on desktop
-function FamilyPanel({ panel, teamId, me, onClose }: { panel: Panel; teamId: number; me: number; onClose: () => void }) {
+function FamilyPanel({ panel, teamCode, me, onClose }: { panel: Panel; teamCode: string; me: string; onClose: () => void }) {
   const navigation = useNavigation();
   const messaging = navigation.state !== "idle" && navigation.formData?.get("_action") === "message";
   return (
@@ -393,7 +394,7 @@ function FamilyPanel({ panel, teamId, me, onClose }: { panel: Panel; teamId: num
         <div className="min-h-0 flex-1 overflow-y-auto">
           <FamilyContext
             family={panel}
-            teamId={teamId}
+            teamCode={teamCode}
             meId={me}
             actions={
               <>
@@ -406,7 +407,7 @@ function FamilyPanel({ panel, teamId, me, onClose }: { panel: Panel; teamId: num
                   </Button>
                 </Form>
                 <Link
-                  to={`/dashboard/team/${teamId}/families/edit?email=${encodeURIComponent(panel.email)}`}
+                  to={teamPath(teamCode, `families/edit?email=${encodeURIComponent(panel.email)}`)}
                   className={buttonClass({ variant: "secondary", size: "sm" })}
                 >
                   <PencilSimple size={16} />

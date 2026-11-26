@@ -24,6 +24,7 @@ import { z } from "zod";
 import * as schema from "../app/db/schema";
 import { cleanTaskInput, createTask, ensureAssignments, setConfirmed, setFamilyDone, setNote } from "../app/utils/tasks.core";
 import { taskState } from "../app/utils/tasks";
+import { isId, isTeamCode } from "../app/utils/ids";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env"), quiet: true });
@@ -241,6 +242,7 @@ server.registerTool(
       const rows = await db
         .select({
           id: schema.teams.id,
+          code: schema.teams.code,
           name: schema.teams.name,
           format: schema.teams.format,
           ageGroup: schema.teams.ageGroup,
@@ -253,7 +255,7 @@ server.registerTool(
         .where(eq(schema.teams.coachId, user.id))
         .groupBy(schema.teams.id);
       const lines = rows.map(
-        (t) => `#${t.id} ${t.name} (${t.format}${t.ageGroup ? `, ${t.ageGroup}` : ""}${t.season ? `, ${t.season}` : ""}${t.region ? `, region ${t.region}` : ""}): ${t.players} players`
+        (t) => `${t.code} ${t.name} (id ${t.id}, ${t.format}${t.ageGroup ? `, ${t.ageGroup}` : ""}${t.season ? `, ${t.season}` : ""}${t.region ? `, region ${t.region}` : ""}): ${t.players} players`
       );
       return text(`${target.label}: ${user.email} (user ${user.id}) owns ${rows.length} teams\n${lines.join("\n")}`);
     } catch (e) {
@@ -328,7 +330,7 @@ server.registerTool(
       if (args.dry_run) return text(preview);
 
       // One transaction: the team, its players and their parent contacts land together or not at all.
-      const teamId = await db.transaction(async (tx) => {
+      const created = await db.transaction(async (tx) => {
         const [team] = await tx.insert(schema.teams).values({
           name: args.team_name.trim(),
           coachId: user.id,
@@ -337,7 +339,7 @@ server.registerTool(
           season,
           region: args.region?.trim() || null,
           teamNumber: args.team_number?.trim() || null,
-        }).returning({ id: schema.teams.id });
+        }).returning({ id: schema.teams.id, code: schema.teams.code });
 
         for (const p of roster.players) {
           const [player] = await tx.insert(schema.players).values({
@@ -360,10 +362,10 @@ server.registerTool(
             });
           }
         }
-        return team.id;
+        return team;
       });
 
-      return text(`${preview}\n\nCreated team #${teamId}: /dashboard/team/${teamId}/roster`);
+      return text(`${preview}\n\nCreated team ${created.code} (id ${created.id}): /dashboard/team/${created.code}/roster`);
     } catch (e) {
       return fail((e as Error).message);
     }
@@ -376,13 +378,18 @@ server.registerTool(
 // side) come from app/utils/tasks.core.ts, the same code the app runs.
 // ---------------------------------------------------------------------------
 
-async function teamWithPlayers(teamId: number) {
-  const [team] = await db.select({ id: schema.teams.id, name: schema.teams.name }).from(schema.teams).where(eq(schema.teams.id, teamId)).limit(1);
-  if (!team) throw new Error(`No team #${teamId} on ${target.label}`);
+// A team by its id (a UUID) or its short URL code, as list_teams shows both
+async function teamWithPlayers(teamRef: string) {
+  const ref = teamRef.trim().toLowerCase();
+  const where = isId(ref) ? eq(schema.teams.id, ref) : isTeamCode(ref) ? eq(schema.teams.code, ref) : null;
+  const [team] = where
+    ? await db.select({ id: schema.teams.id, code: schema.teams.code, name: schema.teams.name }).from(schema.teams).where(where).limit(1)
+    : [];
+  if (!team) throw new Error(`No team ${teamRef} on ${target.label}`);
   const roster = await db
     .select({ id: schema.players.id, name: schema.players.name })
     .from(schema.players)
-    .where(eq(schema.players.teamId, teamId))
+    .where(eq(schema.players.teamId, team.id))
     .orderBy(schema.players.name);
   return { team, roster };
 }
@@ -391,7 +398,7 @@ const normName = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[Ì€-Í
 
 // Exact name, "Last, First", or every word of the given name in exactly one
 // player's name. Anything else is reported back rather than guessed.
-function matchPlayer(roster: { id: number; name: string }[], given: string) {
+function matchPlayer(roster: { id: string; name: string }[], given: string) {
   const flipped = given.includes(",") ? given.split(",").reverse().join(" ") : given;
   for (const candidate of [given, flipped]) {
     const exact = roster.filter((p) => normName(p.name) === normName(candidate));
@@ -420,7 +427,7 @@ server.registerTool(
   {
     title: "List a team's tasks",
     description: `List a team's tasks on the ${target.label} database with how many players have done each, plus the roster (for matching names in set_task_status).`,
-    inputSchema: { team_id: z.number().int() },
+    inputSchema: { team_id: z.string().describe("The team's id or its short code, from list_teams") },
     annotations: { readOnlyHint: true },
   },
   async ({ team_id }) => {
@@ -432,10 +439,10 @@ server.registerTool(
         const mine = rows.filter((r) => r.taskId === t.id);
         const states = mine.map((r) => taskState(t, r));
         const flags = [t.assignAll ? "everyone" : "picked players", t.perFamily && "per family", t.coachConfirms && "coach confirms", t.dueDate && `due ${t.dueDate}`].filter(Boolean).join(", ");
-        return `#${t.id} ${t.title} (${flags}): ${states.filter((s) => s === "done").length} done, ${states.filter((s) => s === "waiting").length} to confirm, ${states.filter((s) => s === "open").length} open of ${mine.length}`;
+        return `${t.id} ${t.title} (${flags}): ${states.filter((s) => s === "done").length} done, ${states.filter((s) => s === "waiting").length} to confirm, ${states.filter((s) => s === "open").length} open of ${mine.length}`;
       });
       return text(
-        `${target.label}: team #${team.id} ${team.name}\n${list.length} tasks\n${lines.join("\n")}\n\nRoster (${roster.length}): ${roster.map((p) => p.name).join(", ")}`
+        `${target.label}: team ${team.code} ${team.name}\n${list.length} tasks\n${lines.join("\n")}\n\nRoster (${roster.length}): ${roster.map((p) => p.name).join(", ")}`
       );
     } catch (e) {
       return fail((e as Error).message);
@@ -451,7 +458,7 @@ server.registerTool(
       `Create a task ("Pay the uniform fee", "Sign the code of conduct") on a team (${target.label} database) for every player or for named players. ` +
       "It shows up for families straight away; nothing is sent to them. dry_run defaults to true and writes nothing: run it first, show the user the preview, and only call again with dry_run=false once they confirm.",
     inputSchema: {
-      team_id: z.number().int(),
+      team_id: z.string().describe("The team's id or its short code, from list_teams"),
       title: z.string().min(1),
       details: z.string().optional(),
       link: z.string().optional().describe("Payment page or form to sign"),
@@ -470,7 +477,7 @@ server.registerTool(
       const clean = cleanTaskInput(input);
       if (!clean.ok) return fail(clean.error);
 
-      let ids: number[] | "all" = "all";
+      let ids: string[] | "all" = "all";
       const problems: string[] = [];
       if (args.players !== "all") {
         ids = [];
@@ -484,19 +491,19 @@ server.registerTool(
       const v = clean.value;
       const preview = [
         `${args.dry_run ? "DRY RUN, nothing written." : "CREATED."} Database: ${target.label}`,
-        `Team #${team.id} ${team.name}`,
+        `Team ${team.code} ${team.name}`,
         `Task: ${v.title}${v.dueDate ? `, due ${v.dueDate}` : ""}${v.perFamily ? ", per family" : ""}${v.coachConfirms ? ", coach confirms" : ""}`,
         v.details ? `Details: ${v.details}` : null,
         v.link ? `Link: ${v.link}` : null,
         ids === "all"
           ? `For everyone: ${roster.length} players now, plus anyone added later`
-          : `For ${ids.length} players: ${roster.filter((p) => (ids as number[]).includes(p.id)).map((p) => p.name).join(", ")}`,
+          : `For ${ids.length} players: ${roster.filter((p) => (ids as string[]).includes(p.id)).map((p) => p.name).join(", ")}`,
       ].filter(Boolean).join("\n");
       if (args.dry_run) return text(preview);
 
       const result = await createTask(db, { teamId: team.id, createdBy: null, input, playerIds: ids });
       if (!result.ok) return fail(result.error);
-      return text(`${preview}\n\nTask #${result.task.id}: /dashboard/team/${team.id}/tasks/${result.task.id}`);
+      return text(`${preview}\n\nTask ${result.task.id}: /dashboard/team/${team.code}/tasks/${result.task.id}`);
     } catch (e) {
       return fail((e as Error).message);
     }
@@ -512,8 +519,8 @@ server.registerTool(
       "On per-family tasks a check reaches the player's siblings too. Names that don't match exactly one player are reported, not guessed. " +
       "dry_run defaults to true and writes nothing: run it first, show the user the preview and any unmatched names, and only call again with dry_run=false once they confirm.",
     inputSchema: {
-      team_id: z.number().int(),
-      task_id: z.number().int(),
+      team_id: z.string().describe("The team's id or its short code, from list_teams"),
+      task_id: z.string().describe("The task's id, from list_tasks"),
       updates: z
         .array(
           z.object({
@@ -537,13 +544,13 @@ server.registerTool(
         .from(schema.tasks)
         .where(and(eq(schema.tasks.id, args.task_id), eq(schema.tasks.teamId, team.id)))
         .limit(1);
-      if (!task) return fail(`No task #${args.task_id} on team #${team.id}`);
+      if (!task) return fail(`No task ${args.task_id} on team ${team.code}`);
       await ensureAssignments(db, team.id);
       const assigned = new Set(
         (await db.select({ playerId: schema.taskAssignments.playerId }).from(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, task.id))).map((r) => r.playerId)
       );
 
-      const planned: { player: { id: number; name: string }; u: (typeof args.updates)[number]; at?: string }[] = [];
+      const planned: { player: { id: string; name: string }; u: (typeof args.updates)[number]; at?: string }[] = [];
       const problems: string[] = [];
       for (const u of args.updates) {
         const m = matchPlayer(roster, u.player);
@@ -562,7 +569,7 @@ server.registerTool(
         ].filter(Boolean).join(", ")}`;
       const preview = [
         `${args.dry_run ? "DRY RUN, nothing written." : "UPDATED."} Database: ${target.label}`,
-        `Team #${team.id} ${team.name}, task #${task.id} ${task.title}${task.perFamily ? " (per family: siblings follow)" : ""}`,
+        `Team ${team.code} ${team.name}, task ${task.id} ${task.title}${task.perFamily ? " (per family: siblings follow)" : ""}`,
         `${planned.length} players to update`,
         ...planned.map(describe),
         problems.length ? `\nSkipped (${problems.length}):\n  ${problems.join("\n  ")}` : null,
@@ -579,7 +586,7 @@ server.registerTool(
         }
         if (p.u.note !== undefined) await setNote(db, team.id, task.id, p.player.id, p.u.note);
       }
-      return text(`${preview}\n\n/dashboard/team/${team.id}/tasks/${task.id}`);
+      return text(`${preview}\n\n/dashboard/team/${team.code}/tasks/${task.id}`);
     } catch (e) {
       return fail((e as Error).message);
     }

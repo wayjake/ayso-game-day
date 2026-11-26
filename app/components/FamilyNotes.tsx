@@ -8,14 +8,14 @@ import { LockSimple, Trash } from "@phosphor-icons/react";
 // `_action=addNote` (familyEmail, body) and `_action=deleteNote` (noteId).
 
 export type FamilyNoteView = {
-  id: number;
+  id: string;
   body: string;
   createdAt: string;
-  authorId: number;
+  authorId: string;
   authorName: string;
 };
 
-export function FamilyNotes({ notes, familyEmail, meId }: { notes: FamilyNoteView[]; familyEmail: string; meId: number }) {
+export function FamilyNotes({ notes, familyEmail, meId }: { notes: FamilyNoteView[]; familyEmail: string; meId: string }) {
   const fetcher = useFetcher<{ error?: string }>();
   const formRef = useRef<HTMLFormElement>(null);
   const adding = fetcher.state !== "idle" && fetcher.formData?.get("_action") === "addNote";

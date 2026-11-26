@@ -9,6 +9,9 @@ import { ConversationList } from "~/components/ConversationList";
 import { MessagesTabs } from "~/components/MessagesTabs";
 import { Card, EmptyState, buttonClass, cx } from "~/components/ui";
 import { CaretRight, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, Plus } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 // Messages layout. Phones show the list (with the index route's cards under
 // it) or one thread, as separate screens. From lg up the list stays on the
@@ -22,10 +25,10 @@ export const handle = { workspace: true };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const { team } = await requireTeamAccess(teamId, user.id);
   const [conversations, unmatchedCount] = await Promise.all([listCoachConversations(teamId, user.id), countUnmatched(user, teamId)]);
-  return data({ team: { id: team.id, name: team.name }, conversations, unmatchedCount });
+  return data({ team: { id: team.id, code: team.code, name: team.name }, conversations, unmatchedCount });
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -36,12 +39,12 @@ type Filter = "all" | "needs-reply" | "unread" | "email";
 
 export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
   const { team, conversations, unmatchedCount } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const params = useParams();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const openId = params.conversationId ? Number(params.conversationId) : null;
+  const openId = params.conversationId ? parseId(params.conversationId) : null;
 
   const filterParam = searchParams.get("filter");
   const filter: Filter = filterParam === "needs-reply" || filterParam === "unread" || filterParam === "email" ? filterParam : "all";
@@ -91,7 +94,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
               </span>
             </div>
           </header>
-          <MessagesTabs teamId={team.id} needsReply={needsReplyCount} className="lg:mb-3" />
+          <MessagesTabs teamCode={team.code} needsReply={needsReplyCount} className="lg:mb-3" />
 
           <div className="relative mb-3 hidden lg:block">
             <label htmlFor="conversation-search" className="sr-only">Search conversations</label>

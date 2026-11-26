@@ -1,7 +1,7 @@
 import { createCookieSessionStorage } from "react-router";
 
 type SessionData = {
-  userId: number;
+  userId: string;
   userEmail: string;
   userRole: 'coach' | 'admin' | 'assistant-coach' | 'parent';
 };
@@ -20,7 +20,9 @@ if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
 const { getSession, commitSession, destroySession } =
   createCookieSessionStorage<SessionData, SessionFlashData>({
     cookie: {
-      name: "ayso_session",
+      // Renamed when ids became UUIDs (migration 0020): sessions from before
+      // held integer user ids, so everyone signs in again once.
+      name: "benchtalk_session",
       httpOnly: true,
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",

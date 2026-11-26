@@ -25,9 +25,15 @@ const gradients = [
 ];
 const directions = ["bg-linear-to-br", "bg-linear-to-tr", "bg-linear-to-bl", "bg-linear-to-tl"];
 
-/** Spreads neighbouring ids apart, so users 1, 2, 3 don't get colours in palette order */
-function seed(id: number) {
-  return Math.imul(id ^ 0x5bd1e995, 2654435761) >>> 0;
+/** A well-spread number from the id (a UUID), so the colour is stable per person */
+function seed(id: string) {
+  // FNV-1a over the id's characters
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return Math.imul(h ^ 0x5bd1e995, 2654435761) >>> 0;
 }
 
 export function avatarInitials(name: string) {
@@ -41,7 +47,7 @@ export function PersonAvatar({
   size = "md",
   className,
 }: {
-  person: { id: number; name: string; avatarUrl?: string | null };
+  person: { id: string; name: string; avatarUrl?: string | null };
   size?: keyof typeof sizes;
   className?: string;
 }) {

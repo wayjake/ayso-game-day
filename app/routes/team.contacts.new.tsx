@@ -5,10 +5,13 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { db, teams, players, contacts } from "~/db";
 import { Alert, Button, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { eq, and } from "drizzle-orm";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
+import { parseId } from "~/utils/ids";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
 
   // Get team details
   const [team] = await db
@@ -40,7 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
 
   // Verify team ownership
   const [team] = await db
@@ -87,7 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   try {
-    const playerId = playerIdStr && playerIdStr !== "" ? parseInt(playerIdStr) : null;
+    const playerId = parseId(playerIdStr);
     const validRelationships = ['parent', 'guardian', 'self', 'emergency'] as const;
     const relationshipValue = validRelationships.includes(relationship as typeof validRelationships[number])
       ? (relationship as typeof validRelationships[number])
@@ -104,7 +107,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       notes: notes?.trim() || null,
     });
 
-    return redirect(`/dashboard/team/${teamId}/contacts`);
+    return redirect(`${teamPath(params.teamCode)}/contacts`);
   } catch (error) {
     console.error("Error creating contact:", error);
     return data(
@@ -129,7 +132,7 @@ export default function NewContact({ loaderData, actionData }: Route.ComponentPr
   return (
     <Page width="narrow">
       <PageHeader
-        back={{ to: `/dashboard/team/${team.id}/contacts`, label: "Contacts" }}
+        back={{ to: `${teamPath(team)}/contacts`, label: "Contacts" }}
         title="Add contact"
         description="Add a contact for a player's family or the whole team."
       />
@@ -244,7 +247,7 @@ export default function NewContact({ loaderData, actionData }: Route.ComponentPr
 
           {/* Form actions */}
           <div className="flex justify-end gap-2 border-t border-line px-5 py-4 sm:px-6">
-            <Link to={`/dashboard/team/${team.id}/contacts`} className={buttonClass({ variant: "ghost" })}>
+            <Link to={`${teamPath(team)}/contacts`} className={buttonClass({ variant: "ghost" })}>
               Cancel
             </Link>
             <Button type="submit">Add contact</Button>

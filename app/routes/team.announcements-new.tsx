@@ -9,10 +9,12 @@ import { ASKS, MAX_BODY, MAX_SUBJECT, type Ask } from "~/utils/announcements";
 import { coachFromAddress, isEmailConfigured, isFamilyDeliveryRedirected } from "~/utils/email.server";
 import { Alert, Badge, Button, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { CheckCircle, EnvelopeSimple, PaperPlaneTilt, Warning } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const { team } = await requireTeamAccess(teamId, user.id);
   const families = (await listFamilies(request, teamId)).map((f) => ({
     email: f.email,
@@ -41,7 +43,7 @@ function readForm(formData: FormData) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -59,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (familyEmails.length === 0) return data({ error: "Pick at least one family.", tested: false }, { status: 400 });
     const announcement = await sendAnnouncement({ request, teamId, coach: user, subject, body, ask, familyEmails });
     if (!announcement) return data({ error: "None of those families are on this team.", tested: false }, { status: 400 });
-    return redirect(`/dashboard/team/${teamId}/announcements/${announcement.id}`);
+    return redirect(teamPath(params.teamCode, `announcements/${announcement.id}`));
   }
 
   return data({ error: "Unknown action", tested: false }, { status: 400 });
@@ -79,7 +81,7 @@ const askOptions: { value: Ask; title: string; hint: string }[] = [
 
 export default function NewAnnouncement({ loaderData, actionData }: Route.ComponentProps) {
   const { team, families, from, hasOwnAddress, emailConfigured, redirectedTo } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const navigation = useNavigation();
   const busy = navigation.state === "submitting" ? String(navigation.formData?.get("_action")) : null;
 

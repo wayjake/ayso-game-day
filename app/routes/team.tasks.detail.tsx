@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Form, Link, data, redirect, useFetcher, useNavigation, useSearchParams } from "react-router";
 import { db } from "~/db";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { requireTeamAccess, teamIdFromCode } from "~/utils/team-access.server";
 import { getTaskDetail, type TaskDetailRow } from "~/utils/tasks.server";
 import { assignPlayers, deleteTask, setConfirmed, setNote, unassignPlayers } from "~/utils/tasks.core";
 import { formatMessageTime, todayISO } from "~/utils/dates";
@@ -11,6 +11,8 @@ import { taskState } from "~/utils/tasks";
 import { Badge, Button, Card, Page, PageHeader, buttonClass, cx, inputClass } from "~/components/ui";
 import { PlayerPicker, StatusMark, TaskMeta, statusText } from "~/components/tasks";
 import { ArrowSquareOut, Check, NotePencil, PencilSimple, Trash, UserMinus, UserPlus, X } from "@phosphor-icons/react";
+import { parseId, parseIds } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.task.title ?? "Task"} - BenchTalk` }];
@@ -18,19 +20,21 @@ export function meta({ data }: Route.MetaArgs) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
-  const detail = await getTaskDetail(team.id, Number(params.taskId));
+  const { team } = await requireTeamAccess(await teamIdFromCode(params.teamCode), user.id);
+  const taskId = parseId(params.taskId);
+  const detail = taskId ? await getTaskDetail(team.id, taskId) : null;
   if (!detail) throw new Response("Task not found", { status: 404 });
-  return data({ teamId: team.id, today: todayISO(), ...detail });
+  return data({ teamCode: team.code, today: todayISO(), ...detail });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
-  const taskId = Number(params.taskId);
+  const { team } = await requireTeamAccess(await teamIdFromCode(params.teamCode), user.id);
+  const taskId = parseId(params.taskId);
+  if (!taskId) throw new Response("Task not found", { status: 404 });
   const formData = await request.formData();
   const intent = formData.get("_action");
-  const playerIds = formData.getAll("playerId").map(Number).filter(Boolean);
+  const playerIds = parseIds(formData.getAll("playerId"));
 
   switch (intent) {
     case "confirm":
@@ -53,7 +57,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return data({ ok: true, cleared: true });
     case "delete":
       await deleteTask(db, team.id, taskId);
-      return redirect(`/dashboard/team/${team.id}/tasks`);
+      return redirect(teamPath(team, "tasks"));
     default:
       return data({ error: "Unknown action" }, { status: 400 });
   }
@@ -62,11 +66,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 type Filter = "confirm" | "open" | "done" | "all";
 
 export default function TaskDetail({ loaderData }: Route.ComponentProps) {
-  const { teamId, today, task, summary, rows, unassigned } = loaderData;
-  const base = `/dashboard/team/${teamId}`;
+  const { teamCode, today, task, summary, rows, unassigned } = loaderData;
+  const base = teamPath(teamCode);
   const [params] = useSearchParams();
   const filter = (params.get("filter") as Filter) || (summary.waiting > 0 ? "confirm" : "all");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const bulk = useFetcher<{ cleared?: boolean }>();
   const navigation = useNavigation();
@@ -85,7 +89,7 @@ export default function TaskDetail({ loaderData }: Route.ComponentProps) {
   );
   const pct = summary.assigned ? Math.round((summary.done / summary.assigned) * 100) : 0;
 
-  const pick = (id: number, on: boolean) => {
+  const pick = (id: string, on: boolean) => {
     const next = new Set(selected);
     if (on) next.add(id);
     else next.delete(id);
@@ -297,8 +301,8 @@ function PlayerRow({ row: r, coachConfirms, selected, onSelect }: { row: TaskDet
   );
 }
 
-function AddPlayers({ players }: { players: { id: number; name: string }[] }) {
-  const [picked, setPicked] = useState<Set<number>>(new Set());
+function AddPlayers({ players }: { players: { id: string; name: string }[] }) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const fetcher = useFetcher();
   return (
     <details className="mt-4 rounded-2xl bg-surface p-4 ring-1 ring-line">

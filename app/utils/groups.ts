@@ -17,8 +17,8 @@ export type PickerOption = {
 
 export type GroupMember = {
   /** The member row. The key the page uses: never an email, since parents see this list */
-  id: number;
-  userId: number | null;
+  id: string;
+  userId: string | null;
   name: string;
   /** "Ricardo's family" for a family; empty for staff (their role shows as a badge) */
   detail: string;

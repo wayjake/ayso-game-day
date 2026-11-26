@@ -8,7 +8,7 @@ import { sendPush } from "~/utils/push.server";
 // components need live in schedule.ts.
 
 export async function getEvents(
-  teamIds: number[],
+  teamIds: string[],
   { from, to }: { from?: string; to?: string } = {}
 ): Promise<ScheduleEvent[]> {
   if (teamIds.length === 0) return [];
@@ -73,8 +73,8 @@ function practiceToEvent(p: typeof practices.$inferSelect): ScheduleEvent {
 }
 
 // The event, if it belongs to the team
-export async function getTeamEvent(teamId: number, type: string, id: number): Promise<ScheduleEvent | null> {
-  if (!Number.isInteger(id)) return null;
+export async function getTeamEvent(teamId: string, type: string, id: string | null): Promise<ScheduleEvent | null> {
+  if (!id) return null;
   if (type === "game") {
     const [g] = await db.select().from(games).where(and(eq(games.id, id), eq(games.teamId, teamId))).limit(1);
     return g ? gameToEvent(g) : null;
@@ -87,14 +87,14 @@ export async function getTeamEvent(teamId: number, type: string, id: number): Pr
 }
 
 export type RsvpRow = {
-  playerId: number;
+  playerId: string;
   eventType: "game" | "practice";
-  eventId: number;
+  eventId: string;
   status: RsvpStatus;
   note: string | null;
 };
 
-export async function getRsvps(teamIds: number[], playerIds?: number[]): Promise<RsvpRow[]> {
+export async function getRsvps(teamIds: string[], playerIds?: string[]): Promise<RsvpRow[]> {
   if (teamIds.length === 0) return [];
   return db
     .select({
@@ -108,7 +108,7 @@ export async function getRsvps(teamIds: number[], playerIds?: number[]): Promise
     .where(and(inArray(rsvps.teamId, teamIds), playerIds ? inArray(rsvps.playerId, playerIds) : undefined));
 }
 
-export async function getEventRsvps(eventType: "game" | "practice", eventId: number) {
+export async function getEventRsvps(eventType: "game" | "practice", eventId: string) {
   return db
     .select({
       playerId: rsvps.playerId,
@@ -133,13 +133,13 @@ export async function setRsvp({
   note,
   respondedBy,
 }: {
-  teamId: number;
-  playerId: number;
+  teamId: string;
+  playerId: string;
   eventType: "game" | "practice";
-  eventId: number;
+  eventId: string;
   status: RsvpStatus | null; // null clears the answer
   note?: string | null;
-  respondedBy: number;
+  respondedBy: string;
 }) {
   const [previous] = await db
     .select({ status: rsvps.status })
@@ -164,7 +164,7 @@ export async function setRsvp({
   return previous?.status ?? null;
 }
 
-export async function getTeamPlayers(teamId: number) {
+export async function getTeamPlayers(teamId: string) {
   return db
     .select({ id: players.id, name: players.name, jerseyNumber: players.jerseyNumber, profilePicture: players.profilePicture })
     .from(players)
@@ -173,6 +173,6 @@ export async function getTeamPlayers(teamId: number) {
 }
 
 // Push to every linked family on the team, e.g. when the schedule changes
-export async function notifyFamilies(teamId: number, payload: { title: string; body: string; tag?: string }) {
+export async function notifyFamilies(teamId: string, payload: { title: string; body: string; tag?: string }) {
   await sendPush(await getParentUserIds(teamId), "team", { ...payload, url: "/family" });
 }

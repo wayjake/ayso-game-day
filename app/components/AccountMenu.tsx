@@ -17,7 +17,7 @@ export function AccountMenu({
   settingsTo,
   links = [],
 }: {
-  me: { id: number; name: string | null; email: string; avatarUrl?: string | null };
+  me: { id: string; name: string | null; email: string; avatarUrl?: string | null };
   settingsTo: string;
   links?: AccountMenuLink[];
 }) {

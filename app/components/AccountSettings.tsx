@@ -28,7 +28,7 @@ export function ProfileCard({
   nameHint,
   result,
 }: {
-  me: { id: number; name: string | null; email: string };
+  me: { id: string; name: string | null; email: string };
   nameHint: string;
   result?: AccountResult | null;
 }) {

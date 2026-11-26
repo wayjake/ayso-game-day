@@ -14,7 +14,7 @@ export function EmailToggle({
 }: {
   email: string;
   pushReady: boolean;
-  conversationId: number;
+  conversationId: string;
 }) {
   const storageKey = `send-email:${conversationId}`;
   const [checked, setChecked] = useState(!pushReady);

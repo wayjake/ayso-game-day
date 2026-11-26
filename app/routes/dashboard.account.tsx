@@ -17,6 +17,8 @@ import { isParent } from "~/utils/family.server";
 import { CalendarCard, LogOutButton, NotificationsCard, ProfileCard, SendingEmailCard } from "~/components/AccountSettings";
 import { Alert, Badge, Button, Card, CardHeader, Page, PageHeader } from "~/components/ui";
 import { Archive, ArrowCounterClockwise, CaretRight } from "@phosphor-icons/react";
+import { parseId, parseIds } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 // A coach's own settings, whichever team they're on: name, notifications,
 // sending address. Team settings keep only what belongs to the team.
@@ -28,18 +30,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const lastTeamId = await getLastTeamId(request);
   const [lastTeam] = lastTeamId
     ? await db
-        .select({ id: teams.id, name: teams.name })
+        .select({ id: teams.id, code: teams.code, name: teams.name })
         .from(teams)
         .where(and(eq(teams.id, lastTeamId), canAccessTeam(user.id)))
         .limit(1)
     : [];
   const [team] = lastTeam
     ? [lastTeam]
-    : await db.select({ id: teams.id, name: teams.name }).from(teams).where(and(canAccessTeam(user.id), activeTeams())).orderBy(desc(teams.createdAt)).limit(1);
+    : await db.select({ id: teams.id, code: teams.code, name: teams.name }).from(teams).where(and(canAccessTeam(user.id), activeTeams())).orderBy(desc(teams.createdAt)).limit(1);
 
   // Every team they're on, archived ones too: archive or bring back the ones they own
   const myTeams = await db
-    .select({ id: teams.id, name: teams.name, format: teams.format, season: teams.season, coachId: teams.coachId, archivedAt: teams.archivedAt })
+    .select({ id: teams.id, code: teams.code, name: teams.name, format: teams.format, season: teams.season, coachId: teams.coachId, archivedAt: teams.archivedAt })
     .from(teams)
     .where(canAccessTeam(user.id))
     .orderBy(desc(teams.createdAt));
@@ -52,7 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     sendingDomain: sendingDomain(),
     calendar: calendarLinks(request, await getOrCreateCalendarToken(user.id)),
     alsoParent: await isParent(user.id),
-    back: team ? { to: `/dashboard/team/${team.id}`, label: team.name } : { to: "/dashboard/teams", label: "Teams" },
+    back: team ? { to: teamPath(team), label: team.name } : { to: "/dashboard/teams", label: "Teams" },
     teams: myTeams.map(({ coachId, ...t }) => ({ ...t, owner: coachId === user.id })),
     emailConfigured: isEmailConfigured(),
   });
@@ -65,7 +67,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Archive or bring back a team you own, from here instead of inside each team
   if (intent === "archive" || intent === "unarchive") {
-    const ok = await setTeamArchived(Number(formData.get("teamId")), user.id, intent === "archive");
+    const teamId = parseId(formData.get("teamId"));
+    const ok = teamId ? await setTeamArchived(teamId, user.id, intent === "archive") : false;
     if (!ok) return data({ intent: "teams", error: "Only a team's owner can archive it" }, { status: 403 });
     return data({ intent: "teams", success: intent === "archive" ? "Archived. It's out of your team list and switcher." : "Back in your team list and switcher." });
   }
@@ -77,7 +80,7 @@ export async function action({ request }: Route.ActionArgs) {
       user,
       email: String(formData.get("email") ?? ""),
       role: parseStaffRole(formData.get("role")) ?? "coach",
-      teamIds: formData.getAll("teamIds").map(Number).filter(Boolean),
+      teamIds: parseIds(formData.getAll("teamIds")),
     });
     if ("error" in result) return data({ intent: "invite", error: result.error }, { status: 400 });
     return data({ intent: "invite", invite: result.invite });
@@ -139,7 +142,7 @@ export default function Account({ loaderData, actionData: rawResult }: Route.Com
   );
 }
 
-type AccountTeam = { id: number; name: string; format: string; season: string | null; archivedAt: string | null; owner: boolean };
+type AccountTeam = { id: string; code: string; name: string; format: string; season: string | null; archivedAt: string | null; owner: boolean };
 
 // Every team you're on. Archive the ones whose season is over (owners only),
 // without opening each team; archived ones stay listed here to bring back.
@@ -171,10 +174,10 @@ function TeamsCard({ teams, result }: { teams: AccountTeam[]; result: AccountRes
 function TeamRow({ team: t }: { team: AccountTeam }) {
   const [confirming, setConfirming] = useState(false);
   const navigation = useNavigation();
-  const busy = navigation.formData?.get("teamId") === String(t.id);
+  const busy = navigation.formData?.get("teamId") === t.id;
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
-      <Link to={`/dashboard/team/${t.id}`} className="group flex min-w-0 flex-1 items-center gap-2">
+      <Link to={teamPath(t)} className="group flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0">
           <span className="flex items-center gap-2">
             <span className="truncate font-semibold group-hover:underline">{t.name}</span>

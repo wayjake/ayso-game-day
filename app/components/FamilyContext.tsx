@@ -7,6 +7,7 @@ import type { FamilyContextView, FamilyReach, TeamChatContextView } from "~/util
 import type { RecipientState } from "~/utils/announcements.server";
 import { FamilyNotes } from "~/components/FamilyNotes";
 import { Badge, buttonClass, cx } from "~/components/ui";
+import { teamPath } from "~/utils/team-path";
 
 // Who a family is, beside their thread (Messages) or their row (Families).
 // The page's action must handle the FamilyNotes actions.
@@ -53,18 +54,18 @@ function Section({ title, children, className }: { title: string; children: Reac
 
 export function FamilyContext({
   family,
-  teamId,
+  teamCode,
   meId,
   actions,
   showNotes = true,
 }: {
   family: FamilyContextView;
-  teamId: number;
-  meId: number;
+  teamCode: string; // The team's URL code
+  meId: string;
   actions?: ReactNode; // Buttons under the family's details, e.g. Message or Invite
   showNotes?: boolean;
 }) {
-  const base = `/dashboard/team/${teamId}`;
+  const base = teamPath(teamCode);
   const reach = reachText[family.reach];
 
   return (
@@ -154,8 +155,8 @@ export function FamilyContext({
 }
 
 // Beside the team chat: who reads it, and who isn't on the app yet
-export function TeamChatContext({ context, teamId }: { context: TeamChatContextView; teamId: number }) {
-  const base = `/dashboard/team/${teamId}`;
+export function TeamChatContext({ context, teamCode }: { context: TeamChatContextView; teamCode: string }) {
+  const base = teamPath(teamCode);
   return (
     <div>
       <Section title="Who sees this">

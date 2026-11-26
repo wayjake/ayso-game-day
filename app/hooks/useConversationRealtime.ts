@@ -22,11 +22,11 @@ function getClient() {
 }
 
 export type RealtimeConfig = { channel: string; name: string } | null;
-export type Typist = { clientId: string; name: string; where: number | null };
+export type Typist = { clientId: string; name: string; where: string | null };
 /** Where I'm typing: the main chat (null), a thread (its root id), or not at all (false) */
-export type TypingWhere = number | null | false;
+export type TypingWhere = string | null | false;
 
-export function useConversationRealtime(config: RealtimeConfig, onChange: (event: { kind: string; threadId?: number | null }) => void) {
+export function useConversationRealtime(config: RealtimeConfig, onChange: (event: { kind: string; threadId?: string | null }) => void) {
   const [connected, setConnected] = useState(false);
   const [typists, setTypists] = useState<Typist[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -127,7 +127,7 @@ export function typingLabel(typists: Typist[]) {
  * Calls `onEvent` for each "changed" event on any of these channels (no
  * presence). Used by the team feed. Does nothing when `channels` is empty.
  */
-export function useRealtimeEvents(channels: string[], onEvent: (event: { kind?: string; postId?: number }) => void) {
+export function useRealtimeEvents(channels: string[], onEvent: (event: { kind?: string; postId?: string }) => void) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const key = channels.join("|");

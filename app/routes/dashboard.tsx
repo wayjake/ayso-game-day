@@ -21,6 +21,7 @@ import { cx } from "~/components/ui";
 import { PullToRefresh } from "~/components/PullToRefresh";
 import { usePush } from "~/hooks/usePush";
 import { PushContext } from "~/hooks/usePushContext";
+import { isTeamCode } from "~/utils/ids";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -29,6 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userTeams = await db
     .select({
       id: teams.id,
+      code: teams.code,
       name: teams.name,
       format: teams.format,
       ageGroup: teams.ageGroup,
@@ -68,12 +70,13 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const openInstall = useCallback(() => setInstallOpen(true), []);
 
   // Tours and the Help sheet belong to a team's pages, but the ? sits in this top bar
-  const teamParam = Number(useParams().teamId);
-  const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : null;
+  // (by the team's URL code, which is all a tour's paths need)
+  const teamParam = useParams().teamCode;
+  const teamCode = teamParam && isTeamCode(teamParam) ? teamParam : null;
 
   return (
     <PushContext.Provider value={{ push, openInstall, audience: "coach" }}>
-      <TourProvider teamId={teamId} initialSeen={loaderData.toursSeen}>
+      <TourProvider teamCode={teamCode} initialSeen={loaderData.toursSeen}>
         <div className={cx("min-h-dvh bg-canvas text-ink", workspace && "lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden")}>
           <a
             href="#main"

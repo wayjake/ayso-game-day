@@ -57,7 +57,7 @@ export async function generateSingleQuarterLineup(params: {
                       description: "Position number from the formation"
                     },
                     playerId: {
-                      type: "number",
+                      type: "string",
                       description: "ID of the player assigned to this position"
                     }
                   },
@@ -68,7 +68,7 @@ export async function generateSingleQuarterLineup(params: {
                 type: "array",
                 description: "Array of player IDs sitting out this quarter. Must include ALL players not in assignments. These players will become must-play for the next quarter (if there is one).",
                 items: {
-                  type: "number",
+                  type: "string",
                   description: "Player ID of a player sitting out this quarter"
                 }
               }

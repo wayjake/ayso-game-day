@@ -1,7 +1,7 @@
 import type { Route } from "./+types/invite";
 import { Form, data, redirect, useNavigation } from "react-router";
-import { db, users } from "~/db";
-import { sql } from "drizzle-orm";
+import { db, teams, users } from "~/db";
+import { eq, sql } from "drizzle-orm";
 import { getSession, commitSession } from "~/sessions.server";
 import { createUser, getUser } from "~/utils/auth.server";
 import { acceptInvites, getInviteByCode } from "~/utils/invites.server";
@@ -10,6 +10,7 @@ import { staffRoleLabel } from "~/utils/team-roles";
 import { AppMark } from "~/components/AppMark";
 import { Alert, Card, EmptyState, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { CheckCircle, SignIn, UsersThree, WarningCircle } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 async function findUserByEmail(email: string) {
   const [user] = await db
@@ -48,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("_action");
   const session = await getSession(request.headers.get("Cookie"));
-  let userId: number;
+  let userId: string;
 
   if (intent === "signup") {
     const name = ((formData.get("name") as string) ?? "").trim();
@@ -84,7 +85,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   for (const teamId of teamIds) await linkFamily(teamId, found.invite.email!, userId);
   session.flash("success", "You've joined the team!");
 
-  return redirect(teamIds.length === 1 ? `/dashboard/team/${teamIds[0]}` : "/dashboard", {
+  const [only] = teamIds.length === 1 ? await db.select({ code: teams.code }).from(teams).where(eq(teams.id, teamIds[0])).limit(1) : [];
+  return redirect(only ? teamPath(only) : "/dashboard", {
     headers: { "Set-Cookie": await commitSession(session) },
   });
 }

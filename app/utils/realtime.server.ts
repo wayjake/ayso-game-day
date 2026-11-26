@@ -28,20 +28,20 @@ export function isRealtimeConfigured() {
 // The team chat lives under team:<id>:, which all staff can read. Direct
 // threads and groups are only for the people in them, so they get a channel
 // outside that namespace (dm:<id>, for either) and only those people are given it.
-type ConversationRef = { id: number; teamId: number; kind: "team" | "direct" | "group" };
+type ConversationRef = { id: string; teamId: string; kind: "team" | "direct" | "group" };
 
 export function conversationChannel(conversation: ConversationRef) {
   return conversation.kind === "team" ? `team:${conversation.teamId}:conversation:${conversation.id}` : `dm:${conversation.id}`;
 }
 
 // New posts, likes, comments and deletes on a team's photo feed
-export function feedChannel(teamId: number) {
+export function feedChannel(teamId: string) {
   return `team:${teamId}:feed`;
 }
 
-export type FeedEvent = { kind: "post" | "deleted" | "stats"; postId?: number };
+export type FeedEvent = { kind: "post" | "deleted" | "stats"; postId?: string };
 
-export async function publishFeed(teamId: number, event: FeedEvent) {
+export async function publishFeed(teamId: string, event: FeedEvent) {
   const ably = client();
   if (!ably) return;
   try {
@@ -51,7 +51,7 @@ export async function publishFeed(teamId: number, event: FeedEvent) {
   }
 }
 
-export type ConversationEvent = { kind: "message" | "reaction" | "members" | "read"; threadId?: number | null };
+export type ConversationEvent = { kind: "message" | "reaction" | "members" | "read"; threadId?: string | null };
 
 // Awaited by callers (serverless hosts may drop work left after the response).
 // Never throws: a realtime hiccup only means pages catch up on their next poll.
@@ -69,7 +69,7 @@ export async function publishConversation(conversation: ConversationRef, event: 
 // they coach (the team chat and the photo feed), plus their own direct threads
 // there. Parents: the team chat, their own direct threads and the photo feed.
 // Both: the groups they're in.
-async function capabilityFor(userId: number) {
+async function capabilityFor(userId: string) {
   const capability: Record<string, string[]> = {};
   const allow = ["subscribe", "presence"];
 
@@ -116,7 +116,7 @@ async function capabilityFor(userId: number) {
   return capability;
 }
 
-export async function createTokenRequest(userId: number) {
+export async function createTokenRequest(userId: string) {
   const ably = client();
   if (!ably) return null;
   const capability = await capabilityFor(userId);

@@ -7,8 +7,8 @@ import { CheckCircle, CircleNotch, FileText, Sparkle, UploadSimple, X } from '@p
 interface RosterImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  teamId: number;
-  existingPlayers: Array<{ id: number; name: string }>;
+  teamId: string;
+  existingPlayers: Array<{ id: string; name: string }>;
   onImportComplete: (result: ImportResult) => void;
 }
 
@@ -25,14 +25,14 @@ interface MatchResult {
   tempId: string;
   extractedName: string;
   matchType: 'exact' | 'fuzzy' | 'new';
-  existingPlayerId?: number;
+  existingPlayerId?: string;
   existingPlayerName?: string;
   similarityScore?: number;
 }
 
 interface ImportablePlayer extends ExtractedPlayer {
   matchType: 'exact' | 'fuzzy' | 'new';
-  existingPlayerId?: number;
+  existingPlayerId?: string;
   existingPlayerName?: string;
   action: 'create' | 'update' | 'skip';
 }

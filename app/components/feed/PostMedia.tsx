@@ -114,7 +114,7 @@ export function PostActions({
   commentsTo,
   onCommentClick,
 }: {
-  postId: number;
+  postId: string;
   stats: PostStats;
   /** Called with the server's counts once a like lands */
   onStats: (stats: PostStats) => void;

@@ -25,7 +25,7 @@ export type PushPayload = {
 };
 
 export async function saveSubscription(
-  userId: number,
+  userId: string,
   sub: { endpoint: string; keys: { p256dh: string; auth: string } },
   userAgent: string | null
 ) {
@@ -43,12 +43,12 @@ export async function deleteSubscription(endpoint: string) {
   await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
 }
 
-export async function getNotifyPrefs(userId: number): Promise<NotifyPrefs> {
+export async function getNotifyPrefs(userId: string): Promise<NotifyPrefs> {
   const [row] = await db.select({ prefs: users.notifyPrefs }).from(users).where(eq(users.id, userId)).limit(1);
   return parseNotifyPrefs(row?.prefs);
 }
 
-export async function setNotifyPref(userId: number, kind: NotifyKind, on: boolean) {
+export async function setNotifyPref(userId: string, kind: NotifyKind, on: boolean) {
   if (!isSwitchableKind(kind)) throw new Error("That kind of notification can't be turned off");
   const prefs = { ...(await getNotifyPrefs(userId)), [kind]: on };
   await db.update(users).set({ notifyPrefs: JSON.stringify(prefs) }).where(eq(users.id, userId));
@@ -120,7 +120,7 @@ async function deliver(subs: (typeof pushSubscriptions.$inferSelect)[], payload:
 // serverless hosts work left running after the response may never finish.
 // Failures are logged and returned, never thrown, so a push problem can't
 // break the action.
-export async function sendPush(userIds: number[], kind: NotifyKind, payload: PushPayload): Promise<PushResult> {
+export async function sendPush(userIds: string[], kind: NotifyKind, payload: PushPayload): Promise<PushResult> {
   const none: PushResult = { sent: 0, failed: [], removed: 0 };
   let ids = [...new Set(userIds)];
   if (ids.length === 0 || !isPushConfigured()) return none;
@@ -138,7 +138,7 @@ export async function sendPush(userIds: number[], kind: NotifyKind, payload: Pus
 
 // "Send a test" from one device: only to that device, if it's registered to
 // this account, with what the push service said
-export async function sendTestPush(userId: number, endpoint: string, payload: PushPayload) {
+export async function sendTestPush(userId: string, endpoint: string, payload: PushPayload) {
   const subs = await db
     .select()
     .from(pushSubscriptions)

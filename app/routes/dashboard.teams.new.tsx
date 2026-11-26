@@ -4,6 +4,7 @@ import { getUser } from "~/utils/auth.server";
 import { db, teams } from "~/db";
 import { Alert, Button, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { Lightbulb, Plus } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -51,9 +52,9 @@ export async function action({ request }: Route.ActionArgs) {
       ageGroup: ageGroup?.trim() || null,
       season: season?.trim() || `${new Date().getFullYear()} Season`,
       region: region?.trim() || null,
-    }).returning({ id: teams.id });
+    }).returning({ id: teams.id, code: teams.code });
     
-    return redirect(`/dashboard/team/${newTeam.id}`);
+    return redirect(teamPath(newTeam));
   } catch (error) {
     console.error("Error creating team:", error);
     return data(

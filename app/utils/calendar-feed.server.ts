@@ -6,6 +6,7 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { getEvents } from "~/utils/schedule.server";
 import { addDays, todayISO } from "~/utils/dates";
 import { addMinutes, buildCalendar, type IcalEvent } from "~/utils/ical";
+import { teamPath } from "~/utils/team-path";
 
 // A person's subscribed calendar: one private link covering every team they
 // coach and every team they have kids on. Teams are worked out on each fetch,
@@ -22,7 +23,7 @@ function newToken() {
   return randomBytes(24).toString("base64url");
 }
 
-export async function getOrCreateCalendarToken(userId: number) {
+export async function getOrCreateCalendarToken(userId: string) {
   const [row] = await db.select({ token: calendarFeeds.token }).from(calendarFeeds).where(eq(calendarFeeds.userId, userId)).limit(1);
   if (row) return row.token;
   const token = newToken();
@@ -33,7 +34,7 @@ export async function getOrCreateCalendarToken(userId: number) {
 }
 
 /** New link; calendars subscribed to the old one stop updating */
-export async function resetCalendarToken(userId: number) {
+export async function resetCalendarToken(userId: string) {
   const token = newToken();
   await db
     .insert(calendarFeeds)
@@ -66,15 +67,15 @@ export async function buildCalendarFeed(token: string, request: Request) {
   if (!feed) return null;
 
   const coachTeams = await db
-    .select({ id: teams.id, name: teams.name, format: teams.format })
+    .select({ id: teams.id, code: teams.code, name: teams.name, format: teams.format })
     .from(teams)
     .where(canAccessTeam(feed.userId));
   const kids = await getKids(feed.userId);
 
   // Coach teams link to the RSVP page; family-only teams to the family app
-  const byId = new Map<number, { name: string; format: string; coach: boolean }>();
-  for (const t of coachTeams) byId.set(t.id, { name: t.name, format: t.format, coach: true });
-  for (const k of kids) if (!byId.has(k.teamId)) byId.set(k.teamId, { name: k.teamName, format: k.teamFormat, coach: false });
+  const byId = new Map<string, { name: string; format: string; code: string | null }>();
+  for (const t of coachTeams) byId.set(t.id, { name: t.name, format: t.format, code: t.code });
+  for (const k of kids) if (!byId.has(k.teamId)) byId.set(k.teamId, { name: k.teamName, format: k.teamFormat, code: null });
 
   const teamIds = [...byId.keys()];
   const events = await getEvents(teamIds, { from: addDays(todayISO(), -PAST_DAYS) });
@@ -92,7 +93,7 @@ export async function buildCalendarFeed(token: string, request: Request) {
       end = event.endTime && event.endTime > event.time ? event.endTime : addMinutes(event.date, event.time, minutes).time;
     }
 
-    const url = team.coach ? `${origin}/dashboard/team/${event.teamId}/rsvps/${event.type}/${event.id}` : `${origin}/family`;
+    const url = team.code ? `${origin}${teamPath(team.code, `rsvps/${event.type}/${event.id}`)}` : `${origin}/family`;
     const description = [
       event.cancelled ? "This was cancelled." : null,
       event.homeAway ? (event.homeAway === "home" ? "Home game" : "Away game") : null,
@@ -104,7 +105,8 @@ export async function buildCalendarFeed(token: string, request: Request) {
       .join("\n\n");
 
     return {
-      // Fixed domain, so moving the app never duplicates everyone's events
+      // Fixed domain, so moving the app never duplicates everyone's events.
+      // (Ids became UUIDs in migration 0020, which re-added every event once.)
       uid: `${event.type}-${event.id}@benchtalk.app`,
       summary,
       date: event.date,

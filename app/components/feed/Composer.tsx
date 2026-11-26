@@ -47,12 +47,12 @@ export function Composer({
   teams,
   onPosted,
 }: {
-  me: { id: number; name: string };
+  me: { id: string; name: string };
   /** Teams this person can post to; a picker shows when there's more than one */
-  teams: { id: number; name: string }[];
+  teams: { id: string; name: string }[];
   onPosted: () => void;
 }) {
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? 0);
+  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [focused, setFocused] = useState(false);
   const [picked, setPicked] = useState<Picked[]>([]);
   const [caption, setCaption] = useState("");
@@ -105,7 +105,7 @@ export function Composer({
   const patch = (id: string, change: Partial<Picked>) => setPicked((list) => list.map((p) => (p.id === id ? { ...p, ...change } : p)));
 
   /** Smaller copies for the feed. Best effort: if it fails the post shows the original. */
-  const uploadCopies = (id: string, file: File, team: number): CopiesTask => {
+  const uploadCopies = (id: string, file: File, team: string): CopiesTask => {
     const copiesController = new AbortController();
     const { signal } = copiesController;
     const copies = makeDerivatives(file)
@@ -128,7 +128,7 @@ export function Composer({
     return { copies, copiesController };
   };
 
-  const upload = (id: string, file: File, team: number, copies: CopiesTask) => {
+  const upload = (id: string, file: File, team: string, copies: CopiesTask) => {
     const controller = new AbortController();
     const key = uploadFiles("feedMedia", {
       files: [file],
@@ -272,7 +272,7 @@ export function Composer({
           Post to
           <select
             value={teamId}
-            onChange={(e) => setTeamId(Number(e.target.value))}
+            onChange={(e) => setTeamId(e.target.value)}
             // Files upload to the team picked first, so it's fixed once there are some
             disabled={picked.length > 0}
             className={cx(inputClass, "w-auto py-1.5 pr-8")}

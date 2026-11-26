@@ -10,6 +10,7 @@ import { validateFile, getFileCategory } from './validation';
 import { extractRosterData } from './ai-extractor';
 import { matchExtractedToExisting } from './name-matcher';
 import type { ExtractResponse, ImportResponse, ImportPlayerData } from './types';
+import { parseId } from "~/utils/ids";
 
 export async function action({ request }: Route.ActionArgs) {
   const user = await getUser(request);
@@ -34,12 +35,12 @@ export async function action({ request }: Route.ActionArgs) {
 
 async function handleExtract(
   formData: FormData,
-  user: { id: number }
+  user: { id: string }
 ): Promise<ReturnType<typeof data<ExtractResponse>>> {
-  const teamId = parseInt(formData.get('teamId') as string);
+  const teamId = parseId(formData.get("teamId"));
   const file = formData.get('file') as File | null;
 
-  if (!teamId || isNaN(teamId)) {
+  if (!teamId) {
     return data({ success: false, error: 'Team ID is required' }, { status: 400 });
   }
 
@@ -103,12 +104,12 @@ async function handleExtract(
 
 async function handleImport(
   formData: FormData,
-  user: { id: number }
+  user: { id: string }
 ): Promise<ReturnType<typeof data<ImportResponse>>> {
-  const teamId = parseInt(formData.get('teamId') as string);
+  const teamId = parseId(formData.get("teamId"));
   const playersJson = formData.get('players') as string;
 
-  if (!teamId || isNaN(teamId)) {
+  if (!teamId) {
     return data({ success: false, created: 0, updated: 0, skipped: 0, errors: ['Team ID is required'] }, { status: 400 });
   }
 
@@ -162,7 +163,8 @@ async function handleImport(
         results.created++;
       }
 
-      if (player.action === 'update' && player.existingPlayerId) {
+      const existingPlayerId = parseId(player.existingPlayerId);
+      if (player.action === 'update' && existingPlayerId) {
         // Build update data - only include fields that were extracted
         const updateData: Record<string, any> = {
           name: player.name.trim(),
@@ -185,7 +187,7 @@ async function handleImport(
           .set(updateData)
           .where(
             and(
-              eq(players.id, player.existingPlayerId),
+              eq(players.id, existingPlayerId),
               eq(players.teamId, teamId) // Security: ensure player belongs to team
             )
           );

@@ -17,6 +17,7 @@ import {
   getCurrentAssignments,
   getAbsentInjuredPlayers,
   getPastGamesAndAssignments,
+  aliasPlayers,
   calculatePositionHistory,
   buildPlayersContext,
   buildCurrentLineup,
@@ -29,6 +30,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { parseId } from "~/utils/ids";
 
 export const maxDuration = 120;
 
@@ -41,13 +43,13 @@ const FALLBACK_MODEL = "gpt-5.2-2025-12-11";
 // Zod schema for the lineup response
 const LineupAssignmentSchema = z.object({
   positionNumber: z.number(),
-  playerId: z.number(),
+  playerId: z.string(), // An alias like "P3" (see aliasPlayers)
 });
 
 const QuarterSchema = z.object({
   number: z.number(),
   assignments: z.array(LineupAssignmentSchema),
-  substitutes: z.array(z.number()),
+  substitutes: z.array(z.string()),
 });
 
 const LineupResponseSchema = z.object({
@@ -76,19 +78,19 @@ const QUARTERS = [1, 2, 3, 4] as const;
 // Who can play each quarter, and how many positions can actually be filled.
 // The prompt and the validator both read from this so they can't disagree.
 export interface Availability {
-  availableByQuarter: Record<number, Set<number>>;
+  availableByQuarter: Record<number, Set<string>>;
   positionsByQuarter: Record<number, number[]>;
   // min(formation positions, available players): fewer than the formation means playing short
   slotsByQuarter: Record<number, number>;
-  absentQuartersByPlayer: Map<number, { quarters: number[]; reason: string }>;
+  absentQuartersByPlayer: Map<string, { quarters: number[]; reason: string }>;
 }
 
 export function buildAvailability(
-  teamPlayers: { id: number }[],
-  absentInjuredContext: { playerId: number; quarter: number | null; reason: string }[],
+  teamPlayers: { id: string }[],
+  absentInjuredContext: { playerId: string; quarter: number | null; reason: string }[],
   quarterFormationInfo: Record<number, { positions: { number: number }[] }>
 ): Availability {
-  const absentQuartersByPlayer = new Map<number, { quarters: number[]; reason: string }>();
+  const absentQuartersByPlayer = new Map<string, { quarters: number[]; reason: string }>();
   for (const ai of absentInjuredContext) {
     const quarters = ai.quarter ? [ai.quarter] : [...QUARTERS];
     const entry = absentQuartersByPlayer.get(ai.playerId) ?? { quarters: [], reason: ai.reason };
@@ -96,7 +98,7 @@ export function buildAvailability(
     absentQuartersByPlayer.set(ai.playerId, entry);
   }
 
-  const availableByQuarter: Record<number, Set<number>> = {};
+  const availableByQuarter: Record<number, Set<string>> = {};
   const positionsByQuarter: Record<number, number[]> = {};
   const slotsByQuarter: Record<number, number> = {};
 
@@ -115,8 +117,9 @@ export function buildAvailability(
 
 export async function handleOpenAIHybridGeneration(formData: FormData, user: any) {
   try {
-    const gameId = parseInt(formData.get("gameId") as string);
-    const teamId = parseInt(formData.get("teamId") as string);
+    // Not an id: matches nothing, so the lookups below 404
+    const gameId = parseId(formData.get("gameId")) ?? "";
+    const teamId = parseId(formData.get("teamId")) ?? "";
     const userInput = formData.get("userInput") as string;
 
     console.log('\n=== AI LINEUP GENERATION ===\n');
@@ -136,10 +139,15 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
     }
 
     const quarterFormationInfo = await getQuarterFormations(game, team.format as GameFormat);
-    const teamPlayers = await getTeamPlayers(teamId);
-    const currentAssignments = await getCurrentAssignments(gameId);
-    const absentInjuredPlayers = await getAbsentInjuredPlayers(gameId);
-    const { pastGames, pastAssignments } = await getPastGamesAndAssignments(teamId, game.gameDate);
+    // Everything the model sees (and the validator checks) uses player
+    // aliases; the answer is mapped back to real ids at the end
+    const alias = aliasPlayers(await getTeamPlayers(teamId));
+    const teamPlayers = alias.players;
+    const currentAssignments = alias.rows(await getCurrentAssignments(gameId));
+    const absentInjuredPlayers = alias.rows(await getAbsentInjuredPlayers(gameId));
+    const past = await getPastGamesAndAssignments(teamId, game.gameDate);
+    const pastGames = past.pastGames;
+    const pastAssignments = alias.rows(past.pastAssignments);
 
     // 2. Process and build context
     const positionHistory = calculatePositionHistory(teamPlayers, pastAssignments);
@@ -208,23 +216,23 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
     const extractedLineup = attempt.lineup;
     const message = [extractedLineup.message, ...validation.notes].filter(Boolean).join('\n\n');
 
-    // 6. Convert to frontend format
+    // 6. Convert to frontend format, back in real player ids
     const quarterResults: QuarterWithDetails[] = extractedLineup.quarters.map((quarter) => {
       const qNum = quarter.number;
       const currentQuarterLineup = currentLineup[qNum] || {};
       const formationInfo = quarterFormationInfo[qNum];
 
-      const players: Record<number, number> = {};
+      const players: Record<number, string> = {};
       const changes: Array<{
         positionNumber: number;
         positionName: string;
-        playerId: number;
+        playerId: string;
         playerName: string;
         isChange: boolean;
       }> = [];
 
       quarter.assignments.forEach(assignment => {
-        players[assignment.positionNumber] = assignment.playerId;
+        players[assignment.positionNumber] = alias.realId(assignment.playerId);
 
         const player = playersContext.find(p => p.id === assignment.playerId);
         const positionObj = formationInfo.positions.find((p: any) => p.number === assignment.positionNumber);
@@ -235,7 +243,7 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
         changes.push({
           positionNumber: assignment.positionNumber,
           positionName,
-          playerId: assignment.playerId,
+          playerId: alias.realId(assignment.playerId),
           playerName: player?.name || 'Unknown',
           isChange,
         });
@@ -243,7 +251,7 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
 
       changes.sort((a, b) => a.positionNumber - b.positionNumber);
 
-      const substitutes = (quarter.substitutes || []).map((playerId: number) => {
+      const substitutes = (quarter.substitutes || []).map((playerId: string) => {
         const player = playersContext.find(p => p.id === playerId);
         const absentInjuredInfo = absentInjuredContext.find(ai => {
           const isAbsentThisQuarter = !ai.quarter || ai.quarter === qNum;
@@ -251,7 +259,7 @@ export async function handleOpenAIHybridGeneration(formData: FormData, user: any
         });
 
         return {
-          playerId,
+          playerId: alias.realId(playerId),
           playerName: player?.name || 'Unknown',
           isAbsentInjured: !!absentInjuredInfo,
           absentInjuredReason: absentInjuredInfo?.reason
@@ -465,7 +473,7 @@ export function validateLineup(
   const notes: string[] = [];
   const { teamPlayers, playersContext, format, availability } = context;
   const { availableByQuarter, positionsByQuarter, slotsByQuarter, absentQuartersByPlayer } = availability;
-  const nameOf = (id: number) => playersContext.find(p => p.id === id)?.name ?? `Unknown player ${id}`;
+  const nameOf = (id: string) => playersContext.find(p => p.id === id)?.name ?? `Unknown player ${id}`;
   const rosterIds = new Set(teamPlayers.map(p => p.id));
 
   console.log('Running procedural validation...');
@@ -478,8 +486,8 @@ export function validateLineup(
   }
 
   // Track playing time
-  const quarterCounts: Record<number, number> = {};
-  const gkCounts: Record<number, number> = {};
+  const quarterCounts: Record<string, number> = {};
+  const gkCounts: Record<string, number> = {};
   teamPlayers.forEach(p => {
     quarterCounts[p.id] = 0;
     gkCounts[p.id] = 0;
@@ -554,7 +562,7 @@ export function validateLineup(
   // Check 75% rule (3 quarters, or every available quarter if fewer). When
   // injuries leave fewer field spots than that adds up to, it can't be met, so
   // note it instead of failing every attempt.
-  const requiredQuarters = (playerId: number) =>
+  const requiredQuarters = (playerId: string) =>
     Math.min(3, QUARTERS.filter(q => availableByQuarter[q].has(playerId)).length);
   const totalRequired = playersContext.reduce((sum, p) => sum + requiredQuarters(p.id), 0);
   const totalSlots = QUARTERS.reduce((sum, q) => sum + slotsByQuarter[q], 0);

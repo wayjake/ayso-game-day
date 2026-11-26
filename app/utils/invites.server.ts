@@ -30,8 +30,8 @@ export async function createInvites({
   role,
 }: {
   email: string;
-  teamIds: number[];
-  invitedBy: number;
+  teamIds: string[];
+  invitedBy: string;
   role: StaffRole;
 }) {
   const normalized = normalizeEmail(email);
@@ -41,8 +41,8 @@ export async function createInvites({
     .where(sql`lower(${users.email}) = ${normalized}`)
     .limit(1);
 
-  const created: { teamId: number; shareCode: string }[] = [];
-  const skippedTeamIds: number[] = [];
+  const created: { teamId: string; shareCode: string }[] = [];
+  const skippedTeamIds: string[] = [];
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   for (const teamId of teamIds) {
@@ -181,7 +181,7 @@ export async function getInviteByCode(shareCode: string) {
 
 // Accepts the invite behind this code and every other pending, unexpired invite
 // sent to the same email address. Returns the team ids joined.
-export async function acceptInvites(shareCode: string, userId: number) {
+export async function acceptInvites(shareCode: string, userId: string) {
   const found = await getInviteByCode(shareCode);
   if (!found || found.state !== "pending") return [];
 

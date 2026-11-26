@@ -26,10 +26,12 @@ import {
 
 import { expensesByGame } from "~/utils/billing.server";
 import { formatCents } from "~/utils/money";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Get team details
   const [team] = await db
@@ -101,7 +103,7 @@ type UpcomingItem = { kind: "game"; date: string; time: string | null; game: Gam
 
 export default function TeamGames({ loaderData }: Route.ComponentProps) {
   const { team, games, practices, counts, today, expenses } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = `${teamPath(team)}`;
 
   // Separate upcoming and past games; most recent past game first
   const upcomingGames = games.filter((game) => game.gameDate >= today);
@@ -302,7 +304,7 @@ function UpcomingGameRow({
   base: string;
   today: string;
   counts?: RsvpCounts;
-  expenses?: { itemId: number; name: string; cents: number }[];
+  expenses?: { itemId: string; name: string; cents: number }[];
 }) {
   const notes = gameNotesText(game.notes);
   const soon = relativeGameDay(game.gameDate, today);

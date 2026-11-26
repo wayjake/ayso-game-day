@@ -12,6 +12,8 @@ import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, DateField, LedgerForm, MethodField, MoneyField, TextField, UndoButton } from "~/components/money";
 import { Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ArrowsLeftRight, Eye, EyeSlash, HandHeart, Plus, ShoppingCart } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export function meta() {
   return [{ title: "Funds - Finances - BenchTalk" }];
@@ -19,7 +21,7 @@ export function meta() {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const funds = await ensureDefaultFund(team.id);
   const [book, items] = await Promise.all([loadBook(team.id), getItems(team.id)]);
   const members = await getMembers(team.id, book);
@@ -29,6 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const touchesFund = (t: (typeof book)[number]) => t.lines.some((l) => l.account.type === "fund");
   return data({
     teamId: team.id,
+    teamCode: team.code,
     formKey: newFormKey(),
     today: todayISO(),
     cash: held.cash,
@@ -40,7 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
   const clientKey = readClientKey(formData);
@@ -112,7 +115,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function Funds({ loaderData }: Route.ComponentProps) {
-  const { teamId, formKey, today, cash, funds, staff, activity } = loaderData;
+  const { teamCode, formKey, today, cash, funds, staff, activity } = loaderData;
   const fundOptions = funds.map((f) => (
     <option key={f.id} value={f.id}>
       {f.name} ({formatCents(f.balance)})
@@ -122,7 +125,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
   return (
     <Page>
       <PageHeader
-        back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }}
+        back={{ to: teamPath(teamCode, "finances"), label: "Finances" }}
         title="Funds"
         description="Money the team keeps for anyone: sponsor gifts, donations, savings. Use it to cover people's shares or pay for things."
       />
@@ -149,7 +152,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
                       <span className="min-w-0 flex-1">
                         {a.text}
                         {a.memo && <span className="block text-muted">{a.memo}</span>}
-                        <span className="block text-xs text-muted">#{a.id} · {a.occurredOn}{a.by && ` · ${a.by}`}</span>
+                        <span className="block text-xs text-muted">{a.occurredOn}{a.by && ` · ${a.by}`}</span>
                       </span>
                       <Amount cents={a.cents} className="font-semibold" />
                       {!a.reversed && a.kind !== "reversal" && <UndoButton txnId={a.id} formKey={formKey} />}
@@ -236,7 +239,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
   );
 }
 
-function FundCard({ fund, formKey }: { fund: { id: number; name: string; visible: boolean; balance: number }; formKey: string }) {
+function FundCard({ fund, formKey }: { fund: { id: string; name: string; visible: boolean; balance: number }; formKey: string }) {
   return (
     <Card className="p-4">
       <p className="flex items-center justify-between gap-2">

@@ -31,8 +31,8 @@ async function save(body: { action: "seen"; tourId: string } | { action: "reset"
 }
 
 // Lives in the dashboard layout so the ? can sit in its top bar. Off a team's
-// pages (teamId null) there are no tours: the context is null and the ? hides.
-export function TourProvider({ teamId, initialSeen, children }: { teamId: number | null; initialSeen: ToursSeen; children: ReactNode }) {
+// pages (teamCode null) there are no tours: the context is null and the ? hides.
+export function TourProvider({ teamCode, initialSeen, children }: { teamCode: string | null; initialSeen: ToursSeen; children: ReactNode }) {
   const [seen, setSeen] = useState<ToursSeen>(initialSeen);
   const [active, setActive] = useState<{ tour: Tour; index: number } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -56,11 +56,11 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
   // First visit: the welcome tour. First time in Messages after that: the
   // announcements tour. Never both at once, and never over the Help sheet.
   useEffect(() => {
-    if (teamId === null || active || helpOpen || autoStarted.current) return;
+    if (teamCode === null || active || helpOpen || autoStarted.current) return;
     const welcome = getTour("welcome")!;
     const announcements = getTour("announcements")!;
     // Only start where the tour's first step lives, so it never pulls you off the page you came for
-    const startsHere = (tour: Tour) => (tour.steps[0].path?.(teamId) ?? location.pathname) === location.pathname;
+    const startsHere = (tour: Tour) => (tour.steps[0].path?.(teamCode) ?? location.pathname) === location.pathname;
     let next: Tour | null = null;
     if (!hasSeen(seen, welcome)) next = startsHere(welcome) ? welcome : null;
     else if (!hasSeen(seen, announcements) && startsHere(announcements)) next = announcements;
@@ -68,7 +68,7 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
     autoStarted.current = true;
     const timer = setTimeout(() => setActive({ tour: next!, index: 0 }), 600);
     return () => clearTimeout(timer);
-  }, [seen, location.pathname, active, helpOpen, teamId]);
+  }, [seen, location.pathname, active, helpOpen, teamCode]);
 
   // Allow a later auto-start on another page once this one is finished
   useEffect(() => {
@@ -76,18 +76,18 @@ export function TourProvider({ teamId, initialSeen, children }: { teamId: number
   }, [location.pathname, active]);
 
   return (
-    <TourContext.Provider value={teamId === null ? null : { start, openHelp: () => setHelpOpen(true) }}>
+    <TourContext.Provider value={teamCode === null ? null : { start, openHelp: () => setHelpOpen(true) }}>
       {children}
-      {active && teamId !== null && (
+      {active && teamCode !== null && (
         <TourRunner
-          teamId={teamId}
+          teamCode={teamCode}
           tour={active.tour}
           index={active.index}
           onIndex={(index) => setActive({ tour: active.tour, index })}
           onDone={() => finish(active.tour)}
         />
       )}
-      {helpOpen && teamId !== null && (
+      {helpOpen && teamCode !== null && (
         <HelpSheet
           seen={seen}
           onStart={start}
@@ -231,13 +231,13 @@ function useTarget(target: string | undefined, key: string, hold: boolean, cover
 }
 
 function TourRunner({
-  teamId,
+  teamCode,
   tour,
   index,
   onIndex,
   onDone,
 }: {
-  teamId: number;
+  teamCode: string;
   tour: Tour;
   index: number;
   onIndex: (index: number) => void;
@@ -253,7 +253,7 @@ function TourRunner({
   const [cardHeight, setCardHeight] = useState(0);
   const [leaving, setLeaving] = useState(false);
 
-  const path = step.path?.(teamId);
+  const path = step.path?.(teamCode);
   const navigating = Boolean(path && location.pathname !== path);
   useEffect(() => {
     if (path && location.pathname !== path) navigate(path);

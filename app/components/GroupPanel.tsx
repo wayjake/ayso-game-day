@@ -13,12 +13,12 @@ import { MAX_GROUP_NAME, type GroupMember, type PickerOption } from "~/utils/gro
 export type GroupInfo = {
   name: string | null;
   members: GroupMember[];
-  managerId: number | null;
+  managerId: string | null;
   canManage: boolean;
   addable: PickerOption[];
 };
 
-export function GroupPanel({ group, meId, className }: { group: GroupInfo; meId: number; className?: string }) {
+export function GroupPanel({ group, meId, className }: { group: GroupInfo; meId: string; className?: string }) {
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const [renaming, setRenaming] = useState(false);
   const [adding, setAdding] = useState(false);

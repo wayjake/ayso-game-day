@@ -1,4 +1,5 @@
 import type { Route } from "./+types/family._index";
+import { teamPath } from "~/utils/team-path";
 import { Link, data, useSearchParams } from "react-router";
 import { db, pushSubscriptions } from "~/db";
 import { eq } from "drizzle-orm";
@@ -16,6 +17,7 @@ import { familyTasks } from "~/utils/tasks.server";
 import { Alert, Badge, Card, DateTile, EmptyState, HomeAwayBadge, PlayerAvatar, buttonClass, cx } from "~/components/ui";
 import { Bell, CalendarBlank, CaretRight, Clock, Coins, ListChecks, MapPin, Note, Sneaker, SoccerBall } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
+import { parseId } from "~/utils/ids";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, kids, teamIds } = await requireParent(request);
@@ -47,14 +49,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (formData.get("_action") !== "rsvp") return data({ error: "Unknown action" }, { status: 400 });
 
-  const playerId = Number(formData.get("playerId"));
+  const playerId = parseId(formData.get("playerId"));
   const eventType = formData.get("eventType");
-  const eventId = Number(formData.get("eventId"));
+  const eventId = parseId(formData.get("eventId"));
   const status = formData.get("status");
 
   // Only your own kids, only their team's events, only upcoming ones
   const kid = kids.find((k) => k.playerId === playerId);
-  if (!kid || !isRsvpStatus(status) || (eventType !== "game" && eventType !== "practice")) {
+  if (!kid || !eventId || !isRsvpStatus(status) || (eventType !== "game" && eventType !== "practice")) {
     return data({ error: "Can't RSVP for that" }, { status: 400 });
   }
   const event = await getTeamEvent(kid.teamId, eventType, eventId);
@@ -62,14 +64,14 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ error: "That event can't take RSVPs" }, { status: 400 });
   }
 
-  const previous = await setRsvp({ teamId: kid.teamId, playerId, eventType, eventId, status, respondedBy: user.id });
+  const previous = await setRsvp({ teamId: kid.teamId, playerId: kid.playerId, eventType, eventId, status, respondedBy: user.id });
 
   // Coaches hear about it when someone drops out
   if (status === "no" && previous !== "no") {
     await sendPush(await getCoachUserIds(kid.teamId), "dropouts", {
       title: `${kid.name.split(" ")[0]} can't make it`,
       body: `${kid.name} is out for ${eventPhrase(event)} ${eventDayPhrase(event.date)}.`,
-      url: `/dashboard/team/${kid.teamId}/rsvps/${event.type}/${event.id}`,
+      url: teamPath(kid.teamCode, `rsvps/${event.type}/${event.id}`),
       tag: `rsvp-${event.key}`,
     });
   }

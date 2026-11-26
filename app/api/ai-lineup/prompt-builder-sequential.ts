@@ -56,10 +56,10 @@ export function buildQuarterUserMessage(params: {
   quartersRemaining: number;
   formationContext: string;
   playersContext: PlayerContext[];
-  remainingQuartersNeeded: Record<number, number>;
+  remainingQuartersNeeded: Record<string, number>;
   previousQuarters: QuarterPlanningContext['previousQuarters'];
   positionsPerQuarter: number;
-  mustPlayPlayerIds: number[];
+  mustPlayPlayerIds: string[];
   absentInjuredContext: AbsentInjuredContext[];
   quarterFormationInfo: Record<number, { positions: Array<{ number: number; abbreviation: string }> }>;
 }): string {
@@ -78,7 +78,7 @@ export function buildQuarterUserMessage(params: {
 
   // Build previous quarters context with position details
   let previousQuartersContext = '';
-  let previousGoalkeeper: { playerId: number; playerName: string; quarter: number } | null = null;
+  let previousGoalkeeper: { playerId: string; playerName: string; quarter: number } | null = null;
 
   if (previousQuarters.length > 0) {
     previousQuartersContext = `\n\n📅 PREVIOUS QUARTERS:\n`;
@@ -126,7 +126,7 @@ export function buildQuarterUserMessage(params: {
   }
 
   // Get all players who have sat out at any point (cumulative tracking for context)
-  const allPlayersWhoSatOut = new Set<number>();
+  const allPlayersWhoSatOut = new Set<string>();
   previousQuarters.forEach(pq => {
     pq.substitutes.forEach(id => allPlayersWhoSatOut.add(id));
   });
@@ -147,7 +147,7 @@ export function buildQuarterUserMessage(params: {
 
   // Add goalkeeper consecutive warning if applicable
   let goalkeeperWarning = '';
-  const gk = previousGoalkeeper as { playerId: number; playerName: string; quarter: number } | null;
+  const gk = previousGoalkeeper as { playerId: string; playerName: string; quarter: number } | null;
   if (gk && quarterNumber >= 2 && quarterNumber <= 4) {
     goalkeeperWarning = `\n\n⚽ GOALKEEPER CONSECUTIVE RULE (CRITICAL):
   ${gk.playerName} (ID: ${gk.playerId})  should play in this quarter if it's likely they will play GK again in this game.`;

@@ -21,7 +21,10 @@ import {
 import { sumCents } from "./money.ts";
 import { creditLines, expenseLines, vendorRefundLines } from "./ledger.ts";
 
-const player = (id: number) => ({ type: "player" as const, id });
+// Ids are UUIDv7 strings; these sort the same way their numbers do, like real ones by age
+const uid = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+
+const player = (n: number) => ({ type: "player" as const, id: uid(n) });
 const full = (id: number): ShareSpec => ({ member: player(id), weight: FULL_SHARE, fixedCents: null });
 const half = (id: number): ShareSpec => ({ member: player(id), weight: 1, fixedCents: null });
 const split = (totalCents: number, rounding: "cent" | "dollar" = "cent", unitCents: number | null = null): ExpenseSpec => ({
@@ -104,24 +107,24 @@ test("share lines balance, and the expense account holds what was billed", () =>
     { member: player(1), cents: 11600 },
     { member: player(2), cents: 5800 },
   ];
-  const lines = shareLines(7, changes);
+  const lines = shareLines(uid(7), changes);
   assertBalanced(lines);
-  assert.equal(balances(lines).get("item:7"), -17400);
+  assert.equal(balances(lines).get(`item:${uid(7)}`), -17400);
   // Mixed up and down that nets to zero still balances, with no item line
-  const swap = shareLines(7, [
+  const swap = shareLines(uid(7), [
     { member: player(1), cents: 500 },
     { member: player(2), cents: -500 },
   ]);
   assertBalanced(swap);
   assert.equal(swap.length, 2);
-  assert.throws(() => shareLines(7, []), LedgerError);
+  assert.throws(() => shareLines(uid(7), []), LedgerError);
 });
 
 test("share changes count as billed in a statement", () => {
   const s = statement([
-    { txnId: 1, kind: "charge", cents: 11600, itemId: 7, reversed: false },
-    { txnId: 2, kind: "adjust", cents: 5800, itemId: 7, reversed: false },
-    { txnId: 3, kind: "payment", cents: -10000, itemId: null, reversed: false },
+    { txnId: uid(1), kind: "charge", cents: 11600, itemId: uid(7), reversed: false },
+    { txnId: uid(2), kind: "adjust", cents: 5800, itemId: uid(7), reversed: false },
+    { txnId: uid(3), kind: "payment", cents: -10000, itemId: null, reversed: false },
   ]);
   assert.equal(s.items[0].charged, 17400);
   assert.equal(s.items[0].paid, 10000);
@@ -130,33 +133,33 @@ test("share changes count as billed in a statement", () => {
 
 test("families: shared emails or parent accounts join players, through any chain", () => {
   const groups = groupFamilies(
-    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4, 5, 6].map(uid),
     [
-      { playerId: 1, key: "mom@x" },
-      { playerId: 2, key: "mom@x" }, // 1 and 2 are brothers
-      { playerId: 2, key: "dad@x" },
-      { playerId: 3, key: "dad@x" }, // 3 shares dad with 2, so joins 1 and 2
-      { playerId: 4, key: "solo@x" },
-      { playerId: 4, key: "solo2@x" }, // one kid, two emails: still one family
-      { playerId: 99, key: "mom@x" }, // not on the team: ignored
+      { playerId: uid(1), key: "mom@x" },
+      { playerId: uid(2), key: "mom@x" }, // 1 and 2 are brothers
+      { playerId: uid(2), key: "dad@x" },
+      { playerId: uid(3), key: "dad@x" }, // 3 shares dad with 2, so joins 1 and 2
+      { playerId: uid(4), key: "solo@x" },
+      { playerId: uid(4), key: "solo2@x" }, // one kid, two emails: still one family
+      { playerId: uid(99), key: "mom@x" }, // not on the team: ignored
     ]
   );
-  assert.deepEqual(groups, [[1, 2, 3], [4], [5], [6]]);
+  assert.deepEqual(groups, [[uid(1), uid(2), uid(3)], [uid(4)], [uid(5)], [uid(6)]]);
 });
 
 test("invoices are paid oldest first", () => {
   const s = invoiceStatuses(
     [
-      { id: 1, totalCents: 19300 },
-      { id: 2, totalCents: 4900 },
-      { id: 3, totalCents: -2100 }, // a credit note
+      { id: uid(1), totalCents: 19300 },
+      { id: uid(2), totalCents: 4900 },
+      { id: uid(3), totalCents: -2100 }, // a credit note
     ],
     20000
   );
   assert.deepEqual(s, [
-    { id: 1, paid: 19300, remaining: 0 },
-    { id: 2, paid: 2800, remaining: 2100 }, // $7 paid in plus the $21 credit note
-    { id: 3, paid: 0, remaining: 0 },
+    { id: uid(1), paid: 19300, remaining: 0 },
+    { id: uid(2), paid: 2800, remaining: 2100 }, // $7 paid in plus the $21 credit note
+    { id: uid(3), paid: 0, remaining: 0 },
   ]);
 });
 
@@ -165,14 +168,14 @@ test("a credit invoice counts toward the ones still due", () => {
   assert.deepEqual(
     invoiceStatuses(
       [
-        { id: 1, totalCents: 11600 },
-        { id: 2, totalCents: -5000 },
+        { id: uid(1), totalCents: 11600 },
+        { id: uid(2), totalCents: -5000 },
       ],
       0
     ),
     [
-      { id: 1, paid: 5000, remaining: 6600 },
-      { id: 2, paid: 0, remaining: 0 },
+      { id: uid(1), paid: 5000, remaining: 6600 },
+      { id: uid(2), paid: 0, remaining: 0 },
     ]
   );
 });
@@ -181,9 +184,9 @@ test("settling Palmdale: $1,102 billed, $1,100 paid out, then $400 of deposit ba
   const shares = [...Array.from({ length: 9 }, (_, i) => full(i + 1)), half(10)];
   const billed = shareTargets(split(110000, "dollar"), shares);
   const lines = [
-    ...shareLines(1, shareChanges(billed, [])),
-    ...expenseLines({ type: "item", itemId: 1 }, 110000, { type: "cash" }),
-    ...vendorRefundLines(1, 40000),
+    ...shareLines(uid(1), shareChanges(billed, [])),
+    ...expenseLines({ type: "item", itemId: uid(1) }, 110000, { type: "cash" }),
+    ...vendorRefundLines(uid(1), 40000),
   ];
   const cost = 110000 - 40000;
   const settle = shareChanges(settleTargets(cost, shares), billed);
@@ -191,8 +194,8 @@ test("settling Palmdale: $1,102 billed, $1,100 paid out, then $400 of deposit ba
   assert.equal(settle[0].cents, 7369 - 11600);
   assert.equal(settle[8].cents, 7368 - 11600);
   assert.equal(settle[9].cents, 3684 - 5800);
-  lines.push(...shareLines(1, settle));
-  assert.equal(balances(lines).get("item:1") ?? 0, 0);
+  lines.push(...shareLines(uid(1), settle));
+  assert.equal(balances(lines).get(`item:${uid(1)}`) ?? 0, 0);
   assert.equal(sumCents(settleTargets(cost, shares).map((t) => t.cents)), cost);
 });
 
@@ -200,18 +203,18 @@ test("settling counts refunds already given, and leaves the expense at zero", ()
   const shares = [full(1), full(2), full(3)];
   const billed = shareTargets(split(30000), shares); // $100 each
   const lines = [
-    ...shareLines(1, shareChanges(billed, [])),
-    ...expenseLines({ type: "item", itemId: 1 }, 30000, { type: "cash" }),
-    ...vendorRefundLines(1, 6000),
+    ...shareLines(uid(1), shareChanges(billed, [])),
+    ...expenseLines({ type: "item", itemId: uid(1) }, 30000, { type: "cash" }),
+    ...vendorRefundLines(uid(1), 6000),
     // $10 each already given back by hand
-    ...creditLines(1, shares.map((s) => ({ member: s.member, cents: 1000 }))),
+    ...creditLines(uid(1), shares.map((s) => ({ member: s.member, cents: 1000 }))),
   ];
   // Billed less refunds given: what settling compares against
   const net = billed.map((b) => ({ member: b.member, cents: b.cents - 1000 }));
   const settle = shareChanges(settleTargets(24000, shares), net);
   assert.deepEqual(settle.map((c) => c.cents), [-1000, -1000, -1000]);
-  lines.push(...shareLines(1, settle));
-  assert.equal(balances(lines).get("item:1") ?? 0, 0);
+  lines.push(...shareLines(uid(1), settle));
+  assert.equal(balances(lines).get(`item:${uid(1)}`) ?? 0, 0);
 });
 
 test("settling with nothing paid out, or nobody on it", () => {
@@ -229,17 +232,17 @@ test("random share edits always bill exactly the targets", () => {
   for (let run = 0; run < 200; run++) {
     const spec = split(1000 + rand(500000), rand(2) ? "cent" : "dollar");
     let shares: ShareSpec[] = Array.from({ length: 1 + rand(12) }, (_, i) => ({ member: player(i + 1), weight: 1 + rand(2), fixedCents: null }));
-    const billed = new Map<number, number>();
+    const billed = new Map<string, number>();
     const lines = [];
     let locked: ExpenseSpec = spec;
     for (let step = 0; step < 6; step++) {
       const targets = shareTargets(locked, shares);
       const changes = shareChanges(
         targets,
-        [...billed].map(([id, cents]) => ({ member: player(id), cents }))
+        [...billed].map(([id, cents]) => ({ member: { type: "player" as const, id }, cents }))
       );
       if (changes.length) {
-        const l = shareLines(1, changes);
+        const l = shareLines(uid(1), changes);
         assertBalanced(l);
         lines.push(...l);
         for (const c of changes) billed.set(c.member.id, (billed.get(c.member.id) ?? 0) + c.cents);
@@ -254,7 +257,7 @@ test("random share edits always bill exactly the targets", () => {
       if (r === 1 && shares.length > 1) shares = shares.slice(1);
       if (r === 2) shares = shares.map((s, i) => (i === 0 ? { ...s, weight: s.weight === 1 ? 2 : 1 } : s));
     }
-    const item = balances(lines).get("item:1") ?? 0;
+    const item = balances(lines).get(`item:${uid(1)}`) ?? 0;
     assert.equal(item, -sumCents([...billed.values()]));
   }
 });

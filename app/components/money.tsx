@@ -211,7 +211,7 @@ export function ShareEditor({
     try {
       const t = shareTargets(
         { mode: "split", totalCents, rounding, unitCents },
-        picked.map((o) => ({ member: { type: o.key.startsWith("staff:") ? "staff" : "player", id: Number(o.key.split(":")[1]) }, weight: rows[o.key].weight, fixedCents: null }))
+        picked.map((o) => ({ member: { type: o.key.startsWith("staff:") ? "staff" : "player", id: o.key.slice(o.key.indexOf(":") + 1) }, weight: rows[o.key].weight, fixedCents: null }))
       );
       amounts = new Map(picked.map((o, i) => [o.key, t[i].cents]));
     } catch {
@@ -327,7 +327,7 @@ export function Choice({ name, options, defaultValue }: { name: string; options:
   );
 }
 
-export function UndoButton({ txnId, formKey, action }: { txnId: number; formKey: string; action?: string }) {
+export function UndoButton({ txnId, formKey, action }: { txnId: string; formKey: string; action?: string }) {
   const fetcher = useFetcher<ActionResult>();
   // A browser confirm() would block the page; a second tap is the confirmation instead
   const [armed, setArmed] = useState(false);
@@ -433,7 +433,7 @@ export function MoneyCard({ owed, dueBack, pending, className }: { owed: Cents; 
 }
 
 type InvoiceView = {
-  id: number;
+  id: string;
   number: number;
   issuedAt: string;
   totalCents: Cents;

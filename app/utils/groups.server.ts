@@ -12,6 +12,7 @@ import {
   loadGroupMembers,
 } from "~/utils/messages.server";
 import { publishConversation } from "~/utils/realtime.server";
+import { parseId } from "~/utils/ids";
 
 // Open pages reload: the header and member list change for everyone in it
 const publishGroupChange = (conversation: typeof conversations.$inferSelect) => publishConversation(conversation, { kind: "members" });
@@ -28,9 +29,9 @@ const publishGroupChange = (conversation: typeof conversations.$inferSelect) => 
 
 const MAX_GROUP_SIZE = 60;
 
-type Resolved = { option: PickerOption; userIds: number[]; familyEmail: string | null };
+type Resolved = { option: PickerOption; userIds: string[]; familyEmail: string | null };
 
-function familyKey(teamId: number, email: string) {
+function familyKey(teamId: string, email: string) {
   const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
   return `f:${crypto.createHmac("sha256", secret).update(`group-family:${teamId}:${email}`).digest("hex").slice(0, 16)}`;
 }
@@ -41,7 +42,7 @@ const firstNames = (names: string[]) => {
 };
 
 // Everyone on the team the viewer could start a conversation with, by key
-async function resolvable(teamId: number, viewerId: number) {
+async function resolvable(teamId: string, viewerId: string) {
   const [staff, families] = await Promise.all([getTeamStaff(teamId), listFamilies(null, teamId)]);
   const byKey = new Map<string, Resolved>();
   for (const m of staff) {
@@ -74,11 +75,11 @@ async function resolvable(teamId: number, viewerId: number) {
 }
 
 /** Picker options: staff first, then families by kid */
-export async function pickerOptions(teamId: number, viewerId: number) {
+export async function pickerOptions(teamId: string, viewerId: string) {
   return [...(await resolvable(teamId, viewerId)).values()].map((r) => r.option);
 }
 
-type Seat = { userId: number | null; familyEmail: string | null };
+type Seat = { userId: string | null; familyEmail: string | null };
 
 // One seat per account; a family not on the app is one email-only seat
 function seatsFor(picked: Resolved[], exclude: Seat[] = []) {
@@ -106,7 +107,7 @@ const signature = (seats: Seat[]) =>
     .sort()
     .join(",");
 
-async function resolveKeys(teamId: number, viewerId: number, keys: string[]) {
+async function resolveKeys(teamId: string, viewerId: string, keys: string[]) {
   const byKey = await resolvable(teamId, viewerId);
   const picked = [...new Set(keys)].map((k) => byKey.get(k));
   if (picked.some((p) => !p)) return null; // Someone left the team since the page loaded
@@ -115,7 +116,7 @@ async function resolveKeys(teamId: number, viewerId: number, keys: string[]) {
 
 // An unnamed group the viewer is in with exactly these people, so picking the
 // same people twice opens the same chat
-async function findSameGroup(teamId: number, viewerId: number, seats: Seat[]) {
+async function findSameGroup(teamId: string, viewerId: string, seats: Seat[]) {
   const ids = await groupIdsFor(viewerId, [teamId]);
   if (ids.length === 0) return null;
   const unnamed = await db
@@ -133,11 +134,11 @@ async function findSameGroup(teamId: number, viewerId: number, seats: Seat[]) {
 
 // From the New message picker. Returns the conversation to open.
 export async function startConversation(
-  teamId: number,
-  viewer: { id: number; side: "coach" | "parent" },
+  teamId: string,
+  viewer: { id: string; side: "coach" | "parent" },
   keys: string[],
   rawName: string
-): Promise<{ conversationId: number } | { error: string }> {
+): Promise<{ conversationId: string } | { error: string }> {
   if (keys.length === 0) return { error: "Pick who to message" };
   const picked = await resolveKeys(teamId, viewer.id, keys);
   if (!picked) return { error: "Someone you picked isn't on the team anymore. Reload and try again." };
@@ -179,7 +180,7 @@ export async function startConversation(
 // Managing a group: whoever started it (see groupManagerId) renames it and adds
 // or removes people. Anyone can leave.
 
-export async function groupView(conversation: typeof conversations.$inferSelect, viewerId: number) {
+export async function groupView(conversation: typeof conversations.$inferSelect, viewerId: string) {
   const members = (await loadGroupMembers(conversation.teamId, [conversation.id])).get(conversation.id) ?? [];
   const managerId = groupManagerId(conversation, members);
   const canManage = managerId === viewerId;
@@ -205,7 +206,7 @@ export type GroupActionResult = { ok: true } | { error: string } | { left: true 
 export async function handleGroupAction(
   formData: FormData,
   conversation: typeof conversations.$inferSelect,
-  user: { id: number; name: string | null; email: string }
+  user: { id: string; name: string | null; email: string }
 ): Promise<GroupActionResult | null> {
   const intent = String(formData.get("_action") ?? "");
   if (!intent.startsWith("group")) return null;
@@ -241,9 +242,9 @@ export async function handleGroupAction(
         .onConflictDoNothing();
     }
   } else if (intent === "groupRemove") {
-    const memberId = Number(formData.get("memberId"));
-    const target = members.find((m) => m.id === memberId);
-    if (!target) return { error: "They're not in this group" };
+    const memberId = parseId(formData.get("memberId"));
+    const target = memberId ? members.find((m) => m.id === memberId) : undefined;
+    if (!memberId || !target) return { error: "They're not in this group" };
     if (target.userId === user.id) return { error: "Use Leave to leave the group" };
     await db.delete(conversationMembers).where(and(eq(conversationMembers.id, memberId), eq(conversationMembers.conversationId, conversation.id)));
   } else {

@@ -29,6 +29,7 @@ import { coachFromAddress, escapeHtml, familyDeliveryAddress, sendEmail, textToH
 // Either way recipients[].conversationId and messageId point at the copy.
 
 import { ASKS, MAX_BODY, MAX_SUBJECT, type Ask } from "./announcements";
+import { compareIds, isId, parseId } from "~/utils/ids";
 export { ASKS, MAX_BODY, MAX_SUBJECT, type Ask };
 
 function appOrigin(request: Request) {
@@ -105,6 +106,7 @@ async function deliver({
   recipient,
   announcement,
   teamName,
+  teamCode,
   coach,
   reminder,
   shared,
@@ -113,11 +115,12 @@ async function deliver({
   recipient: typeof announcementRecipients.$inferSelect;
   announcement: typeof announcements.$inferSelect;
   teamName: string;
+  teamCode: string;
   coach: Pick<User, "id" | "name" | "email" | "sendingEmail">;
   reminder: boolean;
   shared: boolean;
 }) {
-  const from = coachFromAddress(coach, { id: recipient.teamId, name: teamName });
+  const from = coachFromAddress(coach, { code: teamCode, name: teamName });
   const coachName = coach.name?.trim() || "Your coach";
   const { text, html } = announcementEmail({
     teamName,
@@ -165,22 +168,23 @@ export async function sendAnnouncement({
   familyEmails,
 }: {
   request: Request;
-  teamId: number;
+  teamId: string;
   coach: User;
   subject: string;
   body: string;
   ask: Ask;
   familyEmails: string[];
 }) {
-  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  const [team] = await db.select({ name: teams.name, code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
   const teamName = team?.name ?? "Team";
+  const teamCode = team?.code ?? "";
   const wanted = new Set(familyEmails.map((e) => e.trim().toLowerCase()));
   const everyone = await listFamilies(null, teamId);
   const families = everyone.filter((f) => wanted.has(f.email));
   if (families.length === 0) return null;
   const shared = families.length === everyone.length;
 
-  const from = coachFromAddress(coach, { id: teamId, name: teamName });
+  const from = coachFromAddress(coach, { code: teamCode, name: teamName });
   const [announcement] = await db
     .insert(announcements)
     .values({ teamId, sentBy: coach.id, subject, body, ask, fromEmail: from.address })
@@ -204,7 +208,7 @@ export async function sendAnnouncement({
   const teamCopy = teamChat ? await postCopy(teamChat) : null;
 
   // Rows first, so a crash mid-send leaves a record of who was and wasn't sent
-  const prepared: { recipient: typeof announcementRecipients.$inferSelect; userIds: number[]; conversationId: number }[] = [];
+  const prepared: { recipient: typeof announcementRecipients.$inferSelect; userIds: string[]; conversationId: string }[] = [];
   for (const family of families) {
     // Otherwise each family's copy goes in the sender's private thread with them, and so do their replies
     const conversation = teamChat ?? (await getOrCreateFamilyConversation(teamId, family.email, family.userIds[0], coach.id));
@@ -228,7 +232,7 @@ export async function sendAnnouncement({
   }
 
   await inPool(prepared, 4, async ({ recipient }) => {
-    const result = await deliver({ request, recipient, announcement, teamName, coach, reminder: false, shared });
+    const result = await deliver({ request, recipient, announcement, teamName, teamCode, coach, reminder: false, shared });
     await db
       .update(announcementRecipients)
       .set(
@@ -240,7 +244,7 @@ export async function sendAnnouncement({
   });
 
   // Each parent once, even with kids in two families on the team
-  const pushed = new Set<number>();
+  const pushed = new Set<string>();
   await Promise.all(
     prepared.map((p) => {
       const userIds = p.userIds.filter((id) => !pushed.has(id) && id !== coach.id);
@@ -271,7 +275,7 @@ export async function sendTestAnnouncement({
   familyEmails,
 }: {
   request: Request;
-  teamId: number;
+  teamId: string;
   coach: User;
   subject: string;
   body: string;
@@ -279,7 +283,7 @@ export async function sendTestAnnouncement({
   /** Who it's going to, so the preview says where replies will go */
   familyEmails: string[];
 }) {
-  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  const [team] = await db.select({ name: teams.name, code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
   const everyone = await listFamilies(null, teamId);
   const wanted = new Set(familyEmails.map((e) => e.trim().toLowerCase()));
   const shared = everyone.length > 0 && everyone.every((f) => wanted.has(f.email));
@@ -293,7 +297,7 @@ export async function sendTestAnnouncement({
     reminder: false,
     shared,
   });
-  return sendEmail({ from: coachFromAddress(coach, { id: teamId, name: team?.name ?? "Team" }).header, to: coach.email, subject: `[Test] ${subject}`, text, html });
+  return sendEmail({ from: coachFromAddress(coach, { code: team?.code ?? "", name: team?.name ?? "Team" }).header, to: coach.email, subject: `[Test] ${subject}`, text, html });
 }
 
 // Families who haven't done what the announcement asked for
@@ -306,11 +310,11 @@ export function awaitingResponse(r: RecipientView, ask: Ask) {
 
 // Only the sender reminds: replies to a reminder land in the sender's private
 // threads, so one from anyone else would have families answering the wrong person
-export async function remindAnnouncement(request: Request, announcementId: number, teamId: number, coach: User) {
+export async function remindAnnouncement(request: Request, announcementId: string | null, teamId: string, coach: User) {
   const tracker = await getAnnouncementTracker(announcementId, teamId, coach.id);
   if (!tracker || tracker.announcement.sentBy !== coach.id) return { reminded: 0 };
   const targets = tracker.recipients.filter((r) => awaitingResponse(r, tracker.announcement.ask));
-  const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  const [team] = await db.select({ name: teams.name, code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
   const rows = targets.length
     ? await db.select().from(announcementRecipients).where(inArray(announcementRecipients.id, targets.map((t) => t.id)))
     : [];
@@ -322,6 +326,7 @@ export async function remindAnnouncement(request: Request, announcementId: numbe
       recipient,
       announcement: tracker.announcement,
       teamName: team?.name ?? "Team",
+      teamCode: team?.code ?? "",
       coach,
       reminder: true,
       shared: tracker.shared,
@@ -362,7 +367,7 @@ export async function findRecipientByAckToken(token: string) {
 
 // The first "Got it" counts: its time, who (a parent account, when we know
 // one) and where (the app, or the email's link)
-export async function acknowledgeRecipient(recipientId: number, by: { userId: number | null; via: "app" | "email" }) {
+export async function acknowledgeRecipient(recipientId: string, by: { userId: string | null; via: "app" | "email" }) {
   const first = sql`${announcementRecipients.acknowledgedAt} is null`;
   await db
     .update(announcementRecipients)
@@ -375,7 +380,7 @@ export async function acknowledgeRecipient(recipientId: number, by: { userId: nu
 }
 
 /** Whether this signed-in person is one of the family an announcement row was sent to */
-export async function isInRecipientFamily(teamId: number, familyEmail: string, userId: number) {
+export async function isInRecipientFamily(teamId: string, familyEmail: string, userId: string) {
   const family = (await listFamilies(null, teamId)).find((f) => f.email === familyEmail);
   return Boolean(family?.userIds.includes(userId));
 }
@@ -383,16 +388,16 @@ export async function isInRecipientFamily(teamId: number, familyEmail: string, u
 // Display names for "Got it": the parent account that tapped it, or for a tap
 // on the email's link without one, the family contact the email went to
 async function acknowledgerNames(
-  teamId: number,
-  rows: { id: number; familyEmail: string; acknowledgedAt: string | null; acknowledgedBy: number | null }[]
+  teamId: string,
+  rows: { id: string; familyEmail: string; acknowledgedAt: string | null; acknowledgedBy: string | null }[]
 ) {
-  const result = new Map<number, string>();
+  const result = new Map<string, string>();
   const acked = rows.filter((r) => r.acknowledgedAt);
   if (acked.length === 0) return result;
   const userIds = [...new Set(acked.flatMap((r) => (r.acknowledgedBy ? [r.acknowledgedBy] : [])))];
   const people = userIds.length
     ? new Map((await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))).map((u) => [u.id, u.name || u.email]))
-    : new Map<number, string>();
+    : new Map<string, string>();
   const anonymous = acked.filter((r) => !r.acknowledgedBy || !people.has(r.acknowledgedBy)).map((r) => r.familyEmail);
   const labels = await familyLabels(teamId, [...new Set(anonymous)]);
   for (const r of acked) {
@@ -401,11 +406,11 @@ async function acknowledgerNames(
   return result;
 }
 
-export type AckSummary = { announcementId: number; total: number; names: string[] };
+export type AckSummary = { announcementId: string; total: number; names: string[] };
 
 /** Staff, under announcement copies that asked for "Got it": who has, by name, and out of how many */
-export async function ackSummaries(teamId: number, messageIds: number[]) {
-  const result: Record<number, AckSummary> = {};
+export async function ackSummaries(teamId: string, messageIds: string[]) {
+  const result: Record<string, AckSummary> = {};
   if (messageIds.length === 0) return result;
   const rows = await db
     .select({
@@ -433,7 +438,7 @@ export async function ackSummaries(teamId: number, messageIds: number[]) {
 // The announcement rows that are this parent's in a conversation. In their
 // private thread that's every row there; in the team chat everyone shares one
 // copy, so only rows for a family they belong to (by account or family email).
-async function parentRecipients(conversation: typeof conversations.$inferSelect, userId: number) {
+async function parentRecipients(conversation: typeof conversations.$inferSelect, userId: string) {
   if (conversation.kind === "direct") return eq(announcementRecipients.conversationId, conversation.id);
   const emails = (await listFamilies(null, conversation.teamId)).filter((f) => f.userIds.includes(userId)).map((f) => f.email);
   const mine = emails.length
@@ -443,8 +448,8 @@ async function parentRecipients(conversation: typeof conversations.$inferSelect,
 }
 
 // A parent tapping "Got it" on the copy in their thread or the team chat
-export async function acknowledgeFromThread(messageId: number, conversation: typeof conversations.$inferSelect, userId: number) {
-  if (conversation.kind === "group") return false;
+export async function acknowledgeFromThread(messageId: string | null, conversation: typeof conversations.$inferSelect, userId: string) {
+  if (conversation.kind === "group" || !messageId) return false;
   const rows = await db
     .select({ id: announcementRecipients.id })
     .from(announcementRecipients)
@@ -454,7 +459,7 @@ export async function acknowledgeFromThread(messageId: number, conversation: typ
 }
 
 /** Announcement copies this parent has answered "Got it" to here */
-export async function acknowledgedMessageIds(conversation: typeof conversations.$inferSelect, userId: number) {
+export async function acknowledgedMessageIds(conversation: typeof conversations.$inferSelect, userId: string) {
   if (conversation.kind === "group") return []; // Announcements never land in a group
   const rows = await db
     .select({ messageId: announcementRecipients.messageId })
@@ -469,18 +474,18 @@ export async function acknowledgedMessageIds(conversation: typeof conversations.
 export type RecipientState = "failed" | "bounced" | "replied" | "acknowledged" | "opened" | "delivered" | "sent" | "pending";
 
 export type RecipientView = {
-  id: number;
+  id: string;
   familyEmail: string;
   familyLabel: string;
   sentToEmail: string;
   /** Where the copy is: the team chat, or the family's private thread with the sender (null unless the viewer sent it) */
-  conversationId: number | null;
+  conversationId: string | null;
   /** The viewer sent this announcement, so the family's thread (and its replies) is theirs */
   mine: boolean;
   /** Posted in the team chat: replies are public, under the announcement */
   inTeamChat: boolean;
   /** The copy in the app (the team chat message, or the one in their private thread) */
-  messageId: number | null;
+  messageId: string | null;
   onApp: boolean;
   /** Gets a push for messages in their thread, so a coach's reply needn't be emailed */
   pushReady: boolean;
@@ -512,9 +517,9 @@ type RecipientRow = typeof announcementRecipients.$inferSelect;
 // The parent account whose reading counts as "seen in the app": whoever holds
 // the private thread now (a family that joined after it was sent included),
 // or for a team chat copy, the parent the row was sent to
-const appParent = sql<number | null>`coalesce(case when ${conversations.kind} = 'direct' then ${conversations.parentUserId} end, ${announcementRecipients.parentUserId})`;
+const appParent = sql<string | null>`coalesce(case when ${conversations.kind} = 'direct' then ${conversations.parentUserId} end, ${announcementRecipients.parentUserId})`;
 
-function isSeenInApp(r: RecipientRow, currentParent: number | null, lastRead: number | null) {
+function isSeenInApp(r: RecipientRow, currentParent: string | null, lastRead: string | null) {
   return Boolean(currentParent && r.messageId && lastRead != null && lastRead >= r.messageId);
 }
 
@@ -531,7 +536,7 @@ function recipientState(r: RecipientRow, seenInApp: boolean): RecipientState {
 
 // The latest announcements one family got, with what happened to each, using
 // the same rules as the tracker
-export async function familyAnnouncements(teamId: number, familyEmail: string, limit = 4) {
+export async function familyAnnouncements(teamId: string, familyEmail: string, limit = 4) {
   const rows = await db
     .select({
       r: announcementRecipients,
@@ -566,8 +571,8 @@ export async function familyAnnouncements(teamId: number, familyEmail: string, l
 // Every staff member can follow delivery, opens and "Got it". What a family
 // wrote back is in their private thread with the sender, so only the sender
 // sees replies (`mine` on each recipient).
-export async function getAnnouncementTracker(announcementId: number, teamId: number, viewerId: number) {
-  if (!Number.isInteger(announcementId)) return null;
+export async function getAnnouncementTracker(announcementId: string | null, teamId: string, viewerId: string) {
+  if (!isId(announcementId)) return null;
   const [announcement] = await db
     .select()
     .from(announcements)
@@ -599,24 +604,25 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
   // The family's latest reply, for the row preview. In their private thread
   // with the sender: anything they wrote after the copy (sender only). In the
   // team chat: their replies under the announcement, which everyone can see.
-  const latestReply = new Map<number, { body: string; at: string }>(); // by recipient id
+  const latestReply = new Map<string, { body: string; at: string }>(); // by recipient id
   const privateRows = rows.filter((x) => x.kind === "direct" && x.r.conversationId && x.staffUserId === viewerId);
   if (privateRows.length) {
     const conversationIds = privateRows.map((x) => x.r.conversationId!);
-    const firstMessageId = Math.min(...privateRows.map((x) => x.r.messageId ?? Infinity));
+    // Ids sort by time, so the oldest copy is the lowest id
+    const firstMessageId = privateRows.flatMap((x) => (x.r.messageId ? [x.r.messageId] : [])).sort(compareIds)[0] ?? "";
     const replies = await db
       .select({ conversationId: messages.conversationId, body: messages.body, id: messages.id, senderId: messages.senderId, at: messages.createdAt })
       .from(messages)
       .where(and(
         inArray(messages.conversationId, conversationIds),
-        gt(messages.id, Number.isFinite(firstMessageId) ? firstMessageId : 0),
+        gt(messages.id, firstMessageId),
         isNull(messages.deletedAt)
       ))
       .orderBy(desc(messages.id));
     const coachIds = new Set(await getCoachUserIds(teamId));
     for (const x of privateRows) {
       const reply = replies.find(
-        (m) => m.conversationId === x.r.conversationId && m.id > (x.r.messageId ?? 0) && !(m.senderId != null && coachIds.has(m.senderId))
+        (m) => m.conversationId === x.r.conversationId && m.id > (x.r.messageId ?? "") && !(m.senderId != null && coachIds.has(m.senderId))
       );
       if (reply) latestReply.set(x.r.id, { body: reply.body, at: reply.at });
     }
@@ -722,7 +728,7 @@ export async function getAnnouncementTracker(announcementId: number, teamId: num
   };
 }
 
-export async function listAnnouncements(teamId: number) {
+export async function listAnnouncements(teamId: string) {
   const rows = await db
     .select({
       id: announcements.id,
@@ -753,7 +759,7 @@ export async function listAnnouncements(teamId: number) {
 // ---------------------------------------------------------------------------
 // Coach-only family notes
 
-export async function listFamilyNotes(teamId: number, familyEmail: string) {
+export async function listFamilyNotes(teamId: string, familyEmail: string) {
   return db
     .select({ id: familyNotes.id, body: familyNotes.body, createdAt: familyNotes.createdAt, authorId: familyNotes.authorId, authorName: users.name, authorEmail: users.email })
     .from(familyNotes)
@@ -762,19 +768,19 @@ export async function listFamilyNotes(teamId: number, familyEmail: string) {
     .orderBy(desc(familyNotes.id));
 }
 
-export async function addFamilyNote(teamId: number, familyEmail: string, authorId: number, body: string) {
+export async function addFamilyNote(teamId: string, familyEmail: string, authorId: string, body: string) {
   const text = body.trim().slice(0, 2000);
   if (!text) return null;
   const [note] = await db.insert(familyNotes).values({ teamId, familyEmail: familyEmail.toLowerCase(), authorId, body: text }).returning();
   return note;
 }
 
-export async function deleteFamilyNote(teamId: number, noteId: number, userId: number) {
+export async function deleteFamilyNote(teamId: string, noteId: string, userId: string) {
   // Coaches can remove their own notes
   await db.delete(familyNotes).where(and(eq(familyNotes.id, noteId), eq(familyNotes.teamId, teamId), eq(familyNotes.authorId, userId)));
 }
 
-export async function familyNotesView(teamId: number, familyEmail: string) {
+export async function familyNotesView(teamId: string, familyEmail: string) {
   const rows = await listFamilyNotes(teamId, familyEmail);
   return rows.map((n) => ({
     id: n.id,
@@ -787,7 +793,7 @@ export async function familyNotesView(teamId: number, familyEmail: string) {
 
 // Shared by every page that shows FamilyNotes. Returns null when the form
 // wasn't a notes action.
-export async function handleNoteAction(formData: FormData, teamId: number, userId: number) {
+export async function handleNoteAction(formData: FormData, teamId: string, userId: string) {
   const intent = formData.get("_action");
   if (intent === "addNote") {
     const familyEmail = String(formData.get("familyEmail") ?? "").trim().toLowerCase();
@@ -796,7 +802,8 @@ export async function handleNoteAction(formData: FormData, teamId: number, userI
     return note ? { ok: true } : { error: "Write a note first" };
   }
   if (intent === "deleteNote") {
-    await deleteFamilyNote(teamId, Number(formData.get("noteId")), userId);
+    const noteId = parseId(formData.get("noteId"));
+    if (noteId) await deleteFamilyNote(teamId, noteId, userId);
     return { ok: true };
   }
   return null;

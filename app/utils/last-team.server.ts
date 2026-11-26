@@ -1,4 +1,5 @@
 import { createCookie } from "react-router";
+import { parseId } from "~/utils/ids";
 
 // Remembers the team a coach last opened, so /dashboard can drop them
 // straight back into it instead of making them pick from a list.
@@ -10,8 +11,9 @@ export const lastTeamCookie = createCookie("ayso_last_team", {
   secure: process.env.NODE_ENV === "production",
 });
 
-export async function getLastTeamId(request: Request): Promise<number | null> {
+// Holds the team's id (a UUID). Cookies from before ids were UUIDs hold a
+// number, which reads as no team.
+export async function getLastTeamId(request: Request): Promise<string | null> {
   const value = await lastTeamCookie.parse(request.headers.get("Cookie"));
-  const id = Number(value);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  return parseId(value);
 }

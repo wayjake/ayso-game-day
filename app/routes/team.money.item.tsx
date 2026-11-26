@@ -54,13 +54,16 @@ import { games as gamesTable } from "~/db";
 import { formatGameDate } from "~/utils/dates";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ArrowBendUpLeft, ArrowRight, CalendarBlank, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
+import { parseId, parseIds } from "~/utils/ids";
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.item.name ?? "Expense"} - Finances - BenchTalk` }];
 }
 
-async function load(teamId: number, itemId: number) {
-  const item = await getItem(teamId, itemId);
+async function load(teamId: string, itemId: string | null) {
+  const item = itemId ? await getItem(teamId, itemId) : null;
   if (!item) throw new Response("Not found", { status: 404 });
   const [book, items] = await Promise.all([loadBook(teamId), getItems(teamId)]);
   const members = await getMembers(teamId, book);
@@ -69,8 +72,8 @@ async function load(teamId: number, itemId: number) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
-  const { item, book, items, members } = await load(team.id, Number(params.itemId));
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
+  const { item, book, items, members } = await load(team.id, parseId(params.itemId));
   const funds = await ensureDefaultFund(team.id);
   const held = fundBalances(book);
   const staff = await getTeamStaff(team.id);
@@ -114,6 +117,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return data({
     teamId: team.id,
+    teamCode: team.code,
     item,
     summary,
     formKey: newFormKey(),
@@ -167,8 +171,8 @@ function sharesFromForm(formData: FormData, members: Member[], perMember: Map<st
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
-  const itemId = Number(params.itemId);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
+  const itemId = parseId(params.itemId);
   const formData = await request.formData();
   const intent = formData.get("_action");
   const clientKey = readClientKey(formData);
@@ -242,7 +246,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         await reopenExpense(team.id, item.id);
         return;
       case "games":
-        await saveExpenseGames(team.id, item.id, formData.getAll("gameId").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0));
+        await saveExpenseGames(team.id, item.id, parseIds(formData.getAll("gameId")));
         return;
       case "credit": {
         if (item.settledAt) throw new LedgerError("This expense is settled, so refunds are worked out for you. Record the refund received instead.");
@@ -302,8 +306,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo } = loaderData;
-  const base = `/dashboard/team/${teamId}/finances`;
+  const { teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo } = loaderData;
+  const base = teamPath(teamCode, "finances");
   const reducible = rows.filter((r) => r.reducible > 0);
 
   return (
@@ -328,7 +332,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
           <SoccerBall size={16} className="text-subtle" />
           For
           {linkedGames.map((g) => (
-            <Link key={g.id} to={`/dashboard/team/${teamId}/games/${g.id}/lineup`} className="rounded-md bg-surface px-2 py-0.5 font-medium text-ink ring-1 ring-line hover:ring-line-strong">
+            <Link key={g.id} to={teamPath(teamCode, `games/${g.id}/lineup`)} className="rounded-md bg-surface px-2 py-0.5 font-medium text-ink ring-1 ring-line hover:ring-line-strong">
               {formatGameDate(g.gameDate, { weekday: "short", month: "short", day: "numeric" })} vs {g.opponent}
             </Link>
           ))}
@@ -419,7 +423,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                     <span className="min-w-0 flex-1">
                       {a.text}
                       {a.memo && <span className="block text-muted">{a.memo}</span>}
-                      <span className="block text-xs text-muted">#{a.id} · {a.occurredOn}{a.by && ` · ${a.by}`}</span>
+                      <span className="block text-xs text-muted">{a.occurredOn}{a.by && ` · ${a.by}`}</span>
                     </span>
                     <Amount cents={a.cents} className="font-semibold" />
                     {!a.reversed && !["reversal", "charge", "adjust", "settle"].includes(a.kind) && <UndoButton txnId={a.id} formKey={formKey} />}

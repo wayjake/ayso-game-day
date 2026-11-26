@@ -2,20 +2,20 @@
 // Helps coaches spot player movements between quarters for clear communication
 
 export type PositionChange = {
-  playerId: number;
+  playerId: string;
   playerName: string;
   changeType: 'new_in' | 'position_swap' | 'simple_sub' | 'sitting_out' | 'new_position';
   fromPosition?: number;
   toPosition?: number;
   swapsWith?: {
-    playerId: number;
+    playerId: string;
     playerName: string;
     fromPosition: number;
     toPosition: number;
   };
 };
 
-export type QuarterLineup = Map<number, { playerId: number; name: string }>;
+export type QuarterLineup = Map<number, { playerId: string; name: string }>;
 
 /**
  * 🔄 Analyzes position changes between two quarters
@@ -24,11 +24,11 @@ export type QuarterLineup = Map<number, { playerId: number; name: string }>;
 export function calculatePositionChanges(
   previousQuarter: QuarterLineup,
   currentQuarter: QuarterLineup,
-  previousSittingOut: Set<number>,
-  currentSittingOut: Set<number>
+  previousSittingOut: Set<string>,
+  currentSittingOut: Set<string>
 ): PositionChange[] {
   const changes: PositionChange[] = [];
-  const processedPlayers = new Set<number>();
+  const processedPlayers = new Set<string>();
 
   // 🔍 Track all players who are on field in either quarter
   const allFieldPositions = new Set([...previousQuarter.keys(), ...currentQuarter.keys()]);
@@ -123,7 +123,7 @@ export function calculatePositionChanges(
 /**
  * 🔍 Finds which position a player is currently in
  */
-function findPlayerPosition(playerId: number, lineup: QuarterLineup): number | null {
+function findPlayerPosition(playerId: string, lineup: QuarterLineup): number | null {
   for (const [position, player] of lineup.entries()) {
     if (player.playerId === playerId) {
       return position;
@@ -201,13 +201,13 @@ export function getPositionChanges(position: number, changes: PositionChange[]):
 /**
  * 🎯 Check if a player has any changes
  */
-export function hasPlayerChange(playerId: number, changes: PositionChange[]): boolean {
+export function hasPlayerChange(playerId: string, changes: PositionChange[]): boolean {
   return changes.some(change => change.playerId === playerId);
 }
 
 /**
  * 🎯 Get changes for a specific player
  */
-export function getPlayerChange(playerId: number, changes: PositionChange[]): PositionChange | undefined {
+export function getPlayerChange(playerId: string, changes: PositionChange[]): PositionChange | undefined {
   return changes.find(change => change.playerId === playerId);
 }

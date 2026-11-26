@@ -8,6 +8,7 @@ import { AppMark } from "~/components/AppMark";
 import { FamilyTodo } from "~/components/FamilyTodo";
 import { Card } from "~/components/ui";
 import { LinkBreak } from "@phosphor-icons/react";
+import { parseId } from "~/utils/ids";
 
 // A family's tasks without signing in, for families not on the app yet. The
 // link comes from a coach's message (Tasks > Message). Opening it only shows
@@ -38,13 +39,15 @@ export async function action({ params, request }: Route.ActionArgs) {
 
   // Only this family's kids
   const allowed = new Set(found.family.kids.map((k) => k.id));
-  const playerIds = formData.getAll("playerId").map(Number);
-  if (playerIds.length === 0 || playerIds.some((id) => !allowed.has(id))) {
+  const given = formData.getAll("playerId").map((v) => parseId(v));
+  const playerIds = given.filter((id): id is string => id !== null && allowed.has(id));
+  const taskId = parseId(formData.get("taskId"));
+  if (!taskId || playerIds.length === 0 || playerIds.length !== given.length) {
     return data({ error: "Can't update that task" }, { status: 400 });
   }
   const result = await setFamilyDone(db, {
     teamId: found.teamId,
-    taskId: Number(formData.get("taskId")),
+    taskId,
     playerIds,
     done: formData.get("done") === "1",
     via: "link",

@@ -29,7 +29,7 @@ export async function inviteStaff({
   user: Pick<User, "id" | "email" | "name">;
   email: string;
   role: StaffRole;
-  teamIds: number[];
+  teamIds: string[];
 }): Promise<{ error: string } | { invite: StaffInviteResult }> {
   const email = normalizeEmail(rawEmail);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address" };
@@ -44,7 +44,7 @@ export async function inviteStaff({
   if (owned.length === 0) return { error: "Pick at least one team" };
 
   const { created, skippedTeamIds } = await createInvites({ email, teamIds: owned.map((t) => t.id), invitedBy: user.id, role });
-  const nameFor = (id: number) => owned.find((t) => t.id === id)?.name ?? "";
+  const nameFor = (id: string) => owned.find((t) => t.id === id)?.name ?? "";
   const skippedTeams = skippedTeamIds.map(nameFor);
   if (created.length === 0) {
     return { error: `${email} is already on the staff of ${skippedTeams.join(", ")}. Change their role in that team's Settings.` };
@@ -68,7 +68,7 @@ export async function inviteStaff({
 
 // Archive or bring back a team. Archiving hides it from everyone's switcher
 // and team list, so only the owner may. Returns false when they aren't.
-export async function setTeamArchived(teamId: number, userId: number, archive: boolean) {
+export async function setTeamArchived(teamId: string, userId: string, archive: boolean) {
   const rows = await db
     .update(teams)
     .set({ archivedAt: archive ? new Date().toISOString() : null, archivedBy: archive ? userId : null, updatedAt: sql`CURRENT_TIMESTAMP` })

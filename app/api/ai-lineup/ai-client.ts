@@ -55,7 +55,7 @@ export async function generateLineupWithAnthropic(params: {
                         description: "Position number"
                       },
                       playerId: {
-                        type: "number",
+                        type: "string",
                         description: "ID of the player assigned to this position"
                       }
                     },
@@ -68,7 +68,7 @@ export async function generateLineupWithAnthropic(params: {
                                 Must include ALL players not in the assignments array.
                                 No player should listed as substitutes more than once.`,
                   items: {
-                    type: "number",
+                    type: "string",
                     description: "Player ID of a player sitting out this quarter"
                   }
                 }

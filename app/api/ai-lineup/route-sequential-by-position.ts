@@ -21,18 +21,19 @@ import {
 } from './data-fetchers';
 import { buildFormationContext } from './prompt-builder';
 import { generateSingleQuarterLineup } from './ai-client-sequential';
+import { parseId } from "~/utils/ids";
 
 interface SubstitutePlan {
-  [quarter: number]: number[]; // playerId[]
+  [quarter: number]: string[]; // playerId[]
 }
 
 interface GoalkeeperPlan {
-  [quarter: number]: number; // playerId
+  [quarter: number]: string; // playerId
 }
 
 interface PositionAssignment {
   positionNumber: number;
-  playerId: number;
+  playerId: string;
 }
 
 interface QuarterPlan {
@@ -41,8 +42,8 @@ interface QuarterPlan {
 
 export async function handleSequentialByPositionGeneration(formData: FormData, user: any) {
   try {
-    const gameId = parseInt(formData.get("gameId") as string);
-    const teamId = parseInt(formData.get("teamId") as string);
+    const gameId = parseId(formData.get("gameId")) ?? "";
+    const teamId = parseId(formData.get("teamId")) ?? "";
     const userInput = formData.get("userInput") as string;
 
     // 1. Fetch all necessary data
@@ -134,7 +135,7 @@ export async function handleSequentialByPositionGeneration(formData: FormData, u
     const quarterResults: QuarterWithDetails[] = [];
     for (let q = 1; q <= 4; q++) {
       const assignments = positionPlan[q] || [];
-      const substitutes = (substitutePlan[q] || []).map((playerId: number) => {
+      const substitutes = (substitutePlan[q] || []).map((playerId: string) => {
         const player = playersContext.find(p => p.id === playerId);
 
         // Check if this player is absent/injured for this quarter
@@ -152,11 +153,11 @@ export async function handleSequentialByPositionGeneration(formData: FormData, u
         };
       });
 
-      const players: Record<number, number> = {};
+      const players: Record<number, string> = {};
       const changes: Array<{
         positionNumber: number;
         positionName: string;
-        playerId: number;
+        playerId: string;
         playerName: string;
         isChange: boolean;
       }> = [];
@@ -213,7 +214,7 @@ async function planSubstitutes(params: {
   absentInjuredContext: any[];
   userInput: string;
   format: GameFormat;
-  currentLineup: Record<number, Record<number, number>>;
+  currentLineup: Record<number, Record<number, string>>;
   quarterFormationInfo: any;
 }): Promise<SubstitutePlan> {
   console.log('\n--- PHASE 1: SUBSTITUTE PLANNING ---');
@@ -343,7 +344,7 @@ Plan the substitute rotation now.`;
   }
 
   // Validate each player sits out at most 1 quarter
-  const sitOutCounts: Record<number, number> = {};
+  const sitOutCounts: Record<string, number> = {};
   teamPlayers.forEach(p => sitOutCounts[p.id] = 0);
 
   for (let q = 1; q <= 4; q++) {
@@ -370,7 +371,7 @@ async function planGoalkeepers(params: {
   format: GameFormat;
   userInput: string;
   absentInjuredContext: any[];
-  currentLineup: Record<number, Record<number, number>>;
+  currentLineup: Record<number, Record<number, string>>;
 }): Promise<GoalkeeperPlan> {
   console.log('\n--- PHASE 2: GOALKEEPER PLANNING ---');
   const { teamPlayers, playersContext, substitutePlan, format, userInput, absentInjuredContext, currentLineup } = params;
@@ -417,7 +418,7 @@ Return JSON format:
 }`;
 
   // Get available (non-substitute) players per quarter
-  const playingPlayersPerQuarter: Record<number, number[]> = {};
+  const playingPlayersPerQuarter: Record<number, string[]> = {};
   for (let q = 1; q <= 4; q++) {
     playingPlayersPerQuarter[q] = teamPlayers
       .filter(p => !substitutePlan[q]?.includes(p.id))
@@ -516,7 +517,7 @@ Assign goalkeepers now.`;
   });
 
   // Helper function to check if a player is available for a quarter
-  const isPlayerAvailableForQuarter = (playerId: number, quarter: number): boolean => {
+  const isPlayerAvailableForQuarter = (playerId: string, quarter: number): boolean => {
     return !absentInjuredContext.some(ai => {
       const isAbsentThisQuarter = !ai.quarter || ai.quarter === quarter;
       return ai.playerId === playerId && isAbsentThisQuarter;
@@ -595,7 +596,7 @@ async function planFieldPositions(params: {
   quarterFormationInfo: any;
   formationContext: string;
   userInput: string;
-  currentLineup: Record<number, Record<number, number>>;
+  currentLineup: Record<number, Record<number, string>>;
 }): Promise<QuarterPlan> {
   console.log('\n--- PHASE 3: FIELD POSITION PLANNING ---');
   const { teamPlayers, playersContext, substitutePlan, goalkeeperPlan, quarterFormationInfo, formationContext, userInput, currentLineup } = params;
@@ -834,7 +835,7 @@ async function analyzeFinalLineup(params: {
     '11v11': 4
   };
 
-  const gkCounts: Record<number, number> = {};
+  const gkCounts: Record<string, number> = {};
   playersContext.forEach(p => gkCounts[p.id] = 0);
 
   for (let q = 1; q <= 4; q++) {

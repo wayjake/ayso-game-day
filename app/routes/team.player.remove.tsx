@@ -6,12 +6,14 @@ import { db, teams, players, guardians, rsvps, contacts, taskAssignments, ledger
 import { eq, and } from "drizzle-orm";
 import { deletePlayerImage } from "~/utils/upload.server";
 import { hasLedgerHistory } from "~/utils/ledger.server";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const formData = await request.formData();
-  const playerId = parseInt(formData.get("playerId") as string);
+  const playerId = parseId(formData.get("playerId")) ?? ""; // Not an id: no player found, 404 below
   
   // Verify team ownership
   const [team] = await db

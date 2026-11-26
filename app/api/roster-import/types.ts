@@ -13,7 +13,7 @@ export interface MatchResult {
   tempId: string;
   extractedName: string;
   matchType: 'exact' | 'fuzzy' | 'new';
-  existingPlayerId?: number;
+  existingPlayerId?: string;
   existingPlayerName?: string;
   similarityScore?: number; // 0-1 for fuzzy matches
 }
@@ -33,7 +33,7 @@ export interface ImportPlayerData {
   preferredPositions?: string[];
   notes?: string;
   action: 'create' | 'update' | 'skip';
-  existingPlayerId?: number;
+  existingPlayerId?: string;
 }
 
 export interface ImportResponse {
@@ -45,7 +45,7 @@ export interface ImportResponse {
 }
 
 export interface ExistingPlayer {
-  id: number;
+  id: string;
   name: string;
 }
 

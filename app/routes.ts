@@ -30,14 +30,14 @@ export default [
     route("feed/:postId", "routes/family.feed.post.tsx"),
     route("messages", "routes/family.messages.tsx"),
     route("messages/new", "routes/family.messages.new.tsx"),
-    route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
+    route("messages/with/:teamCode/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
     route("todo", "routes/family.todo.tsx"),
     route("finances", "routes/family.money.tsx"),
   ]),
   // Sideline view: full screen, outside the dashboard chrome
-  route("dashboard/team/:teamId/games/:gameId/game-day", "routes/game-day.tsx"),
+  route("dashboard/team/:teamCode/games/:gameId/game-day", "routes/game-day.tsx"),
   route("user", "routes/user.tsx", [
     route("signup", "routes/user.signup.tsx"),
     route("login", "routes/user.login.tsx"),
@@ -52,7 +52,7 @@ export default [
     route("teams", "routes/dashboard.teams.tsx"),
     route("teams/new", "routes/dashboard.teams.new.tsx"),
     route("account", "routes/dashboard.account.tsx"),
-    route("team/:teamId", "routes/team.tsx", [
+    route("team/:teamCode", "routes/team.tsx", [
       route("", "routes/team._index.tsx"),
       route("roster", "routes/team.roster.tsx"),
       route("roster/new-player", "routes/team.roster-new.tsx"),

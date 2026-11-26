@@ -11,16 +11,18 @@ import { notifyFamilies } from "~/utils/schedule.server";
 import { addDays, dayOfWeek, todayISO } from "~/utils/dates";
 import { Alert, Card, Page, PageHeader, buttonClass, labelClass, cx } from "~/components/ui";
 import { ArrowsClockwise, CalendarBlank, Sneaker } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(parseInt(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   return data({ team });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
 
@@ -57,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     ? { title: "Practice schedule posted", body: `${describeSeries(weekdays, dates, details.values.startTime, details.values.endTime)}. Tap to RSVP.`, tag: `practices-${seriesId}` }
     : { title: "Practice added", body: `${describePractice({ practiceDate: startDate, ...details.values })}. Tap to RSVP.` });
 
-  return redirect(`/dashboard/team/${teamId}/games`);
+  return redirect(`${teamPath(params.teamCode)}/games`);
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -79,7 +81,7 @@ const choiceClass =
 
 export default function NewPractice({ loaderData, actionData }: Route.ComponentProps) {
   const { team } = loaderData;
-  const scheduleUrl = `/dashboard/team/${team.id}/games`;
+  const scheduleUrl = `${teamPath(team)}/games`;
   const [repeat, setRepeat] = useState<"once" | "weekly">("weekly");
   const navigation = useNavigation();
   const saving = navigation.state === "submitting";

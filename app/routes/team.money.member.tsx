@@ -36,20 +36,23 @@ import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Balance, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, TextField, UndoButton, memberLineText } from "~/components/money";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ArrowBendUpLeft, HandCoins, PiggyBank, Plus } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
+import { parseId } from "~/utils/ids";
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.name ?? "Finances"} - Finances - BenchTalk` }];
 }
 
 function readMember(params: { memberType?: string; memberId?: string }): Member {
-  const id = Number(params.memberId);
-  if ((params.memberType !== "player" && params.memberType !== "staff") || !Number.isSafeInteger(id)) {
+  const id = parseId(params.memberId);
+  if ((params.memberType !== "player" && params.memberType !== "staff") || !id) {
     throw new Response("Not found", { status: 404 });
   }
   return { type: params.memberType, id };
 }
 
-async function load(teamId: number, member: Member) {
+async function load(teamId: string, member: Member) {
   const [book, items] = await Promise.all([loadBook(teamId), getItems(teamId)]);
   const members = await getMembers(teamId, book);
   const me = members.find((m) => memberKey(m.member) === memberKey(member));
@@ -59,7 +62,7 @@ async function load(teamId: number, member: Member) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const member = readMember(params);
   const { book, items, members, me } = await load(team.id, member);
   const funds = await ensureDefaultFund(team.id);
@@ -97,6 +100,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return data({
     teamId: team.id,
+    teamCode: team.code,
     member,
     name: me.name,
     detail: me.detail,
@@ -115,7 +119,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const member = readMember(params);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -128,7 +132,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         // This member, plus any siblings ticked on the form
         const others = member.type === "player" ? readMembers(formData, "sibling").filter((m) => m.type === "player" && m.id !== member.id) : [];
         const extra = String(formData.get("extra") ?? "credit");
-        const donateExtraTo = extra.startsWith("fund:") ? Number(extra.slice(5)) || null : null;
+        const donateExtraTo = extra.startsWith("fund:") ? parseId(extra.slice(5)) : null;
         await recordPayment({
           teamId: team.id,
           members: [member, ...others],
@@ -189,8 +193,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberMoney({ loaderData }: Route.ComponentProps) {
-  const { teamId, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today } = loaderData;
-  const base = `/dashboard/team/${teamId}/finances`;
+  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today } = loaderData;
+  const base = teamPath(teamCode, "finances");
   const itemName = new Map(items.map((i) => [i.id, i.name]));
   const isStaff = member.type === "staff";
 
@@ -258,7 +262,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                         {memberLineText(h)}
                         {h.payerName && <span className="text-muted"> · from {h.payerName}</span>}
                         {h.memo && <span className="block text-muted">{h.memo}</span>}
-                        <span className="block text-xs text-muted">#{h.txnId} · {h.occurredOn}</span>
+                        <span className="block text-xs text-muted">{h.occurredOn}</span>
                       </span>
                       <span className={cx("font-semibold tabular", h.cents > 0 ? "" : "text-success")}>
                         {h.cents > 0 ? "" : "−"}{formatCents(Math.abs(h.cents))}

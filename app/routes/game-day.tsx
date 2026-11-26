@@ -34,11 +34,14 @@ import {
   Sun,
   UserMinus,
 } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const gameId = parseInt(params.gameId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const gameId = parseId(params.gameId) ?? ""; // Not an id: matches no game, so 404 below
   const { team } = await requireTeamAccess(teamId, user.id);
 
   const [game] = await db
@@ -54,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const rows = await getLineupRows(teamId, gameId);
 
   return data({
-    team: { id: team.id, name: team.name, format: team.format },
+    team: { id: team.id, code: team.code, name: team.name, format: team.format },
     game: { id: game.id, opponent: game.opponent, gameDate: game.gameDate, gameTime: game.gameTime, field: game.field },
     quarterFormations: parseGameNotes(game.notes).quarterFormations ?? {},
     ...rows,
@@ -67,8 +70,8 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function GameDay({ loaderData }: Route.ComponentProps) {
   const { team, game, players, assignments, absences, quarterFormations } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
-  const lineupHref = `${base}/games/${game.id}/lineup`;
+  const base = teamPath(team);
+  const lineupHref = teamPath(team, `games/${game.id}/lineup`);
 
   const plans = useMemo(
     () =>
@@ -98,7 +101,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
   const nothingPlanned = plans.every((plan) => plan.lineup.size === 0);
 
   // Who's new or has moved since last quarter, for rings on the field
-  const highlights = new Map<number, SlotHighlight>();
+  const highlights = new Map<string, SlotHighlight>();
   if (previous) {
     for (const change of changesBetween(previous, current)) {
       if (change.changeType === "new_in") highlights.set(change.playerId, "in");
@@ -108,7 +111,7 @@ export default function GameDay({ loaderData }: Route.ComponentProps) {
 
   const bench = players.filter((p) => current.sittingOut.has(p.id));
   const unavailable = players.filter((p) => current.unavailable.has(p.id));
-  const benchQuarters = (playerId: number) => plans.filter((plan) => plan.sittingOut.has(playerId)).length;
+  const benchQuarters = (playerId: string) => plans.filter((plan) => plan.sittingOut.has(playerId)).length;
 
   return (
     <div className="min-h-dvh bg-canvas text-ink">
@@ -282,12 +285,12 @@ function NextChanges({
 }: {
   from: QuarterPlan;
   to: QuarterPlan;
-  playersById: Map<number, { name: string; jerseyNumber: number | null }>;
+  playersById: Map<string, { name: string; jerseyNumber: number | null }>;
 }) {
   const { comingOn, goingOff, moving } = groupChanges(changesBetween(from, to));
   const formationChanges = from.formationKey !== to.formationKey;
   const total = comingOn.length + goingOff.length + moving.length;
-  const jersey = (playerId: number) => playersById.get(playerId)?.jerseyNumber ?? null;
+  const jersey = (playerId: string) => playersById.get(playerId)?.jerseyNumber ?? null;
 
   return (
     <Card className="p-5">

@@ -8,7 +8,7 @@ import type {
   GameFormat
 } from './types';
 
-export async function getTeam(teamId: number, userId: number) {
+export async function getTeam(teamId: string, userId: string) {
   const { db, teams, teamMembers } = await import('~/db');
   const { eq, and, or, inArray } = await import('drizzle-orm');
 
@@ -35,7 +35,7 @@ export async function getTeam(teamId: number, userId: number) {
   return team;
 }
 
-export async function getGame(gameId: number, teamId: number) {
+export async function getGame(gameId: string, teamId: string) {
   const { db, games } = await import('~/db');
   const { eq, and } = await import('drizzle-orm');
 
@@ -73,7 +73,7 @@ export async function getQuarterFormations(game: any, teamFormat: GameFormat) {
   return quarterFormationInfo;
 }
 
-export async function getTeamPlayers(teamId: number) {
+export async function getTeamPlayers(teamId: string) {
   const { db, players } = await import('~/db');
   const { eq } = await import('drizzle-orm');
 
@@ -90,7 +90,7 @@ export async function getTeamPlayers(teamId: number) {
   return teamPlayers;
 }
 
-export async function getCurrentAssignments(gameId: number) {
+export async function getCurrentAssignments(gameId: string) {
   const { db, assignments } = await import('~/db');
   const { eq } = await import('drizzle-orm');
 
@@ -108,7 +108,7 @@ export async function getCurrentAssignments(gameId: number) {
   return currentAssignments;
 }
 
-export async function getAbsentInjuredPlayers(gameId: number) {
+export async function getAbsentInjuredPlayers(gameId: string) {
   const { db, sitOuts } = await import('~/db');
   const { eq, and, inArray } = await import('drizzle-orm');
 
@@ -125,7 +125,7 @@ export async function getAbsentInjuredPlayers(gameId: number) {
   return absentInjuredPlayers;
 }
 
-export async function getPastGamesAndAssignments(teamId: number, currentGameDate: string) {
+export async function getPastGamesAndAssignments(teamId: string, currentGameDate: string) {
   const { db, games, assignments } = await import('~/db');
   const { eq, and, lt, desc } = await import('drizzle-orm');
 
@@ -168,8 +168,8 @@ export async function getPastGamesAndAssignments(teamId: number, currentGameDate
 export function calculatePositionHistory(
   teamPlayers: any[],
   pastAssignments: any[]
-): Map<number, Record<string, number>> {
-  const positionHistory = new Map<number, Record<string, number>>();
+): Map<string, Record<string, number>> {
+  const positionHistory = new Map<string, Record<string, number>>();
 
   teamPlayers.forEach(player => {
     positionHistory.set(player.id, {});
@@ -188,7 +188,7 @@ export function calculatePositionHistory(
 
 export function buildPlayersContext(
   teamPlayers: any[],
-  positionHistory: Map<number, Record<string, number>>
+  positionHistory: Map<string, Record<string, number>>
 ): PlayerContext[] {
   return teamPlayers.map(p => {
     const history = positionHistory.get(p.id) || {};
@@ -252,4 +252,19 @@ export function buildAbsentInjuredContext(absentInjuredPlayers: any[]): AbsentIn
     quarter: p.quarter,
     reason: p.reason,
   }));
+}
+
+// The model sees short aliases ("P1", "P2", ...) instead of player UUIDs:
+// fewer tokens, and nothing long for it to copy back wrong. Build the whole
+// context from the aliased rows, then map the model's answer back with realId.
+export function aliasPlayers<P extends { id: string }>(realPlayers: P[]) {
+  const aliasOf = new Map(realPlayers.map((p, i) => [p.id, `P${i + 1}`]));
+  const realIdOf = new Map([...aliasOf].map(([id, alias]) => [alias, id]));
+  return {
+    players: realPlayers.map((p) => ({ ...p, id: aliasOf.get(p.id)! })),
+    // Rows for players not on the roster any more are dropped
+    rows: <T extends { playerId: string }>(rows: T[]) =>
+      rows.filter((r) => aliasOf.has(r.playerId)).map((r) => ({ ...r, playerId: aliasOf.get(r.playerId)! })),
+    realId: (alias: string) => realIdOf.get(String(alias)) ?? "",
+  };
 }

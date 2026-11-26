@@ -2,7 +2,7 @@ import type { Route } from "./+types/team";
 import { Outlet, NavLink, useFetcher, useLocation, useNavigation } from "react-router";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { requireTeamAccess, teamIdFromCode } from "~/utils/team-access.server";
 import { lastTeamCookie } from "~/utils/last-team.server";
 import { TeamSwitcher } from "~/components/TeamSwitcher";
 import { Badge, cx } from "~/components/ui";
@@ -13,10 +13,11 @@ import { useEffect, useRef, useState } from "react";
 import { countTasksToConfirm } from "~/utils/tasks.server";
 import { countPendingClaims } from "~/utils/ledger.server";
 import { AddressBook, Archive, CalendarBlank, ChatsCircle, Coins, Gear, House, ImagesSquare, ListChecks, UsersThree } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
 
   // Owners and invited coaches both get in; role tells child routes which one
   const { team, role } = await requireTeamAccess(teamId, user.id);
@@ -52,7 +53,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const under = (pathname: string, also?: string[]) => Boolean(also?.some((path) => pathname.startsWith(path)));
   const lit = (matched: boolean, isPending: boolean, also?: string[]) =>
     pending ? isPending || under(pending.pathname, also) : matched || under(location.pathname, also);
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
 
   const tabs = [
     { label: "Overview", to: base, end: true, icon: House, badge: 0 },
@@ -185,7 +186,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
-      {team.archivedAt && <ArchivedBanner teamId={team.id} isOwner={role === "owner"} />}
+      {team.archivedAt && <ArchivedBanner teamCode={team.code} isOwner={role === "owner"} />}
 
       <Outlet />
       <TabTransition tabs={turns} below={tabRow} />
@@ -209,7 +210,7 @@ function EdgeDot({ side }: { side: "left" | "right" }) {
 }
 
 // Inside an archived team: everything works, but say where you are and how to undo it
-function ArchivedBanner({ teamId, isOwner }: { teamId: number; isOwner: boolean }) {
+function ArchivedBanner({ teamCode, isOwner }: { teamCode: string; isOwner: boolean }) {
   const fetcher = useFetcher();
   return (
     <div className="shrink-0 border-b border-line bg-warning-soft">
@@ -220,7 +221,7 @@ function ArchivedBanner({ teamId, isOwner }: { teamId: number; isOwner: boolean 
           <span className="text-muted">It's hidden from the team switcher and your team list. Everything still works.</span>
         </p>
         {isOwner && (
-          <fetcher.Form method="post" action={`/dashboard/team/${teamId}/settings`}>
+          <fetcher.Form method="post" action={teamPath(teamCode, "settings")}>
             <input type="hidden" name="_action" value="unarchive" />
             <button
               type="submit"

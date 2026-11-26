@@ -12,6 +12,9 @@ import { formatMessageTime } from "~/utils/dates";
 import { stripQuotedReply } from "~/utils/email-reply";
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass, inputClass } from "~/components/ui";
 import { AddressBook, ChatsCircle, Question } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 // Under the list on phones; the main pane on desktop until a thread is picked.
 // New message (one family's private thread, or a group chat), sorting stray
@@ -19,7 +22,7 @@ import { AddressBook, ChatsCircle, Question } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
 
   // Every family with an email, for sorting stray emails into
@@ -38,7 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -47,29 +50,29 @@ export async function action({ request, params }: Route.ActionArgs) {
     // One family: your own private thread with them. More people: a group.
     const result = await startConversation(teamId, { id: user.id, side: "coach" }, formData.getAll("key").map(String), String(formData.get("name") ?? ""));
     if ("error" in result) return data({ startError: result.error }, { status: 400 });
-    return redirect(`/dashboard/team/${teamId}/messages/${result.conversationId}`);
+    return redirect(teamPath(params.teamCode, `messages/${result.conversationId}`));
   }
 
   if (intent === "assign") {
     const email = String(formData.get("familyEmail") ?? "").toLowerCase();
     const family = (await listFamilies(null, teamId)).find((f) => f.email === email);
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
-    const conversation = await assignUnmatched(user, teamId, Number(formData.get("inboundId")), family.email);
+    const conversation = await assignUnmatched(user, teamId, parseId(formData.get("inboundId")), family.email);
     if (!conversation) return data({ error: "That email is already sorted" }, { status: 404 });
-    return redirect(`/dashboard/team/${teamId}/messages/${conversation.id}`);
+    return redirect(teamPath(params.teamCode, `messages/${conversation.id}`));
   }
 
   if (intent === "dismiss") {
-    await dismissUnmatched(user, teamId, Number(formData.get("inboundId")));
+    await dismissUnmatched(user, teamId, parseId(formData.get("inboundId")));
     return data({ ok: true });
   }
 
   return data({ error: "Unknown action" }, { status: 400 });
 }
 
-export default function MessagesIndex({ loaderData, actionData }: Route.ComponentProps) {
+export default function MessagesIndex({ loaderData, actionData, params: routeParams }: Route.ComponentProps) {
   const { teamId, families, people, unmatched } = loaderData;
-  const base = `/dashboard/team/${teamId}`;
+  const base = teamPath(routeParams.teamCode);
   const navigation = useNavigation();
   const [params] = useSearchParams();
   const composing = params.get("compose") === "1";

@@ -34,8 +34,11 @@ import { Button, cx } from "~/components/ui";
 import { ArrowLeft, Check, NotePencil, SidebarSimple, UsersThree } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 import { ackSummaries } from "~/utils/announcements.server";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
-async function access(request: Request, teamId: number, conversationId: number) {
+async function access(request: Request, teamId: string, conversationId: string | null) {
   const user = await getUser(request);
   const found = await getConversationAccess(conversationId, user.id);
   if (!found || found.viewer !== "coach" || found.conversation.teamId !== teamId) {
@@ -45,10 +48,10 @@ async function access(request: Request, teamId: number, conversationId: number) 
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { user, conversation } = await access(request, Number(params.teamId), Number(params.conversationId));
+  const { user, conversation } = await access(request, (await teamIdFromCode(params.teamCode)), parseId(params.conversationId));
   const messages = await getThread(conversation.id, user.id);
   const threadParam = new URL(request.url).searchParams.get("thread");
-  const thread = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  const thread = threadParam ? await getReplies(conversation.id, parseId(threadParam), user.id) : null;
   // Everything is on screen or summed up under its thread, so all of it counts as read
   await markConversationRead(conversation, user.id);
 
@@ -131,7 +134,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { user, conversation } = await access(request, Number(params.teamId), Number(params.conversationId));
+  const { user, conversation } = await access(request, (await teamIdFromCode(params.teamCode)), parseId(params.conversationId));
   const formData = await request.formData();
   const intent = formData.get("_action");
 
@@ -140,7 +143,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const grouped = await handleGroupAction(formData, conversation, user);
   if (grouped) {
-    if ("left" in grouped) return redirect(`/dashboard/team/${conversation.teamId}/messages`);
+    if ("left" in grouped) return redirect(teamPath(params.teamCode, "messages"));
     return data(grouped, { status: "error" in grouped ? 400 : 200 });
   }
 
@@ -149,17 +152,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ ok: true });
   }
   if (intent === "react") {
-    await toggleReaction(conversation, user, Number(formData.get("messageId")), String(formData.get("emoji") ?? ""));
+    await toggleReaction(conversation, user, parseId(formData.get("messageId")), String(formData.get("emoji") ?? ""));
     return data({ ok: true });
   }
   if (intent === "delete") {
-    const deleted = await deleteMessage(conversation, user.id, Number(formData.get("messageId")));
+    const deleted = await deleteMessage(conversation, user.id, parseId(formData.get("messageId")));
     return deleted ? data({ ok: true }) : data({ error: "That message can't be deleted" }, { status: 400 });
   }
   if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
   const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
     email: formData.get("alsoEmail") === "1",
-    replyTo: Number(formData.get("replyTo")) || null,
+    replyTo: parseId(formData.get("replyTo")),
   });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   if (message.emailError) return data({ error: `Sent in the app, but the email didn't go out: ${message.emailError}` });
@@ -199,7 +202,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
         <div className="sticky top-[var(--safe-top)] z-20 bleed-x border-b border-line bg-canvas/95 px-safe py-3 backdrop-blur sm:mx-0 sm:px-0 lg:static lg:mx-0 lg:shrink-0 lg:bg-surface lg:px-6">
           <div className="flex items-center gap-3">
             <Link
-              to={`/dashboard/team/${params.teamId}/messages${location.search}`}
+              to={teamPath(params.teamCode, `messages${location.search}`)}
               {...navMotion("back")}
               className="tap -ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink lg:hidden"
               aria-label="All messages"
@@ -301,7 +304,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           initialDraft={draft}
           showEmailDetails
           acks={acks}
-          ackHref={(announcementId) => `/dashboard/team/${teamId}/announcements/${announcementId}`}
+          ackHref={(announcementId) => teamPath(params.teamCode, `announcements/${announcementId}`)}
           composerExtra={
             delivery.email ? (
               <EmailToggle email={delivery.email} pushReady={delivery.pushReady} conversationId={conversationId} />
@@ -315,8 +318,8 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
           aria-label={kind === "team" ? "About the team chat" : kind === "group" ? "People in this group" : "About this family"}
           className="hidden min-h-0 w-[320px] shrink-0 overflow-y-auto border-l border-line bg-surface xl:block"
         >
-          {context && <FamilyContext family={context} teamId={teamId} meId={me} showNotes={!showNotes} />}
-          {teamContext && <TeamChatContext context={teamContext} teamId={teamId} />}
+          {context && <FamilyContext family={context} teamCode={params.teamCode} meId={me} showNotes={!showNotes} />}
+          {teamContext && <TeamChatContext context={teamContext} teamCode={params.teamCode} />}
           {group && <GroupPanel group={group} meId={me} className="p-4" />}
         </aside>
       )}

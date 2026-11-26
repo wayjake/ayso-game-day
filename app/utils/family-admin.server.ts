@@ -14,7 +14,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const sameEmail = (email: string) => sql`lower(trim(${contacts.email})) = ${email}`;
 
-export async function getFamilyContacts(teamId: number, email: string) {
+export async function getFamilyContacts(teamId: string, email: string) {
   return db
     .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone, playerId: contacts.playerId })
     .from(contacts)
@@ -24,7 +24,7 @@ export async function getFamilyContacts(teamId: number, email: string) {
 
 // Parent accounts that belong to this family: an account with the email, or
 // the account that accepted the family's invite.
-async function familyUserIds(teamId: number, email: string) {
+async function familyUserIds(teamId: string, email: string) {
   const byEmail = await db
     .select({ id: users.id })
     .from(users)
@@ -36,7 +36,7 @@ async function familyUserIds(teamId: number, email: string) {
   return [...new Set([...byEmail.map((u) => u.id), ...accepted.map((a) => a.id!)])];
 }
 
-async function unlinkKids(teamId: number, email: string, playerIds: number[]) {
+async function unlinkKids(teamId: string, email: string, playerIds: string[]) {
   if (playerIds.length === 0) return;
   const userIds = await familyUserIds(teamId, email);
   if (userIds.length === 0) return;
@@ -45,14 +45,14 @@ async function unlinkKids(teamId: number, email: string, playerIds: number[]) {
     .where(and(eq(guardians.teamId, teamId), inArray(guardians.userId, userIds), inArray(guardians.playerId, playerIds)));
 }
 
-async function revokePendingInvites(teamId: number, email: string) {
+async function revokePendingInvites(teamId: string, email: string) {
   await db
     .update(parentInvites)
     .set({ status: "revoked" })
     .where(and(eq(parentInvites.teamId, teamId), eq(parentInvites.email, email), eq(parentInvites.status, "pending")));
 }
 
-async function revokeCoachInvites(teamId: number, email: string) {
+async function revokeCoachInvites(teamId: string, email: string) {
   await db
     .update(teamInvites)
     .set({ status: "revoked" })
@@ -70,12 +70,12 @@ export async function saveFamily({
   phone,
   playerIds: requestedIds,
 }: {
-  teamId: number;
+  teamId: string;
   originalEmail: string | null;
   name: string;
   email: string;
   phone: string;
-  playerIds: number[];
+  playerIds: string[];
 }): Promise<SaveFamilyResult> {
   const email = normalizeEmail(rawEmail);
   const oldEmail = originalEmail ? normalizeEmail(originalEmail) : null;
@@ -172,7 +172,7 @@ export async function saveFamily({
 
 // Removes the family from the team: its contacts, any pending invite, and
 // its parent accounts' access to the kids. Messages and notes stay as history.
-export async function deleteFamily(teamId: number, rawEmail: string) {
+export async function deleteFamily(teamId: string, rawEmail: string) {
   const email = normalizeEmail(rawEmail);
   const existing = await getFamilyContacts(teamId, email);
   if (existing.length === 0) return;
@@ -195,7 +195,7 @@ export type HouseholdGuardian = {
   phone: string;
   status: FamilyStatus;
   // The account a staff role applies to, once they're on the app
-  userId: number | null;
+  userId: string | null;
   staffRole: StaffRole | null;
   isTeamOwner: boolean;
   // A pending coach invite, for a guardian who isn't on the app yet
@@ -204,15 +204,15 @@ export type HouseholdGuardian = {
 
 export type Household = {
   guardians: HouseholdGuardian[];
-  playerIds: number[];
+  playerIds: string[];
   // Other guardians of some (not all) of these kids, edited on their own page
   related: { email: string; name: string }[];
 };
 
-const kidsKey = (f: { kids: { id: number }[] }) => f.kids.map((k) => k.id).sort((a, b) => a - b).join(",");
+const kidsKey = (f: { kids: { id: string }[] }) => f.kids.map((k) => k.id).sort().join(",");
 
 // Groups email-keyed families into households: the emails whose kids match exactly
-export function groupHouseholds<F extends { kids: { id: number }[] }>(families: F[]): F[][] {
+export function groupHouseholds<F extends { kids: { id: string }[] }>(families: F[]): F[][] {
   const groups = new Map<string, F[]>();
   for (const f of families) {
     const key = kidsKey(f);
@@ -221,7 +221,7 @@ export function groupHouseholds<F extends { kids: { id: number }[] }>(families: 
   return [...groups.values()];
 }
 
-export async function getHousehold(teamId: number, rawEmail: string, coachId: number): Promise<Household | null> {
+export async function getHousehold(teamId: string, rawEmail: string, coachId: string): Promise<Household | null> {
   const email = normalizeEmail(rawEmail);
   const families = await listFamilies(null, teamId);
   const start = families.find((f) => f.email === email);
@@ -267,7 +267,7 @@ export async function getHousehold(teamId: number, rawEmail: string, coachId: nu
 
 // The family's account a staff role applies to: the one already on staff,
 // else the first linked one. Null until the family is on the app.
-export function staffAccountFor(userIds: number[], staffRoles: Map<number, StaffRole>) {
+export function staffAccountFor(userIds: string[], staffRoles: Map<string, StaffRole>) {
   return userIds.find((id) => staffRoles.has(id)) ?? userIds[0] ?? null;
 }
 
@@ -287,9 +287,9 @@ export async function saveHousehold({
   guardians: input,
   playerIds,
 }: {
-  teamId: number;
+  teamId: string;
   guardians: GuardianInput[];
-  playerIds: number[];
+  playerIds: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const kept = input.filter((g) => !g.remove);
   const removed = input.filter((g) => g.remove && g.originalEmail);
@@ -340,10 +340,10 @@ export async function setGuardianRole({
   owner,
 }: {
   request: Request;
-  team: { id: number; name: string; coachId: number };
-  guardian: { email: string; name?: string; userId: number | null; staffRole: StaffRole | null; staffInvite: StaffRole | null };
+  team: { id: string; name: string; coachId: string };
+  guardian: { email: string; name?: string; userId: string | null; staffRole: StaffRole | null; staffInvite: StaffRole | null };
   role: StaffRole | null;
-  owner: { id: number; name: string | null; email: string };
+  owner: { id: string; name: string | null; email: string };
 }): Promise<GuardianRoleChange | null> {
   const who = guardian.name?.trim() || guardian.email;
   if (guardian.userId) {
@@ -380,10 +380,10 @@ export async function sendCoachInvite({
   owner,
 }: {
   request: Request;
-  team: { id: number; name: string };
+  team: { id: string; name: string };
   email: string;
   role: StaffRole;
-  owner: { id: number; name: string | null; email: string };
+  owner: { id: string; name: string | null; email: string };
 }): Promise<"sent" | "link-only" | null> {
   const { created } = await createInvites({ email, teamIds: [team.id], invitedBy: owner.id, role });
   if (created.length === 0) return null;

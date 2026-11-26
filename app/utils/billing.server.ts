@@ -51,6 +51,7 @@ import { getTeamStaff } from "~/utils/team-access.server";
 import { sendPush } from "~/utils/push.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail } from "~/utils/email.server";
 import { formatCents } from "~/utils/money";
+import { compareIds, parseId, parseIds } from "~/utils/ids";
 
 type Reader = typeof db | Tx;
 
@@ -67,10 +68,10 @@ export function expenseSpec(item: Pick<LedgerItem, "shareMode" | "totalCents" | 
   return { mode: item.shareMode, totalCents: item.totalCents, rounding: item.rounding, unitCents: item.unitCents };
 }
 
-const shareMember = (r: { playerId: number | null; userId: number | null }): Member =>
+const shareMember = (r: { playerId: string | null; userId: string | null }): Member =>
   r.playerId !== null ? { type: "player", id: r.playerId } : { type: "staff", id: r.userId! };
 
-export async function getShares(reader: Reader, teamId: number, itemIds?: number[]) {
+export async function getShares(reader: Reader, teamId: string, itemIds?: string[]) {
   if (itemIds && itemIds.length === 0) return [];
   const rows = await reader
     .select()
@@ -81,7 +82,7 @@ export async function getShares(reader: Reader, teamId: number, itemIds?: number
 }
 
 // Replaces who shares an expense. Nothing is billed here; the next invoice does that.
-export async function saveShares(teamId: number, itemId: number, shares: ShareSpec[]) {
+export async function saveShares(teamId: string, itemId: string, shares: ShareSpec[]) {
   const [item] = await db.select().from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
   if (!item) throw new LedgerError("That expense isn't on this team");
   if (item.settledAt) throw new LedgerError("This expense is settled, so who shares it can't change");
@@ -115,7 +116,7 @@ export async function saveShares(teamId: number, itemId: number, shares: ShareSp
   });
 }
 
-async function checkMembers(teamId: number, members: Member[]) {
+async function checkMembers(teamId: string, members: Member[]) {
   const playerIds = members.filter((m) => m.type === "player").map((m) => m.id);
   if (playerIds.length) {
     const found = await db.select({ id: players.id }).from(players).where(and(eq(players.teamId, teamId), inArray(players.id, playerIds)));
@@ -130,7 +131,7 @@ async function checkMembers(teamId: number, members: Member[]) {
 
 // What each person has been billed so far, per expense (shares, changes and
 // settle-ups; covers and refunds are separate). Reversed ones don't count.
-async function billedByItem(reader: Reader, teamId: number, kinds: TxnKind[] = SHARE_KINDS) {
+async function billedByItem(reader: Reader, teamId: string, kinds: TxnKind[] = SHARE_KINDS) {
   const reversed = reader
     .select({ id: ledgerTxns.reversesId })
     .from(ledgerTxns)
@@ -154,7 +155,7 @@ async function billedByItem(reader: Reader, teamId: number, kinds: TxnKind[] = S
       )
     )
     .groupBy(ledgerTxns.itemId, ledgerEntries.playerId, ledgerEntries.userId);
-  const out = new Map<number, MemberCents[]>();
+  const out = new Map<string, MemberCents[]>();
   for (const r of rows) {
     const list = out.get(r.itemId!) ?? [];
     list.push({ member: shareMember(r), cents: Number(r.cents) });
@@ -164,7 +165,7 @@ async function billedByItem(reader: Reader, teamId: number, kinds: TxnKind[] = S
 }
 
 // What each expense has cost the team so far: paid out, less refunds received
-export async function expenseCosts(reader: Reader, teamId: number) {
+export async function expenseCosts(reader: Reader, teamId: string) {
   const reversed = reader
     .select({ id: ledgerTxns.reversesId })
     .from(ledgerTxns)
@@ -182,7 +183,7 @@ export async function expenseCosts(reader: Reader, teamId: number) {
       )
     )
     .groupBy(ledgerEntries.itemId, ledgerTxns.kind);
-  const out = new Map<number, { paidOut: Cents; returned: Cents; cost: Cents }>();
+  const out = new Map<string, { paidOut: Cents; returned: Cents; cost: Cents }>();
   for (const r of rows) {
     const c = out.get(r.itemId!) ?? { paidOut: 0, returned: 0, cost: 0 };
     if (r.kind === "expense") c.paidOut += Number(r.cents);
@@ -196,7 +197,7 @@ export async function expenseCosts(reader: Reader, teamId: number) {
 export type PendingItem = { item: LedgerItem; changes: MemberCents[]; firstBilling: boolean; newMembers: Set<string> };
 
 // For every expense with shares: what the next invoice would bill each person
-export async function pendingShareChanges(reader: Reader, teamId: number): Promise<PendingItem[]> {
+export async function pendingShareChanges(reader: Reader, teamId: string): Promise<PendingItem[]> {
   const items = await reader
     .select()
     .from(ledgerItems)
@@ -229,7 +230,7 @@ export async function pendingShareChanges(reader: Reader, teamId: number): Promi
 }
 
 // Each person's target on one expense, for its page: what they'll owe in all
-export async function expenseTargets(teamId: number, item: LedgerItem) {
+export async function expenseTargets(teamId: string, item: LedgerItem) {
   const spec = expenseSpec(item);
   if (!spec) return { shares: [], targets: [] as MemberCents[], billed: [] as MemberCents[] };
   const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
@@ -246,10 +247,10 @@ export async function expenseTargets(teamId: number, item: LedgerItem) {
 
 // What each expense's shares add up to now (for a split, the shares can run a
 // little over or under the total until it's settled)
-export async function shareTotals(teamId: number) {
+export async function shareTotals(teamId: string) {
   const items = await db.select().from(ledgerItems).where(and(eq(ledgerItems.teamId, teamId), isNotNull(ledgerItems.shareMode)));
   const shares = await getShares(db, teamId, items.map((i) => i.id));
-  const out = new Map<number, Cents>();
+  const out = new Map<string, Cents>();
   for (const item of items) {
     try {
       const t = shareTargets(expenseSpec(item)!, shares.filter((s) => s.itemId === item.id).map((s) => s.spec));
@@ -266,7 +267,7 @@ export async function shareTotals(teamId: number) {
 // its real cost is re-split by share. Each person's difference goes on their
 // next invoice, mostly as money back. Until those are invoiced it can be reopened.
 
-export async function settlePreview(teamId: number, item: LedgerItem) {
+export async function settlePreview(teamId: string, item: LedgerItem) {
   const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
   const cost = (await expenseCosts(db, teamId)).get(item.id) ?? { paidOut: 0, returned: 0, cost: 0 };
   const net = (await billedByItem(db, teamId, [...SHARE_KINDS, "credit"])).get(item.id) ?? [];
@@ -289,7 +290,7 @@ export async function settlePreview(teamId: number, item: LedgerItem) {
   };
 }
 
-export async function settleExpense(teamId: number, itemId: number, by: number) {
+export async function settleExpense(teamId: string, itemId: string, by: string) {
   const [item] = await db.select().from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
   if (!item) throw new LedgerError("That expense isn't on this team");
   if (item.shareMode !== "split") throw new LedgerError("Only an expense split between people can be settled up");
@@ -302,7 +303,7 @@ export async function settleExpense(teamId: number, itemId: number, by: number) 
 }
 
 // Undo a settle-up nobody has been invoiced for yet
-export async function reopenExpense(teamId: number, itemId: number) {
+export async function reopenExpense(teamId: string, itemId: string) {
   const [posted] = await db
     .select({ id: ledgerTxns.id })
     .from(ledgerTxns)
@@ -317,7 +318,7 @@ export async function reopenExpense(teamId: number, itemId: number) {
 // for showing: the cost on the coach's schedule, a family's share on theirs,
 // and who to leave off when their family said they can't go.
 
-export async function getExpenseGames(teamId: number, itemId: number) {
+export async function getExpenseGames(teamId: string, itemId: string) {
   return db
     .select({ id: games.id, opponent: games.opponent, gameDate: games.gameDate, gameTime: games.gameTime })
     .from(ledgerItemEvents)
@@ -326,7 +327,7 @@ export async function getExpenseGames(teamId: number, itemId: number) {
     .orderBy(asc(games.gameDate), asc(games.gameTime));
 }
 
-export async function saveExpenseGames(teamId: number, itemId: number, gameIds: number[]) {
+export async function saveExpenseGames(teamId: string, itemId: string, gameIds: string[]) {
   const [item] = await db.select({ id: ledgerItems.id }).from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
   if (!item) throw new LedgerError("That expense isn't on this team");
   const ids = [...new Set(gameIds)];
@@ -341,27 +342,27 @@ export async function saveExpenseGames(teamId: number, itemId: number, gameIds: 
 }
 
 // Players whose family said they can't go to any of an expense's games
-export async function cantGoToExpense(teamId: number, itemId: number) {
+export async function cantGoToExpense(teamId: string, itemId: string) {
   const linked = await getExpenseGames(teamId, itemId);
-  if (linked.length === 0) return { games: 0, playerIds: [] as number[] };
+  if (linked.length === 0) return { games: 0, playerIds: [] as string[] };
   const answers = await db
     .select({ playerId: rsvps.playerId, eventId: rsvps.eventId, status: rsvps.status })
     .from(rsvps)
     .where(and(eq(rsvps.teamId, teamId), eq(rsvps.eventType, "game"), inArray(rsvps.eventId, linked.map((g) => g.id))));
-  const no = new Map<number, number>();
+  const no = new Map<string, number>();
   for (const a of answers) if (a.status === "no") no.set(a.playerId, (no.get(a.playerId) ?? 0) + 1);
   return { games: linked.length, playerIds: [...no].filter(([, n]) => n === linked.length).map(([id]) => id) };
 }
 
 // For the coach's schedule: the expenses on each game, keyed "game-<id>"
-export async function expensesByGame(teamId: number) {
+export async function expensesByGame(teamId: string) {
   const rows = await db
     .select({ eventId: ledgerItemEvents.eventId, itemId: ledgerItems.id, name: ledgerItems.name, totalCents: ledgerItems.totalCents, shareMode: ledgerItems.shareMode })
     .from(ledgerItemEvents)
     .innerJoin(ledgerItems, eq(ledgerItemEvents.itemId, ledgerItems.id))
     .where(and(eq(ledgerItemEvents.teamId, teamId), eq(ledgerItemEvents.eventType, "game")));
   const totals = await shareTotals(teamId);
-  const out: Record<string, { itemId: number; name: string; cents: Cents }[]> = {};
+  const out: Record<string, { itemId: string; name: string; cents: Cents }[]> = {};
   for (const r of rows) {
     (out[`game-${r.eventId}`] ??= []).push({ itemId: r.itemId, name: r.name, cents: r.shareMode === "split" ? r.totalCents ?? 0 : totals.get(r.itemId) ?? 0 });
   }
@@ -370,7 +371,7 @@ export async function expensesByGame(teamId: number) {
 
 // For a family's schedule: what their kids have been invoiced for each game's
 // expenses, keyed "game-<id>". Only invoiced amounts, as on their Finances page.
-export async function familySharesByGame(kids: { playerId: number; teamId: number }[]) {
+export async function familySharesByGame(kids: { playerId: string; teamId: string }[]) {
   const out: Record<string, { name: string; cents: Cents }[]> = {};
   for (const teamId of [...new Set(kids.map((k) => k.teamId))]) {
     const rows = await db
@@ -408,7 +409,7 @@ function familyName(names: string[]) {
 }
 
 // Players grouped by shared contact emails and parent accounts; each staff member is their own
-export async function teamFamilies(reader: Reader, teamId: number): Promise<Family[]> {
+export async function teamFamilies(reader: Reader, teamId: string): Promise<Family[]> {
   const roster = await reader.select({ id: players.id, name: players.name }).from(players).where(eq(players.teamId, teamId)).orderBy(asc(players.name));
   const emails = await reader
     .select({ playerId: contacts.playerId, email: sql<string>`lower(trim(${contacts.email}))` })
@@ -426,7 +427,7 @@ export async function teamFamilies(reader: Reader, teamId: number): Promise<Fami
     ...groups.map((ids) => {
       const sorted = [...ids].sort((a, b) => (nameOf.get(a) ?? "").localeCompare(nameOf.get(b) ?? ""));
       return {
-        key: `players:${[...ids].sort((a, b) => a - b).join(",")}`,
+        key: `players:${[...ids].sort(compareIds).join(",")}`,
         name: familyName(sorted.map((id) => nameOf.get(id) ?? "A player")),
         members: sorted.map((id) => ({ type: "player" as const, id })),
       };
@@ -435,27 +436,31 @@ export async function teamFamilies(reader: Reader, teamId: number): Promise<Fami
   ];
 }
 
+// "players:<id>,<id>" (sorted, as teamFamilies makes them) or "staff:<id>"
 export function familyMembersFromKey(key: string): Member[] {
   const [type, list] = key.split(":");
-  if (type === "staff") return [{ type: "staff", id: Number(list) }];
-  return (list ?? "").split(",").filter(Boolean).map((id) => ({ type: "player", id: Number(id) }));
+  if (type === "staff") {
+    const id = parseId(list);
+    return id ? [{ type: "staff", id }] : [];
+  }
+  return parseIds((list ?? "").split(",")).map((id) => ({ type: "player", id }));
 }
 
 // ---------------------------------------------------------------------------
 // What's not on an invoice yet
 
 type OpenEntry = {
-  entryId: number;
-  txnId: number;
+  entryId: string;
+  txnId: string;
   kind: TxnKind;
   member: Member;
   cents: Cents;
-  itemId: number | null;
-  fundId: number | null;
+  itemId: string | null;
+  fundId: string | null;
   correction: boolean; // Undoes something that was already invoiced
 };
 
-async function uninvoicedEntries(reader: Reader, teamId: number): Promise<OpenEntry[]> {
+async function uninvoicedEntries(reader: Reader, teamId: string): Promise<OpenEntry[]> {
   const rows = await reader
     .select({
       entryId: ledgerEntries.id,
@@ -483,7 +488,7 @@ async function uninvoicedEntries(reader: Reader, teamId: number): Promise<OpenEn
       r.id,
     ])
   );
-  const originalIds = [...new Set(rows.map((r) => r.reversesId).filter((id): id is number => id !== null))];
+  const originalIds = [...new Set(rows.map((r) => r.reversesId).filter((id): id is string => id !== null))];
   const originals = originalIds.length
     ? await reader.select({ id: ledgerTxns.id, kind: ledgerTxns.kind }).from(ledgerTxns).where(inArray(ledgerTxns.id, originalIds))
     : [];
@@ -535,7 +540,7 @@ function lineLabel(e: { kind: TxnKind; correction: boolean }, itemName: string, 
 export type DraftLine = { member: Member; who: string; label: string; cents: Cents };
 export type DraftInvoice = { familyKey: string; familyName: string; lines: DraftLine[]; totalCents: Cents };
 
-async function names(reader: Reader, teamId: number) {
+async function names(reader: Reader, teamId: string) {
   const roster = await reader.select({ id: players.id, name: players.name }).from(players).where(eq(players.teamId, teamId));
   const staff = await getTeamStaff(teamId);
   const items = await reader.select({ id: ledgerItems.id, name: ledgerItems.name }).from(ledgerItems).where(eq(ledgerItems.teamId, teamId));
@@ -546,12 +551,12 @@ async function names(reader: Reader, teamId: number) {
   const fund = new Map(funds.map((f) => [f.id, f.visible ? f.name : "the team"]));
   return {
     who: (m: Member) => (m.type === "player" ? player.get(m.id) ?? "A player" : staffName.get(m.id) ?? "A staff member"),
-    item: (id: number | null) => (id === null ? "team costs" : item.get(id) ?? "an expense"),
-    fund: (id: number | null) => (id === null ? "the team" : fund.get(id) ?? "the team"),
+    item: (id: string | null) => (id === null ? "team costs" : item.get(id) ?? "an expense"),
+    fund: (id: string | null) => (id === null ? "the team" : fund.get(id) ?? "the team"),
   };
 }
 
-function groupDrafts(families: Family[], lines: (DraftLine & { entryId?: number; itemId?: number | null })[]) {
+function groupDrafts(families: Family[], lines: (DraftLine & { entryId?: string; itemId?: string | null })[]) {
   const familyOf = new Map<string, Family>();
   for (const f of families) for (const m of f.members) familyOf.set(memberKey(m), f);
   const drafts = new Map<string, DraftInvoice & { raw: typeof lines }>();
@@ -571,7 +576,7 @@ function groupDrafts(families: Family[], lines: (DraftLine & { entryId?: number;
 }
 
 // What "Send invoices" would send right now
-export async function invoicePreview(teamId: number): Promise<{ drafts: DraftInvoice[]; totalCents: Cents }> {
+export async function invoicePreview(teamId: string): Promise<{ drafts: DraftInvoice[]; totalCents: Cents }> {
   const n = await names(db, teamId);
   const pending = await pendingShareChanges(db, teamId);
   const open = await uninvoicedEntries(db, teamId);
@@ -596,7 +601,7 @@ export async function invoicePreview(teamId: number): Promise<{ drafts: DraftInv
 
 // Bills every share change, then puts everything not yet invoiced on one
 // invoice per family. All or nothing; sending the same form twice sends once.
-export async function sendInvoices(teamId: number, by: number, formKey: string, origin: string) {
+export async function sendInvoices(teamId: string, by: string, formKey: string, origin: string) {
   const key = formKey.trim();
   if (!key || key.length > 60) throw new LedgerError("Reload the page and try again");
 
@@ -683,7 +688,7 @@ export async function sendInvoices(teamId: number, by: number, formKey: string, 
 
   // Tell each family's parents (and staff members their own), after it's saved
   if (sent.length) {
-    const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    const [team] = await db.select({ id: teams.id, code: teams.code, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
     if (team) await emailInvoices(team, by, sent.map((s) => s.id), origin);
     for (const inv of sent) {
       const playerIds = inv.members.filter((m) => m.type === "player").map((m) => m.id);
@@ -704,33 +709,36 @@ export async function sendInvoices(teamId: number, by: number, formKey: string, 
 
 // ---------------------------------------------------------------------------
 // Paying without signing in. A link per family, signed for that family's kids:
-// /pay/<team>-<player ids>-<signature>. Nothing is stored, so a link keeps
+// /pay/<team id>.<player id>.<player id>.<signature>, dot-separated since ids
+// (UUIDs) and the signature (base64url) both have dashes. Nothing is stored, so a link keeps
 // working as long as the kids are on the team. It only shows what they owe;
 // paying happens on Venmo.
 
-function paySignature(teamId: number, ids: string) {
+function paySignature(teamId: string, ids: string) {
   const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
   return crypto.createHmac("sha256", secret).update(`pay:${teamId}:${ids}`).digest("base64url").slice(0, 22);
 }
 
-export function payToken(teamId: number, playerIds: number[]) {
-  const ids = [...new Set(playerIds)].sort((a, b) => a - b).join(".");
-  return `${teamId}-${ids}-${paySignature(teamId, ids)}`;
+export function payToken(teamId: string, playerIds: string[]) {
+  const ids = [...new Set(playerIds)].sort(compareIds).join(".");
+  return `${teamId}.${ids}.${paySignature(teamId, ids)}`;
 }
 
-export function payPath(teamId: number, familyKey: string) {
+export function payPath(teamId: string, familyKey: string) {
   const playerIds = familyMembersFromKey(familyKey).filter((m) => m.type === "player").map((m) => m.id);
   return playerIds.length ? `/pay/${payToken(teamId, playerIds)}` : null;
 }
 
 export async function findPayFamily(token: string) {
-  const match = /^(\d+)-(\d+(?:\.\d+)*)-([A-Za-z0-9_-]{22})$/.exec(token);
-  if (!match) return null;
-  const teamId = Number(match[1]);
-  const given = Buffer.from(match[3]);
-  const expected = Buffer.from(paySignature(teamId, match[2]));
+  const parts = token.split(".");
+  if (parts.length < 3) return null;
+  const signature = parts[parts.length - 1];
+  const teamId = parseId(parts[0]);
+  const ids = parts.slice(1, -1);
+  if (!teamId || !/^[A-Za-z0-9_-]{22}$/.test(signature) || parseIds(ids).length !== ids.length) return null;
+  const given = Buffer.from(signature);
+  const expected = Buffer.from(paySignature(teamId, ids.join(".")));
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
-  const ids = match[2].split(".").map(Number);
   const [team] = await db.select({ id: teams.id, name: teams.name, venmoHandle: teams.venmoHandle }).from(teams).where(eq(teams.id, teamId)).limit(1);
   if (!team) return null;
   const kids = await db
@@ -743,7 +751,7 @@ export async function findPayFamily(token: string) {
 }
 
 // What a family owes, for the pay page: their invoices, and one amount for all their kids
-export async function payView(teamId: number, playerIds: number[]) {
+export async function payView(teamId: string, playerIds: string[]) {
   const invoices = await familyInvoices(teamId, playerIds);
   const { balance } = await paidInFor(db, teamId, playerIds.map((id) => ({ type: "player" as const, id })), []);
   return { invoices, owed: Math.max(0, balance), dueBack: Math.max(0, -balance) };
@@ -754,7 +762,7 @@ const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ({ "&": "&a
 // Each family's invoice by email, to every contact email on their kids, with
 // their pay link. Outside production it goes to the sender instead (see
 // familyDeliveryAddress). A failed email doesn't undo the send.
-export async function emailInvoices(team: { id: number; name: string }, by: number, invoiceIds: number[], origin: string) {
+export async function emailInvoices(team: { id: string; code: string; name: string }, by: string, invoiceIds: string[], origin: string) {
   const [sender] = await db.select({ id: users.id, name: users.name, email: users.email, sendingEmail: users.sendingEmail }).from(users).where(eq(users.id, by)).limit(1);
   if (!sender) return;
   const from = coachFromAddress(sender, team);
@@ -826,7 +834,7 @@ ${mine.map((l) => `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;
 // Reading invoices
 
 export type InvoiceView = {
-  id: number;
+  id: string;
   payPath?: string | null; // Staff only: the family's no-sign-in link
   number: number;
   familyKey: string;
@@ -835,11 +843,11 @@ export type InvoiceView = {
   totalCents: Cents;
   paid: Cents;
   remaining: Cents;
-  lines: { label: string; cents: Cents; playerId: number | null; itemId: number | null }[];
+  lines: { label: string; cents: Cents; playerId: string | null; itemId: string | null }[];
 };
 
 // Balance and money paid in for a set of accounts: paid in is what's been billed less what's still owed
-async function paidInFor(reader: Reader, teamId: number, members: Member[], openEntries: OpenEntry[]) {
+async function paidInFor(reader: Reader, teamId: string, members: Member[], openEntries: OpenEntry[]) {
   if (members.length === 0) return { balance: 0, open: 0 };
   const playerIds = members.filter((m) => m.type === "player").map((m) => m.id);
   const userIds = members.filter((m) => m.type === "staff").map((m) => m.id);
@@ -861,7 +869,7 @@ async function paidInFor(reader: Reader, teamId: number, members: Member[], open
 }
 
 // Every invoice on a team, newest first, with how much of each is paid
-export async function teamInvoices(teamId: number): Promise<InvoiceView[]> {
+export async function teamInvoices(teamId: string): Promise<InvoiceView[]> {
   const invoices = await db.select().from(ledgerInvoices).where(eq(ledgerInvoices.teamId, teamId)).orderBy(asc(ledgerInvoices.id));
   if (invoices.length === 0) return [];
   const lines = await db
@@ -871,7 +879,7 @@ export async function teamInvoices(teamId: number): Promise<InvoiceView[]> {
     .orderBy(asc(ledgerInvoiceLines.id));
   const byFamily = new Map<string, LedgerInvoice[]>();
   for (const inv of invoices) byFamily.set(inv.familyKey, [...(byFamily.get(inv.familyKey) ?? []), inv]);
-  const status = new Map<number, { paid: Cents; remaining: Cents }>();
+  const status = new Map<string, { paid: Cents; remaining: Cents }>();
   const openEntries = await uninvoicedEntries(db, teamId);
   for (const [familyKey, list] of byFamily) {
     const { balance, open } = await paidInFor(db, teamId, familyMembersFromKey(familyKey), openEntries);
@@ -896,7 +904,7 @@ export async function teamInvoices(teamId: number): Promise<InvoiceView[]> {
 
 // A parent's invoices on one team: only the lines for their own kids, and
 // what's paid worked out from their own kids' accounts
-export async function familyInvoices(teamId: number, playerIds: number[]): Promise<InvoiceView[]> {
+export async function familyInvoices(teamId: string, playerIds: string[]): Promise<InvoiceView[]> {
   if (playerIds.length === 0) return [];
   const lines = await db
     .select({ line: ledgerInvoiceLines, invoice: ledgerInvoices })
@@ -905,7 +913,7 @@ export async function familyInvoices(teamId: number, playerIds: number[]): Promi
     .where(and(eq(ledgerInvoices.teamId, teamId), inArray(ledgerInvoiceLines.playerId, playerIds)))
     .orderBy(asc(ledgerInvoices.id), asc(ledgerInvoiceLines.id));
   if (lines.length === 0) return [];
-  const invoices = new Map<number, InvoiceView>();
+  const invoices = new Map<string, InvoiceView>();
   for (const { line, invoice } of lines) {
     const view = invoices.get(invoice.id) ?? {
       id: invoice.id,
@@ -929,7 +937,7 @@ export async function familyInvoices(teamId: number, playerIds: number[]): Promi
   return list.map((inv, i) => ({ ...inv, paid: statuses[i].paid, remaining: statuses[i].remaining })).reverse();
 }
 
-export async function latestInvoiceDate(teamId: number) {
+export async function latestInvoiceDate(teamId: string) {
   const [row] = await db.select({ issuedAt: ledgerInvoices.issuedAt }).from(ledgerInvoices).where(eq(ledgerInvoices.teamId, teamId)).orderBy(desc(ledgerInvoices.id)).limit(1);
   return row?.issuedAt ?? null;
 }

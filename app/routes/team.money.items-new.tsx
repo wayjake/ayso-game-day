@@ -14,6 +14,9 @@ import { CATEGORY_LABELS, FULL_SHARE, ITEM_CATEGORIES, LedgerError, type ItemCat
 import { parseCents } from "~/utils/money";
 import { ShareEditor } from "~/components/money";
 import { Alert, Button, Card, Page, PageHeader, cx, inputClass, labelClass } from "~/components/ui";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
+import { parseIds } from "~/utils/ids";
 
 export function meta() {
   return [{ title: "New expense - BenchTalk" }];
@@ -21,11 +24,12 @@ export function meta() {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const book = await loadBook(team.id);
   const members = (await getMembers(team.id, book)).filter((m) => m.onTeam);
   return data({
     teamId: team.id,
+    teamCode: team.code,
     formKey: newFormKey(),
     members: members.map((m) => ({ key: memberKey(m.member), label: m.name, detail: m.detail ?? undefined })),
     upcomingGames: await db
@@ -38,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const formData = await request.formData();
   try {
     const name = readText(formData, "name", 120);
@@ -57,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       .from(ledgerItems)
       .where(and(eq(ledgerItems.teamId, team.id), eq(ledgerItems.name, name), eq(ledgerItems.createdBy, user.id), sql`${ledgerItems.createdAt} > datetime('now', '-30 seconds')`))
       .limit(1);
-    if (recent) return redirect(`/dashboard/team/${team.id}/finances/items/${recent.id}`);
+    if (recent) return redirect(teamPath(team, `finances/items/${recent.id}`));
 
     const [item] = await db
       .insert(ledgerItems)
@@ -76,13 +80,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       .returning({ id: ledgerItems.id });
     try {
       await saveShares(team.id, item.id, shares);
-      await saveExpenseGames(team.id, item.id, formData.getAll("gameId").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0));
+      await saveExpenseGames(team.id, item.id, parseIds(formData.getAll("gameId")));
     } catch (e) {
       // Nothing points at it yet, so take it back out
       await db.delete(ledgerItems).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
       throw e;
     }
-    return redirect(`/dashboard/team/${team.id}/finances/items/${item.id}`);
+    return redirect(teamPath(team, `finances/items/${item.id}`));
   } catch (e) {
     if (e instanceof LedgerError || e instanceof FormError) return data({ error: e.message }, { status: 400 });
     throw e;
@@ -90,7 +94,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function NewExpense({ loaderData }: Route.ComponentProps) {
-  const { teamId, formKey, members, upcomingGames } = loaderData;
+  const { teamCode, formKey, members, upcomingGames } = loaderData;
   const fetcher = useFetcher<{ error?: string }>();
   const busy = fetcher.state !== "idle";
   const [mode, setMode] = useState<"split" | "fixed">("split");
@@ -99,7 +103,7 @@ export default function NewExpense({ loaderData }: Route.ComponentProps) {
 
   return (
     <Page width="narrow">
-      <PageHeader back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }} title="New expense" description="What it's for, what it costs and who shares it. Families see their share once you send invoices." />
+      <PageHeader back={{ to: teamPath(teamCode, "finances"), label: "Finances" }} title="New expense" description="What it's for, what it costs and who shares it. Families see their share once you send invoices." />
 
       <fetcher.Form method="post" className="space-y-6">
         <input type="hidden" name="clientKey" value={`${formKey}:expense`} />

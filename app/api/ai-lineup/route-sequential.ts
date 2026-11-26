@@ -20,6 +20,7 @@ import {
   buildQuarterUserMessage
 } from './prompt-builder-sequential';
 import { generateSingleQuarterLineup } from './ai-client-sequential';
+import { parseId } from "~/utils/ids";
 
 // Lazy load server-only debug utilities
 async function getDebugUtils() {
@@ -60,8 +61,8 @@ function validateFinalLineup(params: {
   const errors: string[] = [];
 
   // Count quarters played per player
-  const quarterCounts: Record<number, number> = {};
-  const goalkeepingCounts: Record<number, number> = {};
+  const quarterCounts: Record<string, number> = {};
+  const goalkeepingCounts: Record<string, number> = {};
 
   playersContext.forEach(p => {
     quarterCounts[p.id] = 0;
@@ -131,8 +132,8 @@ function validateFinalLineup(params: {
 
 export async function handleSequentialLineupGeneration(formData: FormData, user: any) {
   try {
-    const gameId = parseInt(formData.get("gameId") as string);
-    const teamId = parseInt(formData.get("teamId") as string);
+    const gameId = parseId(formData.get("gameId")) ?? "";
+    const teamId = parseId(formData.get("teamId")) ?? "";
     const userInput = formData.get("userInput") as string;
 
     // 1. Fetch all necessary data
@@ -185,7 +186,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
         // Quarter already planned, skip it
         const assignments: AIAssignment[] = Object.entries(existingAssignments).map(([posNum, playerId]) => ({
           positionNumber: parseInt(posNum),
-          playerId: playerId as number
+          playerId: playerId as string
         }));
 
         // Calculate substitutes: players not in the existing assignments
@@ -284,11 +285,11 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
 
         // Build detailed quarter result
         const formationInfo = quarterFormationInfo[quarterNum];
-        const players: Record<number, number> = {};
+        const players: Record<number, string> = {};
         const changes: Array<{
           positionNumber: number;
           positionName: string;
-          playerId: number;
+          playerId: string;
           playerName: string;
           isChange: boolean;
         }> = [];
@@ -314,7 +315,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
 
         changes.sort((a, b) => a.positionNumber - b.positionNumber);
 
-        const substitutes = computedSubstitutes.map((playerId: number) => {
+        const substitutes = computedSubstitutes.map((playerId: string) => {
           const player = playersContext.find(p => p.id === playerId);
           return {
             playerId,
@@ -333,7 +334,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
 
     // 5. Debug: Show quarter-by-quarter player counts
     console.log('\nQuarter-by-quarter player counts:');
-    const playerQuarterCounts: Record<number, number> = {};
+    const playerQuarterCounts: Record<string, number> = {};
     teamPlayers.forEach(p => playerQuarterCounts[p.id] = 0);
 
     // Count from existing assignments
@@ -341,7 +342,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
       const existing = currentLineup[q];
       if (existing && Object.keys(existing).length > 0) {
         Object.values(existing).forEach(playerId => {
-          playerQuarterCounts[playerId as number]++;
+          playerQuarterCounts[playerId as string]++;
         });
       }
     }
@@ -354,7 +355,7 @@ export async function handleSequentialLineupGeneration(formData: FormData, user:
     });
 
     Object.entries(playerQuarterCounts).forEach(([playerId, count]) => {
-      const player = teamPlayers.find(p => p.id === parseInt(playerId));
+      const player = teamPlayers.find(p => p.id === playerId);
       console.log(`${player?.name} (${playerId}): ${count} quarters`);
     });
 

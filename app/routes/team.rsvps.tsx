@@ -12,12 +12,15 @@ import { formatGameDate, formatGameTime, formatTimeRange, todayISO } from "~/uti
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { Alert, Badge, Button, Card, Page, PageHeader, PlayerAvatar, cx } from "~/components/ui";
 import { BellRinging } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
-async function load(request: Request, params: { teamId: string; eventType: string; eventId: string }) {
+async function load(request: Request, params: { teamCode: string; eventType: string; eventId: string }) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
-  const event = await getTeamEvent(teamId, params.eventType, Number(params.eventId));
+  const event = await getTeamEvent(teamId, params.eventType, parseId(params.eventId));
   if (!event) throw new Response("Event not found", { status: 404 });
   return { user, teamId, event };
 }
@@ -53,10 +56,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("_action");
 
   if (intent === "rsvp") {
-    const playerId = Number(formData.get("playerId"));
+    const playerId = parseId(formData.get("playerId"));
     const status = formData.get("status");
     const players = await getTeamPlayers(teamId);
-    if (!players.some((p) => p.id === playerId) || !isRsvpStatus(status)) {
+    if (!playerId || !players.some((p) => p.id === playerId) || !isRsvpStatus(status)) {
       return data({ error: "Can't RSVP for that player" }, { status: 400 });
     }
     await setRsvp({ teamId, playerId, eventType: event.type, eventId: event.id, status, respondedBy: user.id });
@@ -99,7 +102,7 @@ export default function EventRsvps({ loaderData, actionData, params }: Route.Com
   return (
     <Page width="narrow">
       <PageHeader
-        back={{ to: `/dashboard/team/${params.teamId}/games`, label: "Schedule" }}
+        back={{ to: `${teamPath(params.teamCode)}/games`, label: "Schedule" }}
         title={event.type === "game" ? event.title : "Practice"}
         description={[formatGameDate(event.date), time, event.location].filter(Boolean).join(" · ")}
       />

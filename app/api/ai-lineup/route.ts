@@ -10,6 +10,7 @@ import {
   getCurrentAssignments,
   getAbsentInjuredPlayers,
   getPastGamesAndAssignments,
+  aliasPlayers,
   calculatePositionHistory,
   buildPlayersContext,
   buildCurrentLineup,
@@ -23,6 +24,7 @@ import {
 } from './prompt-builder';
 import { generateLineupWithAnthropic } from './ai-client';
 import { validateAYSOCompliance } from './validation';
+import { parseId } from "~/utils/ids";
 
 // Lazy load server-only modules
 async function getAuth() {
@@ -105,8 +107,9 @@ async function handleTranscription(formData: FormData) {
 
 async function handleLineupGeneration(formData: FormData, user: any) {
   try {
-    const gameId = parseInt(formData.get("gameId") as string);
-    const teamId = parseInt(formData.get("teamId") as string);
+    // Not an id: matches nothing, so the lookups below 404
+    const gameId = parseId(formData.get("gameId")) ?? "";
+    const teamId = parseId(formData.get("teamId")) ?? "";
     const userInput = formData.get("userInput") as string;
     const previousMessage = formData.get("previousMessage") as string | null;
 
@@ -122,10 +125,15 @@ async function handleLineupGeneration(formData: FormData, user: any) {
     }
 
     const quarterFormationInfo = await getQuarterFormations(game, team.format as GameFormat);
-    const teamPlayers = await getTeamPlayers(teamId);
-    const currentAssignments = await getCurrentAssignments(gameId);
-    const absentInjuredPlayers = await getAbsentInjuredPlayers(gameId);
-    const { pastGames, pastAssignments } = await getPastGamesAndAssignments(teamId, game.gameDate);
+
+    // Everything the model sees uses player aliases (see aliasPlayers)
+    const alias = aliasPlayers(await getTeamPlayers(teamId));
+    const teamPlayers = alias.players;
+    const currentAssignments = alias.rows(await getCurrentAssignments(gameId));
+    const absentInjuredPlayers = alias.rows(await getAbsentInjuredPlayers(gameId));
+    const past = await getPastGamesAndAssignments(teamId, game.gameDate);
+    const pastGames = past.pastGames;
+    const pastAssignments = alias.rows(past.pastAssignments);
 
     // 2. Process and build context
     const positionHistory = calculatePositionHistory(teamPlayers, pastAssignments);
@@ -183,23 +191,24 @@ async function handleLineupGeneration(formData: FormData, user: any) {
       }, { status: 400 });
     }
 
-    // 8. Convert to frontend format with detailed changes
+    // 8. Convert to frontend format with detailed changes, back in real player ids
+    const realId = alias.realId;
     const quartersWithDetails: QuarterWithDetails[] = aiResponse.quarters.map((quarter) => {
       const qNum = quarter.number;
       const currentQuarterLineup = currentLineup[qNum] || {};
       const formationInfo = quarterFormationInfo[qNum];
 
-      const players: Record<number, number> = {};
+      const players: Record<number, string> = {};
       const changes: Array<{
         positionNumber: number;
         positionName: string;
-        playerId: number;
+        playerId: string;
         playerName: string;
         isChange: boolean;
       }> = [];
 
       quarter.assignments.forEach((assignment) => {
-        players[assignment.positionNumber] = assignment.playerId;
+        players[assignment.positionNumber] = realId(assignment.playerId);
 
         const player = playersContext.find(p => p.id === assignment.playerId);
         const positionObj = formationInfo.positions.find((p: any) => p.number === assignment.positionNumber);
@@ -210,7 +219,7 @@ async function handleLineupGeneration(formData: FormData, user: any) {
         changes.push({
           positionNumber: assignment.positionNumber,
           positionName,
-          playerId: assignment.playerId,
+          playerId: realId(assignment.playerId),
           playerName: player?.name || 'Unknown',
           isChange,
         });
@@ -220,10 +229,10 @@ async function handleLineupGeneration(formData: FormData, user: any) {
       changes.sort((a, b) => a.positionNumber - b.positionNumber);
 
       // Map substitutes to include player names
-      const substitutes = (quarter.substitutes || []).map((playerId: number) => {
+      const substitutes = (quarter.substitutes || []).map((playerId: string) => {
         const player = playersContext.find(p => p.id === playerId);
         return {
-          playerId,
+          playerId: realId(playerId),
           playerName: player?.name || 'Unknown'
         };
       });

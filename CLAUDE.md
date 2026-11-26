@@ -93,6 +93,13 @@ npm run db:prod:studio   # Open Drizzle Studio for production
 
 ## Database Schema
 
+### Ids (UUIDv7) and team codes
+- **Every id is a lowercase UUIDv7 string** (`text` primary keys, `$defaultFn(() => newId())`), except `template_formations` and `positions`, which are fixed seed data and keep integer ids (`games.formationId`, `players.preferredPositions` and position numbers stay numbers). Nothing in the app is an incrementing number. Decided 2026-11-26, migration 0020.
+- **UUIDv7 text order is creation order**, and the app relies on it: unread is message ids above `lastReadMessageId` (nullable, null = nothing read), read receipts compare ids, the feed pages by post id, payments pay oldest charges first by id, and lists `orderBy(id)`. Compare ids as strings; sort with `compareIds`, take the newest with `maxId`. Never `a.id - b.id`, `Math.max` over ids, `> 0` or `Number.isInteger(id)` checks, or `coalesce(id, 0)` in SQL. Ids are made in the app server, so two rows written milliseconds apart on different instances can sort out of commit order; accepted at this scale.
+- **Parse ids from URLs and forms with `parseId`/`parseIds`** (`app/utils/ids.ts`, pure and unit tested); they return null for anything that isn't an id. `Number()` or `parseInt()` on an id compiles and silently gives NaN or a wrong number.
+- **URLs name a team by its short code** (`teams.code`: 7 characters from `23456789abcdefghjkmnpqrstuvwxyz`, random, unique), never its id: `/dashboard/team/<code>/…`, `/family/messages/with/<code>/<staffId>`. The route param is `params.teamCode`; loaders turn it into the id with `await teamIdFromCode(params.teamCode)` (`team-access.server.ts`, 404 if unknown) and then check access as before. Build every team link with `teamPath(teamOrCode, "games/…")` (`utils/team-path.ts`), which throws if given a UUID; loaders return the team's `code` wherever a component builds a link, and server-side links (push, email) look the code up. Other ids appear in URLs as full UUIDs.
+- Migration 0020 rebuilt all 49 user tables. Its SQL is generated: `node scripts/id-migration/build-sql.ts` rewrites drizzle's output (`scripts/id-migration/0020_generated_by_drizzle.sql`) so every id and reference maps through `_id_map`, keeping the old order. `scripts/id-migration/verify.ts old.db new.db` checks a run; `copy-db.ts` copies a libSQL database to a local file for rehearsing.
+
 The application uses Drizzle ORM with 8 main tables:
 
 ### Core Entities
@@ -146,7 +153,7 @@ The application uses Drizzle ORM with 8 main tables:
 12. **parentInvites** - One invite per family email per team (`/join/:code`). Accepting links every player on the team whose contacts use that email, so siblings come together.
 13. **practices** - One row per practice; a weekly series is rows sharing `seriesId`.
 14. **rsvps** - One answer (yes/no/maybe) per player per event, where `eventType` is `game` or `practice`.
-15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus one-to-one `direct` threads: one staff member (`staffUserId`) and one family. Only those two can read a direct thread. Other staff can't, the team owner included, and nothing is shared between staff (no shared inbox). `getConversationAccess` is the single gate; every lookup or insert of a direct thread passes the staff member (`getOrCreateDirectConversation`, `getOrCreateFamilyConversation`). Families start a thread with any staff member from their Messages list (`/family/messages/with/:teamId/:staffId` makes it on first open). When a staff member leaves, they lose the thread and the parent keeps it read-only (`canPost`). Unread = message ids above `lastReadMessageId`.
+15. **conversations / messages / conversationReads** - A `team` chat per team (all coaches and parents), plus one-to-one `direct` threads: one staff member (`staffUserId`) and one family. Only those two can read a direct thread. Other staff can't, the team owner included, and nothing is shared between staff (no shared inbox). `getConversationAccess` is the single gate; every lookup or insert of a direct thread passes the staff member (`getOrCreateDirectConversation`, `getOrCreateFamilyConversation`). Families start a thread with any staff member from their Messages list (`/family/messages/with/:teamCode/:staffId` makes it on first open). When a staff member leaves, they lose the thread and the parent keeps it read-only (`canPost`). Unread = message ids above `lastReadMessageId` (UUIDv7s sort by time; null = nothing read).
 15c. **Group chats (`conversations.kind = 'group'`, `name`, `createdBy`; `conversationMembers`)** - Anyone on the team, staff or parent, starts one from New message (the coach Messages index card, `/family/messages/new`): a searchable picker of staff and families (`PeoplePicker.tsx`, `pickerOptions`/`startConversation` in `utils/groups.server.ts`). One family (as staff) or one staff member (as a parent) still opens the private `direct` thread; anything else, or any pick with a name, is a group, and picking the same people again reopens the same unnamed group. Only members can read a group: no other staff, the team owner included, so a parents-only group is invisible to coaches. A member counts only while still on the team (`activeGroupMemberIds`, `conversationReaderIds`, which every push now goes through). A family not on the app is an email-only member row (`userId` null); `claimFamilyConversation` turns it into their account when they join, and they see the history. Groups are never emailed and have no Needs reply. The organizer (`groupManagerId`: the creator while still in it, otherwise the longest-standing member) renames it and adds or removes people; anyone can leave (`handleGroupAction`, `GroupPanel.tsx`). Realtime channel is `dm:<id>`, like direct threads. Pickers and member lists never send a family's email to a parent: families are keyed by an HMAC of the email.
 15a. **messages.parentId / messageReactions** - Tap a message to react (fixed set in `utils/reactions.ts`) or reply. Replies form a one-level thread under the root (`parentId` = root id; replying to a reply re-parents to the root), opened with `?thread=<id>` on the conversation page so pushes can deep-link. Replies notify only people in the thread (root author and repliers) and count as unread only for them; reactions notify the message's author.
 15c. **conversationReadMarks (read receipts)** - Telegram style. Your own messages show ✓ once sent and ✓✓ once someone else has read them. Tapping a message shows "Read today at 11:15 AM" in a direct thread (your own messages only), or "Seen by N" with each person and time in a group or the team chat (any message, for everyone in it). `conversationReads` holds each person's latest marker; `markRead` returns whether it moved and logs each move in `conversationReadMarks`, so a message's read time is the first mark at or past it (reads from before the table existed show "Read" with no time). `getReadReceipts` (`utils/read-receipts.server.ts`) sends one summary per conversation and the browser derives each message's readers (`utils/read-receipts.ts`). Only current participants count (direct: its staff member and parent; group: members with an account; team chat: staff and guardians), since old read rows can outlive access. Thread replies show no receipts (opening a conversation marks its replies read too). Loading a thread marks it read, so `MessageThread` doesn't reload on realtime events while the tab is hidden; it catches up when it's visible again. `markConversationRead` publishes a `read` event in direct threads and groups only when the marker moved (never in the team chat, where polling covers it).
@@ -182,7 +189,7 @@ Server helpers: `utils/family.server.ts` (parent access), `parent-invites.server
 
 ### Session Management (`app/sessions.server.ts`)
 - Cookie-based sessions with `createCookieSessionStorage`
-- Session cookie name: `ayso_session`
+- Session cookie name: `benchtalk_session` (renamed from `ayso_session` when ids became UUIDs, which signed everyone out once; a session whose `userId` isn't a UUID counts as signed out)
 - Max age: 1 week
 - HttpOnly, Secure in production
 - Session data: `userId`, `userEmail`, `userRole`
@@ -214,7 +221,7 @@ Routes are defined in `/app/routes.ts` using React Router v7's configuration:
 // Nested layout pattern
 route("dashboard", "routes/dashboard.tsx", [
   route("", "routes/dashboard._index.tsx"),
-  route("team/:teamId", "routes/team.tsx", [
+  route("team/:teamCode", "routes/team.tsx", [
     route("roster", "routes/team.roster.tsx"),
     route("games/:gameId/lineup", "routes/team.games.game.lineup.tsx"),
   ])
@@ -232,9 +239,8 @@ Example:
 ```typescript
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const team = await db.query.teams.findFirst({
-    where: eq(teams.id, parseInt(params.teamId!)),
-  });
+  const teamId = await teamIdFromCode(params.teamCode); // URLs carry the team's code
+  const { team } = await requireTeamAccess(teamId, user.id);
   return data({ team, user });
 }
 
@@ -265,7 +271,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /api/ai-lineup - AI lineup generation
 /public/game/:id - Public game view (no auth)
 /changelog - What's new, linked from the home page footer. Entries live in `app/utils/changelog.ts`
-/dashboard/team/:teamId/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
+/dashboard/team/:teamCode/games/:gameId/game-day - Sideline view, full screen outside the dashboard layout
 /join/:code - Parent invite: sign up or log in, linked to their kids
 /ack/:token - "Got it" from an announcement email (POST to confirm)
 /todo/:token - A family's tasks without signing in (POST to check one off)
@@ -279,7 +285,7 @@ export default function Component({ loaderData }: Route.ComponentProps) {
 /family - Family app (parents): schedule with RSVPs
   /family/messages - Team chat + private thread with the coaches
   /family/messages/new - New message: a coach (private thread) or several people (group chat)
-  /family/messages/with/:teamId/:staffId - Opens (or starts) the private thread with one staff member
+  /family/messages/with/:teamCode/:staffId - Opens (or starts) the private thread with one staff member
   /family/messages/:conversationId - Thread
   /family/feed - Team photo and video feed (every team the parent has kids on)
   /family/feed/:postId - One post with likes and comments
@@ -292,37 +298,37 @@ export default function Component({ loaderData }: Route.ComponentProps) {
   /dashboard/teams - Team list
   /dashboard/teams/new - Create team
   /dashboard/account - The coach's own settings on every team: name, notifications, sending address, log out
-  /dashboard/team/:teamId - Team layout (nested routes)
-    /dashboard/team/:teamId - Team overview
-    /dashboard/team/:teamId/roster - Player roster
-    /dashboard/team/:teamId/roster/new-player - Add player
-    /dashboard/team/:teamId/roster/player/:playerId/edit - Edit player
-    /dashboard/team/:teamId/games - Games list
-    /dashboard/team/:teamId/games/new - Create game
-    /dashboard/team/:teamId/games/:gameId/lineup - Lineup planner ⭐
-    /dashboard/team/:teamId/rotations - Rotation overview
-    /dashboard/team/:teamId/player/remove - Remove player
-    /dashboard/team/:teamId/families - Invite parents, see who has joined
-    /dashboard/team/:teamId/practices/new - One practice or a weekly series
-    /dashboard/team/:teamId/practices/:practiceId/edit - Edit, cancel, delete (one or rest of series)
-    /dashboard/team/:teamId/rsvps/:eventType/:eventId - Who's coming; answer for a family; remind non-responders
-    /dashboard/team/:teamId/messages - Team chat, family threads and group chats; New message starts a private thread or a group
-    /dashboard/team/:teamId/messages/:conversationId - Thread (notes, mark done; replies email families not on the app)
-    /dashboard/team/:teamId/announcements - Announcements, in the same workspace as Messages: the list on the left from lg, with the open announcement or the compose form beside it (layout route, like team.messages.tsx)
-    /dashboard/team/:teamId/announcements/new - Compose: audience, ask for nothing / "Got it" / a reply, send a test
-    /dashboard/team/:teamId/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
-    /dashboard/team/:teamId/feed - Team photo and video feed (coach view)
-    /dashboard/team/:teamId/feed/:postId - One post; coaches can delete any post or comment
-    /dashboard/team/:teamId/tasks - Tasks: a card per task and a players x tasks grid by family; tap a mark to confirm; Message drafts a family's open tasks
-    /dashboard/team/:teamId/tasks/new - New task: text, link, due date, per family, coach confirms, everyone or picked players
-    /dashboard/team/:teamId/tasks/:taskId - One task: filters, bulk confirm / take back / remove, coach notes, add players, delete
-    /dashboard/team/:teamId/tasks/:taskId/edit - Edit a task
-    /dashboard/team/:teamId/finances - Finances tab: totals, payments to confirm, charges, funds, people, recent activity; the Venmo handle
-    /dashboard/team/:teamId/finances/items/new - New expense: what it's for, refundable, split a total (full or half shares, optionally rounded up to the dollar) or each person's own amount, and who shares it
-    /dashboard/team/:teamId/finances/items/:itemId - One expense: each share, invoiced and paid; who shares it, pay out, cover from a fund, refund received, refund families, edit details
-    /dashboard/team/:teamId/finances/invoices - Invoices: what's ready to send (one per family) with Send, and every sent invoice with what's paid
-    /dashboard/team/:teamId/finances/funds - Funds: money in, spend, move between funds, new fund, family visibility
-    /dashboard/team/:teamId/finances/:memberType/:memberId - One player's family (player) or staff member (staff): what each share comes to, history with Undo, record a payment, pay back, donate credit, add to an expense
+  /dashboard/team/:teamCode - Team layout (nested routes)
+    /dashboard/team/:teamCode - Team overview
+    /dashboard/team/:teamCode/roster - Player roster
+    /dashboard/team/:teamCode/roster/new-player - Add player
+    /dashboard/team/:teamCode/roster/player/:playerId/edit - Edit player
+    /dashboard/team/:teamCode/games - Games list
+    /dashboard/team/:teamCode/games/new - Create game
+    /dashboard/team/:teamCode/games/:gameId/lineup - Lineup planner ⭐
+    /dashboard/team/:teamCode/rotations - Rotation overview
+    /dashboard/team/:teamCode/player/remove - Remove player
+    /dashboard/team/:teamCode/families - Invite parents, see who has joined
+    /dashboard/team/:teamCode/practices/new - One practice or a weekly series
+    /dashboard/team/:teamCode/practices/:practiceId/edit - Edit, cancel, delete (one or rest of series)
+    /dashboard/team/:teamCode/rsvps/:eventType/:eventId - Who's coming; answer for a family; remind non-responders
+    /dashboard/team/:teamCode/messages - Team chat, family threads and group chats; New message starts a private thread or a group
+    /dashboard/team/:teamCode/messages/:conversationId - Thread (notes, mark done; replies email families not on the app)
+    /dashboard/team/:teamCode/announcements - Announcements, in the same workspace as Messages: the list on the left from lg, with the open announcement or the compose form beside it (layout route, like team.messages.tsx)
+    /dashboard/team/:teamCode/announcements/new - Compose: audience, ask for nothing / "Got it" / a reply, send a test
+    /dashboard/team/:teamCode/announcements/:announcementId - Tracker with filters; ?family=<email> opens the family panel
+    /dashboard/team/:teamCode/feed - Team photo and video feed (coach view)
+    /dashboard/team/:teamCode/feed/:postId - One post; coaches can delete any post or comment
+    /dashboard/team/:teamCode/tasks - Tasks: a card per task and a players x tasks grid by family; tap a mark to confirm; Message drafts a family's open tasks
+    /dashboard/team/:teamCode/tasks/new - New task: text, link, due date, per family, coach confirms, everyone or picked players
+    /dashboard/team/:teamCode/tasks/:taskId - One task: filters, bulk confirm / take back / remove, coach notes, add players, delete
+    /dashboard/team/:teamCode/tasks/:taskId/edit - Edit a task
+    /dashboard/team/:teamCode/finances - Finances tab: totals, payments to confirm, charges, funds, people, recent activity; the Venmo handle
+    /dashboard/team/:teamCode/finances/items/new - New expense: what it's for, refundable, split a total (full or half shares, optionally rounded up to the dollar) or each person's own amount, and who shares it
+    /dashboard/team/:teamCode/finances/items/:itemId - One expense: each share, invoiced and paid; who shares it, pay out, cover from a fund, refund received, refund families, edit details
+    /dashboard/team/:teamCode/finances/invoices - Invoices: what's ready to send (one per family) with Send, and every sent invoice with what's paid
+    /dashboard/team/:teamCode/finances/funds - Funds: money in, spend, move between funds, new fund, family visibility
+    /dashboard/team/:teamCode/finances/:memberType/:memberId - One player's family (player) or staff member (staff): what each share comes to, history with Undo, record a payment, pay back, donate credit, add to an expense
 ```
 
 ## Key Features & Implementation Patterns
@@ -522,7 +528,7 @@ For testing authenticated features:
 
 ### Unit tests
 - `npm test` runs `node --test 'app/**/*.test.ts'` with Node's own type stripping, no installs needed. A GitHub Action (`.github/workflows/test.yml`) runs it on every pull request and on pushes to `preview` and `main`.
-- They cover the money rules: `utils/money.test.ts` (cents parsing, rounding, splits that always add up), `utils/ledger.test.ts` (double entry, overdraft, reversals, statements, plus randomized invariant checks) and `utils/shares.test.ts` (shares of an expense, late joiners at the locked price, families, invoice payment order). Run one file with `node --test app/utils/ledger.test.ts`.
+- They cover ids (`utils/ids.test.ts`: UUIDv7 order, parsing, team codes) and the money rules: `utils/money.test.ts` (cents parsing, rounding, splits that always add up), `utils/ledger.test.ts` (double entry, overdraft, reversals, statements, plus randomized invariant checks) and `utils/shares.test.ts` (shares of an expense, late joiners at the locked price, families, invoice payment order). Run one file with `node --test app/utils/ledger.test.ts`.
 - A tested module must be pure: no `~/` imports, no npm imports, no enums or other non-erasable TypeScript, and it imports its siblings with the `.ts` extension (`allowImportingTsExtensions` is on).
 - Everything else is still tested by hand with the test account.
 
@@ -626,6 +632,7 @@ export async function action({ request }: Route.ActionArgs) {
 | Session Config | `/app/sessions.server.ts` |
 | Formation Data | `/app/utils/formations.ts` |
 | Position Changes | `/app/utils/position-changes.ts` |
+| Ids and team codes | `/app/utils/ids.ts` (`newId`, `parseId`, `compareIds`, `newTeamCode`), `/app/utils/team-path.ts`, `teamIdFromCode` in `team-access.server.ts` |
 | Image Helpers | `/app/utils/image.ts` |
 | Main Lineup UI | `/app/routes/team.games.game.lineup.tsx` |
 | Game Day (sideline) | `/app/routes/game-day.tsx` |
@@ -640,7 +647,7 @@ export async function action({ request }: Route.ActionArgs) {
 | Team feed | `/app/utils/feed.server.ts`, `/app/components/feed/*`, `/app/routes/*feed*.tsx` |
 | Finances (ledger) | `/app/utils/money.ts` and `ledger.ts` (pure rules, unit tested), `ledger.server.ts` (`postTxn`/`postTxnIn`: every ledger write), `billing.server.ts` (shares and invoices), `ledger-forms.server.ts`, `/app/components/money.tsx`, `/app/routes/team.money*.tsx`, `family.money.tsx` |
 | Tasks | `/app/utils/tasks.core.ts` (rules, shared with the MCP), `tasks.server.ts` (views, draft, `/todo` token), `tasks.ts`, `/app/components/tasks.tsx`, `FamilyTodo.tsx`, `/app/routes/team.tasks*.tsx`, `todo.tsx` |
-| Roster import and tasks MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default): `list_teams`, `import_roster_csv`, `list_tasks`, `create_task`, `set_task_status`. Writes default to `dry_run`; test with `--db=file:<copy of dev.db>` |
+| Roster import and tasks MCP | `/mcp/roster-import.ts` (registered in `.mcp.json`, targets prod by default): `list_teams` (shows each team's code and id), `import_roster_csv`, `list_tasks`, `create_task`, `set_task_status`; `team_id` takes a team's id or code. Writes default to `dry_run`; test with `--db=file:<copy of dev.db>` |
 | AI Assistant | `/app/components/AIAssistantCoach.tsx` |
 | AI API Endpoint | `/app/api/ai-lineup/route.ts` |
 | Global Styles | `/app/app.css` |

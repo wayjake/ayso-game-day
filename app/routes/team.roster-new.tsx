@@ -8,10 +8,12 @@ import { ImageUploader } from "~/components/ImageUploader";
 import { useState } from "react";
 import { Alert, Button, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { Lightbulb, Plus } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Get team details
   const [team] = await db
@@ -48,7 +50,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Verify team ownership
   const [team] = await db
@@ -88,7 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       profilePicture: profilePictureUrl || null,
     }).returning({ id: players.id });
     
-    return redirect(`/dashboard/team/${teamId}/roster`);
+    return redirect(`${teamPath(params.teamCode)}/roster`);
   } catch (error) {
     console.error("Error creating player:", error);
     return data(
@@ -123,7 +125,7 @@ export default function NewPlayer({ loaderData, actionData }: Route.ComponentPro
       <PageHeader
         title="Add player"
         description={`Add a player to your ${team.format} roster.`}
-        back={{ to: `/dashboard/team/${team.id}/roster`, label: "Roster" }}
+        back={{ to: `${teamPath(team)}/roster`, label: "Roster" }}
       />
 
       {/* Error message */}
@@ -249,7 +251,7 @@ export default function NewPlayer({ loaderData, actionData }: Route.ComponentPro
           {/* Form actions */}
           <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
             <Link
-              to={`/dashboard/team/${team.id}/roster`}
+              to={`${teamPath(team)}/roster`}
               className={buttonClass({ variant: "secondary" })}
             >
               Cancel
