@@ -19,7 +19,7 @@ import {
   type ShareSpec,
 } from "./ledger.ts";
 import { sumCents } from "./money.ts";
-import { creditLines, expenseLines, vendorRefundLines } from "./ledger.ts";
+import { contributionLines, creditLines, expenseLines, vendorRefundLines } from "./ledger.ts";
 
 // Ids are UUIDv7 strings; these sort the same way their numbers do, like real ones by age
 const uid = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
@@ -197,6 +197,25 @@ test("settling Palmdale: $1,102 billed, $1,100 paid out, then $400 of deposit ba
   lines.push(...shareLines(uid(1), settle));
   assert.equal(balances(lines).get(`item:${uid(1)}`) ?? 0, 0);
   assert.equal(sumCents(settleTargets(cost, shares).map((t) => t.cents)), cost);
+});
+
+test("a coach covering the card fee: the expense costs $1,100 and settles to zero", () => {
+  // Quartz Hill: $1,135.29 on the coach's card, of which $35.29 fee he covers himself
+  const coach = uid(900);
+  const shares = [...Array.from({ length: 9 }, (_, i) => full(i + 1)), half(10)];
+  const billed = shareTargets(split(110000, "dollar"), shares); // $116 and $58
+  const lines = [
+    ...shareLines(uid(1), shareChanges(billed, [])),
+    ...expenseLines({ type: "item", itemId: uid(1) }, 113529, { type: "staff", userId: coach }),
+    ...contributionLines(uid(1), 3529, { type: "staff", userId: coach }),
+  ];
+  // The team owes the coach $1,100 now, not $1,135.29
+  assert.equal(balances(lines).get(`staff:${coach}`), -110000);
+  // Paid out less what was covered: $1,100, settled exactly
+  const cost = 113529 - 3529;
+  lines.push(...shareLines(uid(1), shareChanges(settleTargets(cost, shares), billed)));
+  assert.equal(balances(lines).get(`item:${uid(1)}`) ?? 0, 0);
+  assert.throws(() => contributionLines(uid(1), 0, { type: "cash" }), LedgerError);
 });
 
 test("settling counts refunds already given, and leaves the expense at zero", () => {

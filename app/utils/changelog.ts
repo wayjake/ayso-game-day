@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Cover a fee yourself",
+    summary: "Pay part of an expense so families don't, and log card payments as credit card.",
+    changes: [
+      { kind: "new", text: "Coaches: Cover part of the cost on an expense, like a card fee you'd rather eat. Take it from money the team owes you, or put in new money. Families' shares come out lower to match." },
+      { kind: "new", text: "Credit card is now a payment type when you record a payment, a payout or a refund." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "What's owed, before you invoice",
     summary: "Finances shows what families owe as soon as you add an expense, and whether the team is ahead or behind.",
     changes: [

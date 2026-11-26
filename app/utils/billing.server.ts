@@ -180,17 +180,19 @@ export async function expenseCosts(reader: Reader, teamId: string) {
       and(
         eq(ledgerEntries.teamId, teamId),
         eq(ledgerEntries.accountType, "item"),
-        inArray(ledgerTxns.kind, ["expense", "vendor_refund"]),
+        inArray(ledgerTxns.kind, ["expense", "vendor_refund", "donation"]),
         sql`${ledgerTxns.id} not in ${reversed}`
       )
     )
     .groupBy(ledgerEntries.itemId, ledgerTxns.kind);
-  const out = new Map<string, { paidOut: Cents; returned: Cents; cost: Cents }>();
+  // covered: what a coach or sponsor paid toward the cost so families don't
+  const out = new Map<string, { paidOut: Cents; returned: Cents; covered: Cents; cost: Cents }>();
   for (const r of rows) {
-    const c = out.get(r.itemId!) ?? { paidOut: 0, returned: 0, cost: 0 };
+    const c = out.get(r.itemId!) ?? { paidOut: 0, returned: 0, covered: 0, cost: 0 };
     if (r.kind === "expense") c.paidOut += Number(r.cents);
+    else if (r.kind === "donation") c.covered -= Number(r.cents);
     else c.returned -= Number(r.cents);
-    c.cost = c.paidOut - c.returned;
+    c.cost = c.paidOut - c.returned - c.covered;
     out.set(r.itemId!, c);
   }
   return out;
@@ -271,7 +273,7 @@ export async function shareTotals(teamId: string) {
 
 export async function settlePreview(teamId: string, item: LedgerItem) {
   const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
-  const cost = (await expenseCosts(db, teamId)).get(item.id) ?? { paidOut: 0, returned: 0, cost: 0 };
+  const cost = (await expenseCosts(db, teamId)).get(item.id) ?? { paidOut: 0, returned: 0, covered: 0, cost: 0 };
   const net = (await billedByItem(db, teamId, [...SHARE_KINDS, "credit"])).get(item.id) ?? [];
   type Row = { member: Member; billed: Cents; final: Cents; change: Cents };
   // More came back than went out (a refund recorded before the payout): nothing to split yet

@@ -736,7 +736,11 @@ export function describeBook(
       case "settle": text = `Settled up ${item} for ${who}`; break;
       case "payment": text = `Payment for ${who}${from}${fundIn ? `, extra to ${names.fund(fundIn.account.id!)}` : ""}`; break;
       case "cover": text = `${fundOut ? names.fund(fundOut.account.id!) : "A fund"} covered ${item} for ${who}`; break;
-      case "donation": text = `Added to ${fundIn ? names.fund(fundIn.account.id!) : "a fund"}${members.length ? ` from ${who}'s credit` : from}`; break;
+      case "donation":
+        text = t.itemId && !fundIn
+          ? `${staffLine ? names.member({ type: "staff", id: staffLine.account.id! }) : t.payerName || "Someone"} covered part of ${item}${staffLine ? ", from money the team owed them" : ""}`
+          : `Added to ${fundIn ? names.fund(fundIn.account.id!) : "a fund"}${members.length ? ` from ${who}'s credit` : from}`;
+        break;
       case "transfer": text = `Moved from ${fundOut ? names.fund(fundOut.account.id!) : "?"} to ${fundIn ? names.fund(fundIn.account.id!) : "?"}`; break;
       case "expense":
         text = `Paid out for ${t.itemId ? item : fundOut ? `${names.fund(fundOut.account.id!)} spending` : "team costs"}${
