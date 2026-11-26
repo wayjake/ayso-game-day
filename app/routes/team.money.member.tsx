@@ -28,7 +28,9 @@ import {
   readText,
   runLedgerAction,
 } from "~/utils/ledger-forms.server";
-import { LedgerError, chargeLines, donationLines, refundLines, reimburseLines, type Member } from "~/utils/ledger";
+import { FULL_SHARE, LedgerError, donationLines, refundLines, reimburseLines, type Member } from "~/utils/ledger";
+import { getShares, saveShares } from "~/utils/billing.server";
+import { parseCents } from "~/utils/money";
 import { formatCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Balance, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, TextField, UndoButton, memberLineText } from "~/components/money";
@@ -100,7 +102,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     detail: me.detail,
     onTeam: me.onTeam,
     statement: me.statement,
-    items: items.map((i) => ({ id: i.id, name: i.name, dueDate: i.dueDate })),
+    items: items.map((i) => ({ id: i.id, name: i.name, dueDate: i.dueDate, shareMode: i.shareMode, settledAt: i.settledAt })),
     history,
     siblings,
     codes: member.type === "player" ? await guardianCodes(team.id, member.id) : [],
@@ -120,7 +122,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const clientKey = readClientKey(formData);
 
   return runLedgerAction(async () => {
-    const { me } = await load(team.id, member);
+    const { me, items } = await load(team.id, member);
     switch (intent) {
       case "payment": {
         // This member, plus any siblings ticked on the form
@@ -163,10 +165,18 @@ export async function action({ request, params }: Route.ActionArgs) {
         await postTxn({ teamId: team.id, kind: "donation", fundId, lines: donationLines(fundId, cents, { type: "member", member }), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
         return;
       }
-      case "charge": {
+      case "share": {
+        // Adds them to an expense (or changes their share); it goes on their next invoice
         if (!me.onTeam) throw new LedgerError("They're not on the team any more");
         const itemId = readId(formData, "itemId");
-        await postTxn({ teamId: team.id, kind: "charge", itemId, lines: chargeLines(itemId, [{ member, cents: readCents(formData, "cents") }]), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
+        const item = items.find((i) => i.id === itemId);
+        if (!item?.shareMode) throw new LedgerError("Pick an expense");
+        const current = (await getShares(db, team.id, [itemId])).map((s) => s.spec).filter((s) => memberKey(s.member) !== memberKey(member));
+        const fixedRaw = String(formData.get("amount") ?? "").trim();
+        const fixedCents = item.shareMode === "fixed" ? parseCents(fixedRaw) : null;
+        if (item.shareMode === "fixed" && (fixedCents === null || fixedCents < 0)) throw new FormError("Enter their amount in dollars, like 49 or 49.50");
+        const weight = formData.get("weight") === "1" ? 1 : FULL_SHARE;
+        await saveShares(team.id, itemId, [...current, { member, weight, fixedCents }]);
         return;
       }
       case "reverse":
@@ -207,7 +217,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                 <thead>
                   <tr className="border-b border-line text-left text-xs text-muted">
                     <th scope="col" className="px-4 py-3 font-semibold">For</th>
-                    <th scope="col" className="px-3 py-3 text-right font-semibold">Charged</th>
+                    <th scope="col" className="px-3 py-3 text-right font-semibold">Invoiced</th>
                     <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Covered or back</th>
                     <th scope="col" className="px-3 py-3 text-right font-semibold">Paid</th>
                     <th scope="col" className="px-4 py-3 text-right font-semibold">Left</th>
@@ -229,7 +239,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
               </table>
               {statement.unapplied > 0 && (
                 <p className="border-t border-line px-4 py-3 text-sm text-muted">
-                  <Amount cents={statement.unapplied} className="font-semibold text-success" /> {isStaff ? "the team owes them." : "in credit: it pays toward their next charge, or you can pay it back."}
+                  <Amount cents={statement.unapplied} className="font-semibold text-success" /> {isStaff ? "the team owes them." : "in credit: it pays toward their next invoice, or you can pay it back."}
                 </p>
               )}
             </Card>
@@ -253,7 +263,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                       <span className={cx("font-semibold tabular", h.cents > 0 ? "" : "text-success")}>
                         {h.cents > 0 ? "" : "−"}{formatCents(Math.abs(h.cents))}
                       </span>
-                      {!h.reversed && h.kind !== "reversal" && <UndoButton txnId={h.txnId} formKey={formKey} />}
+                      {!h.reversed && !["reversal", "charge", "adjust", "settle"].includes(h.kind) && <UndoButton txnId={h.txnId} formKey={formKey} />}
                     </li>
                   ))}
                 </ul>
@@ -298,7 +308,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                   name="extra"
                   defaultValue="credit"
                   options={[
-                    { value: "credit", label: "Keep it as credit", hint: "Pays toward the next charge, or you pay it back." },
+                    { value: "credit", label: "Keep it as credit", hint: "Pays toward their next invoice, or you pay it back." },
                     ...funds.map((f) => ({ value: `fund:${f.id}`, label: `They're donating it to ${f.name}` })),
                   ]}
                 />
@@ -336,19 +346,26 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
             </>
           )}
 
-          {onTeam && items.length > 0 && (
-            <ActionPanel title="Add a charge" hint="Charge just them for something." icon={<Plus size={18} />}>
-              <LedgerForm intent="charge" formKey={formKey} submitLabel="Charge them">
+          {onTeam && items.some((i) => i.shareMode && !i.settledAt) && (
+            <ActionPanel title="Add to an expense" hint="It goes on their next invoice." icon={<Plus size={18} />}>
+              <LedgerForm intent="share" formKey={formKey} submitLabel="Add them">
                 <div>
-                  <label htmlFor="itemId" className={labelClass}>For</label>
+                  <label htmlFor="itemId" className={labelClass}>Expense</label>
                   <select id="itemId" name="itemId" className={inputClass}>
-                    {items.map((i) => (
-                      <option key={i.id} value={i.id}>{i.name}</option>
+                    {items.filter((i) => i.shareMode && !i.settledAt).map((i) => (
+                      <option key={i.id} value={i.id}>{i.name}{i.shareMode === "fixed" ? " (their own amount)" : ""}</option>
                     ))}
                   </select>
                 </div>
-                <MoneyField name="cents" label="Amount" />
-                <TextField name="memo" label="Note the family sees" />
+                <div>
+                  <label htmlFor="weight" className={labelClass}>Share</label>
+                  <select id="weight" name="weight" defaultValue={FULL_SHARE} className={inputClass}>
+                    <option value={FULL_SHARE}>Full share</option>
+                    <option value={1}>Half share</option>
+                  </select>
+                  <p className={hintClass}>For a split expense. Someone added after the first invoice pays the same share as everyone else.</p>
+                </div>
+                <MoneyField name="amount" label="Their amount" required={false} hint="For an expense where everyone owes their own amount, like merch." />
               </LedgerForm>
             </ActionPanel>
           )}

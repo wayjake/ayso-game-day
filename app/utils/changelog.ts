@@ -13,6 +13,18 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Expenses, shares and invoices",
+    summary: "Add an expense once, pick who shares it, and send each family one invoice for everything they owe.",
+    changes: [
+      { kind: "new", text: "Coaches: an expense can split a total into full and half shares, rounded up to the dollar if you like, or give each person their own amount, like a merch order. Change who shares it any time; nothing reaches families until you send invoices." },
+      { kind: "new", text: "Send invoices puts every new share on one invoice per family, covering all their kids. Brothers and sisters land on the same invoice. Once sent, an invoice never changes: anything later goes on the next one, and you can see which invoices are paid." },
+      { kind: "new", text: "Someone joining late pays the same share as everyone else, worked out on the first invoice." },
+      { kind: "new", text: "Families see each invoice and their share of every expense, with one amount to pay for all their kids." },
+      { kind: "improved", text: "Clearer words throughout: an expense, your share, paid out, collected and refunds." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Finances, Families and Tasks get their own tabs",
     summary: "Everything about money is now called Finances, and it sits in the tab bar for coaches and families alike.",
     changes: [

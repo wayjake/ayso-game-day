@@ -20,6 +20,7 @@ import {
   type LedgerTxn,
 } from "~/db";
 import {
+  KIND_LABELS,
   LedgerError,
   accountKey,
   assertBalanced,
@@ -52,7 +53,7 @@ const enumsMatch: [
 ] = [true, true, true, true];
 void enumsMatch;
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Reader = typeof db | Tx;
 
 export { LedgerError };
@@ -158,11 +159,7 @@ export type PostInput = {
 };
 
 export async function postTxn(input: PostInput): Promise<{ txnId: number; duplicate: boolean }> {
-  assertBalanced(input.lines);
   const clientKey = input.clientKey.trim();
-  if (!clientKey || clientKey.length > 100) throw new LedgerError("Reload the page and try again");
-  const occurredOn = input.occurredOn && /^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn) ? input.occurredOn : todayISO();
-
   const existing = async () => {
     const [row] = await db
       .select({ id: ledgerTxns.id })
@@ -173,56 +170,7 @@ export async function postTxn(input: PostInput): Promise<{ txnId: number; duplic
   };
 
   try {
-    return await db.transaction(async (tx) => {
-      const [dupe] = await tx
-        .select({ id: ledgerTxns.id })
-        .from(ledgerTxns)
-        .where(and(eq(ledgerTxns.teamId, input.teamId), eq(ledgerTxns.clientKey, clientKey)))
-        .limit(1);
-      if (dupe) return { txnId: dupe.id, duplicate: true };
-
-      await checkAccounts(tx, input.teamId, input.lines);
-
-      // A reversal always goes through, so a mistake can be undone even after the money was spent
-      if (input.kind !== "reversal") {
-        const bad = overdrawn(await heldBalances(tx, input.teamId, input.lines), input.lines);
-        if (bad.some((a) => a.type === "cash")) {
-          throw new LedgerError("The team doesn't hold that much. If someone paid it themselves, record it as fronted by them.");
-        }
-        if (bad.length) throw new LedgerError("That fund doesn't have that much in it.");
-      }
-
-      if (input.claimId) {
-        const claimed = await tx
-          .update(ledgerClaims)
-          .set({ status: "confirmed", resolvedBy: input.createdBy, resolvedAt: new Date().toISOString() })
-          .where(and(eq(ledgerClaims.id, input.claimId), eq(ledgerClaims.teamId, input.teamId), eq(ledgerClaims.status, "pending")))
-          .returning({ id: ledgerClaims.id });
-        if (claimed.length === 0) throw new LedgerError("Someone already handled that payment");
-      }
-
-      const [txn] = await tx
-        .insert(ledgerTxns)
-        .values({
-          teamId: input.teamId,
-          kind: input.kind,
-          itemId: input.itemId ?? null,
-          fundId: input.fundId ?? null,
-          memo: input.memo?.trim() || null,
-          method: input.method ?? null,
-          payerUserId: input.payerUserId ?? null,
-          payerName: input.payerName?.trim() || null,
-          occurredOn,
-          reversesId: input.reversesId ?? null,
-          clientKey,
-          createdBy: input.createdBy,
-        })
-        .returning({ id: ledgerTxns.id });
-
-      await tx.insert(ledgerEntries).values(input.lines.map((l) => entryRow(txn.id, input.teamId, l)));
-      if (input.claimId) await tx.update(ledgerClaims).set({ txnId: txn.id }).where(eq(ledgerClaims.id, input.claimId));
-      return { txnId: txn.id, duplicate: false };
-    });
+    return await db.transaction((tx) => postTxnIn(tx, input));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     // Two submits raced past the check: the unique index kept one
@@ -235,11 +183,72 @@ export async function postTxn(input: PostInput): Promise<{ txnId: number; duplic
   }
 }
 
+// The same, inside a transaction the caller already opened (sending invoices
+// posts several at once, all or nothing)
+export async function postTxnIn(tx: Tx, input: PostInput): Promise<{ txnId: number; duplicate: boolean }> {
+  assertBalanced(input.lines);
+  const clientKey = input.clientKey.trim();
+  if (!clientKey || clientKey.length > 100) throw new LedgerError("Reload the page and try again");
+  const occurredOn = input.occurredOn && /^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn) ? input.occurredOn : todayISO();
+
+  const [dupe] = await tx
+    .select({ id: ledgerTxns.id })
+    .from(ledgerTxns)
+    .where(and(eq(ledgerTxns.teamId, input.teamId), eq(ledgerTxns.clientKey, clientKey)))
+    .limit(1);
+  if (dupe) return { txnId: dupe.id, duplicate: true };
+
+  await checkAccounts(tx, input.teamId, input.lines);
+
+  // A reversal always goes through, so a mistake can be undone even after the money was spent
+  if (input.kind !== "reversal") {
+    const bad = overdrawn(await heldBalances(tx, input.teamId, input.lines), input.lines);
+    if (bad.some((a) => a.type === "cash")) {
+      throw new LedgerError("The team doesn't hold that much. If someone paid it themselves, record it as fronted by them.");
+    }
+    if (bad.length) throw new LedgerError("That fund doesn't have that much in it.");
+  }
+
+  if (input.claimId) {
+    const claimed = await tx
+      .update(ledgerClaims)
+      .set({ status: "confirmed", resolvedBy: input.createdBy, resolvedAt: new Date().toISOString() })
+      .where(and(eq(ledgerClaims.id, input.claimId), eq(ledgerClaims.teamId, input.teamId), eq(ledgerClaims.status, "pending")))
+      .returning({ id: ledgerClaims.id });
+    if (claimed.length === 0) throw new LedgerError("Someone already handled that payment");
+  }
+
+  const [txn] = await tx
+    .insert(ledgerTxns)
+    .values({
+      teamId: input.teamId,
+      kind: input.kind,
+      itemId: input.itemId ?? null,
+      fundId: input.fundId ?? null,
+      memo: input.memo?.trim() || null,
+      method: input.method ?? null,
+      payerUserId: input.payerUserId ?? null,
+      payerName: input.payerName?.trim() || null,
+      occurredOn,
+      reversesId: input.reversesId ?? null,
+      clientKey,
+      createdBy: input.createdBy,
+    })
+    .returning({ id: ledgerTxns.id });
+
+  await tx.insert(ledgerEntries).values(input.lines.map((l) => entryRow(txn.id, input.teamId, l)));
+  if (input.claimId) await tx.update(ledgerClaims).set({ txnId: txn.id }).where(eq(ledgerClaims.id, input.claimId));
+  return { txnId: txn.id, duplicate: false };
+}
+
 // Undoes a transaction exactly. A reversal itself can't be undone: post it again instead.
 export async function reverseTxn(teamId: number, txnId: number, by: number, clientKey: string) {
   const [txn] = await db.select().from(ledgerTxns).where(and(eq(ledgerTxns.id, txnId), eq(ledgerTxns.teamId, teamId))).limit(1);
   if (!txn) throw new LedgerError("That transaction isn't on this team");
   if (txn.kind === "reversal") throw new LedgerError("An undo can't be undone. Record it again instead.");
+  if (txn.kind === "charge" || txn.kind === "adjust" || txn.kind === "settle") {
+    throw new LedgerError("Shares are on invoices, so they can't be undone. Change who shares the expense instead.");
+  }
   const [already] = await db.select({ id: ledgerTxns.id }).from(ledgerTxns).where(eq(ledgerTxns.reversesId, txnId)).limit(1);
   if (already) throw new LedgerError("That was already undone");
   const rows = await db.select().from(ledgerEntries).where(eq(ledgerEntries.txnId, txnId));
@@ -491,7 +500,7 @@ export type FamilyTeamMoney = {
   history: FamilyHistoryRow[];
   funds: { id: number; name: string; balance: Cents }[];
   pending: Pick<LedgerClaim, "id" | "cents" | "method" | "createdAt">[];
-  owed: Cents; // what to pay: the sum of what each kid owes (a sibling's credit isn't netted)
+  owed: Cents; // what to pay: all their kids' balances together (one invoice, one number)
   dueBack: Cents;
 };
 
@@ -589,8 +598,9 @@ export async function getFamilyMoney(userId: number, kids: { playerId: number; n
       history,
       funds: visibleFunds.filter((f) => f.teamId === teamId).map((f) => ({ id: f.id, name: f.name, balance: fundTotal.get(f.id) ?? 0 })),
       pending: pending.filter((p) => p.teamId === teamId),
-      owed: sumCents(kidMoney.map((k) => k.statement.owed)),
-      dueBack: sumCents(kidMoney.map((k) => k.statement.dueBack)),
+      // One number for the family: a kid's credit counts toward a sibling's share
+      owed: Math.max(0, sumCents(kidMoney.map((k) => k.statement.balance))),
+      dueBack: Math.max(0, -sumCents(kidMoney.map((k) => k.statement.balance))),
     };
   });
 }
@@ -711,23 +721,25 @@ export function describeBook(
     const from = t.payerName ? ` (from ${t.payerName})` : "";
     let text: string;
     switch (t.kind) {
-      case "charge": text = `Charged ${who} for ${item}`; break;
+      case "charge": text = `Invoiced ${who} for their share of ${item}`; break;
+      case "adjust": text = `Updated shares of ${item} for ${who}`; break;
+      case "settle": text = `Settled up ${item} for ${who}`; break;
       case "payment": text = `Payment for ${who}${from}${fundIn ? `, extra to ${names.fund(fundIn.account.id!)}` : ""}`; break;
       case "cover": text = `${fundOut ? names.fund(fundOut.account.id!) : "A fund"} covered ${item} for ${who}`; break;
       case "donation": text = `Added to ${fundIn ? names.fund(fundIn.account.id!) : "a fund"}${members.length ? ` from ${who}'s credit` : from}`; break;
       case "transfer": text = `Moved from ${fundOut ? names.fund(fundOut.account.id!) : "?"} to ${fundIn ? names.fund(fundIn.account.id!) : "?"}`; break;
       case "expense":
-        text = `Paid for ${t.itemId ? item : fundOut ? `${names.fund(fundOut.account.id!)} spending` : "team costs"}${
+        text = `Paid out for ${t.itemId ? item : fundOut ? `${names.fund(fundOut.account.id!)} spending` : "team costs"}${
           staffLine ? `, fronted by ${names.member({ type: "staff", id: staffLine.account.id! })}` : ""
         }`;
         break;
       case "reimburse": text = `Paid back ${who}`; break;
-      case "credit": text = `Money back on ${item} for ${who}`; break;
+      case "credit": text = `Refund on ${item} owed to ${who}`; break;
       case "refund": text = `Paid back ${who}`; break;
-      case "vendor_refund": text = `${item}: money returned to the team`; break;
+      case "vendor_refund": text = `${item}: refund received`; break;
       case "reversal": {
         const original = t.reversesId ? byId.get(t.reversesId) : undefined;
-        text = `Undid #${t.reversesId}${original ? ` (${original.kind.replace("_", " ")})` : ""}`;
+        text = `Undid #${t.reversesId}${original ? ` (${KIND_LABELS[original.kind]})` : ""}`;
         break;
       }
       default: text = t.kind;

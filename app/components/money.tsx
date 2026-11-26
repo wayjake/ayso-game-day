@@ -1,11 +1,11 @@
-// Shared pieces for the Money pages (staff) and the family Money page.
+// Shared pieces for the Finances pages (staff) and the family Finances page.
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher } from "react-router";
 import { CaretDown, CaretRight, Wallet } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
-import { formatCents, plainAmount, type Cents } from "~/utils/money";
-import { METHOD_LABELS, PAYMENT_METHODS, type PaymentMethod, type TxnKind } from "~/utils/ledger";
+import { formatCents, parseCents, plainAmount, sumCents, type Cents } from "~/utils/money";
+import { FULL_SHARE, METHOD_LABELS, PAYMENT_METHODS, shareTargets, type PaymentMethod, type Rounding, type TxnKind } from "~/utils/ledger";
 import { Alert, Button, Card, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 
 export function Amount({ cents, className, tone }: { cents: Cents; className?: string; tone?: "owed" | "credit" | "plain" }) {
@@ -176,6 +176,124 @@ export function MemberChecklist({ name = "member", options, defaultChecked }: { 
   );
 }
 
+export type ShareOption = PickOption & { checked: boolean; weight: number; fixedCents: Cents | null };
+
+// Who shares an expense, and how much each person's share comes to as you
+// pick. Split: a full or half share of the total. Fixed: each person's own
+// amount. Fields: "share" (ticked people), "weight:<key>", "amount:<key>".
+export function ShareEditor({
+  mode,
+  options,
+  totalCents,
+  rounding,
+  unitCents = null,
+}: {
+  mode: "split" | "fixed";
+  options: ShareOption[];
+  totalCents: Cents | null;
+  rounding: Rounding;
+  unitCents?: Cents | null;
+}) {
+  const [rows, setRows] = useState(() =>
+    Object.fromEntries(
+      options.map((o) => [o.key, { checked: o.checked, weight: o.weight, amount: o.fixedCents !== null ? plainAmount(o.fixedCents) : "" }])
+    )
+  );
+  const set = (key: string, patch: Partial<(typeof rows)[string]>) => setRows((r) => ({ ...r, [key]: { ...r[key], ...patch } }));
+  const picked = options.filter((o) => rows[o.key]?.checked);
+
+  // Each picked person's share, worked out the same way the server will
+  let amounts = new Map<string, Cents>();
+  if (mode === "split" && totalCents && totalCents > 0 && picked.length) {
+    try {
+      const t = shareTargets(
+        { mode: "split", totalCents, rounding, unitCents },
+        picked.map((o) => ({ member: { type: o.key.startsWith("staff:") ? "staff" : "player", id: Number(o.key.split(":")[1]) }, weight: rows[o.key].weight, fixedCents: null }))
+      );
+      amounts = new Map(picked.map((o, i) => [o.key, t[i].cents]));
+    } catch {
+      amounts = new Map();
+    }
+  }
+  if (mode === "fixed") {
+    amounts = new Map(picked.map((o) => [o.key, parseCents(rows[o.key].amount) ?? 0]));
+  }
+  const billed = sumCents([...amounts.values()]);
+
+  if (options.length === 0) return <p className="text-sm text-muted">No one to pick.</p>;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="text-muted">{picked.length} of {options.length} picked</span>
+        <span className="flex gap-3">
+          <button type="button" className="tap font-semibold text-primary" onClick={() => setRows((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { ...v, checked: true }])))}>
+            Everyone
+          </button>
+          <button type="button" className="tap font-semibold text-muted" onClick={() => setRows((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { ...v, checked: false }])))}>
+            No one
+          </button>
+        </span>
+      </div>
+      <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+        {options.map((o) => {
+          const row = rows[o.key];
+          return (
+            <li key={o.key} className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-1">
+                <input type="checkbox" name="share" value={o.key} checked={row.checked} onChange={(e) => set(o.key, { checked: e.target.checked })} />
+                <span className="min-w-0 truncate text-sm">{o.label}</span>
+                {o.detail && <span className="shrink-0 text-xs text-muted">{o.detail}</span>}
+              </label>
+              {row.checked && mode === "split" && (
+                <select
+                  name={`weight:${o.key}`}
+                  aria-label={`${o.label}'s share`}
+                  value={row.weight}
+                  onChange={(e) => set(o.key, { weight: Number(e.target.value) })}
+                  className={cx(inputClass, "h-9 w-auto py-0 text-sm")}
+                >
+                  <option value={FULL_SHARE}>Full share</option>
+                  <option value={1}>Half share</option>
+                </select>
+              )}
+              {row.checked && mode === "fixed" && (
+                <span className="relative w-28">
+                  <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-sm text-muted" aria-hidden>$</span>
+                  <input
+                    name={`amount:${o.key}`}
+                    aria-label={`${o.label}'s amount`}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    required
+                    value={row.amount}
+                    onChange={(e) => set(o.key, { amount: e.target.value })}
+                    placeholder="0.00"
+                    className={cx(inputClass, "h-9 pl-6 text-sm tabular")}
+                  />
+                </span>
+              )}
+              {row.checked && mode === "split" && (
+                <span className="w-20 shrink-0 text-right text-sm font-semibold tabular">{amounts.has(o.key) ? formatCents(amounts.get(o.key)!) : "–"}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className={hintClass}>
+        {picked.length === 0
+          ? "Pick who shares it."
+          : mode === "split" && totalCents
+            ? billed === totalCents
+              ? `Shares add up to ${formatCents(billed)}.`
+              : `Shares add up to ${formatCents(billed)} for a ${formatCents(totalCents)} total. ${billed > totalCents ? "The extra" : "The difference"} is sorted out when you settle up at the end.`
+            : mode === "fixed"
+              ? `Comes to ${formatCents(billed)} in all.`
+              : "Enter the total to see each share."}
+      </p>
+    </div>
+  );
+}
+
 export function Choice({ name, options, defaultValue }: { name: string; options: { value: string; label: string; hint?: string }[]; defaultValue: string }) {
   return (
     <div className="space-y-2" role="radiogroup">
@@ -229,20 +347,24 @@ export function memberLineText(row: { kind: TxnKind; cents: Cents; itemName: str
   const item = row.itemName ?? "Team costs";
   switch (row.kind) {
     case "charge":
-      return item;
+      return `Share of ${item}`;
+    case "adjust":
+      return `Change to share of ${item}`;
+    case "settle":
+      return `Settle-up for ${item}`;
     case "payment":
       return `Payment${row.method ? ` · ${METHOD_LABELS[row.method]}` : ""}`;
     case "cover":
       return `${item}: covered by ${row.fundName ?? "the team"}`;
     case "credit":
-      return `${item}: money back`;
+      return `Refund on ${item}`;
     case "refund":
     case "reimburse":
       return `Paid back${row.method ? ` · ${METHOD_LABELS[row.method]}` : ""}`;
     case "donation":
       return `Credit donated to ${row.fundName ?? "the team"}`;
     case "expense":
-      return `Paid for ${item}`;
+      return `Paid out for ${item}`;
     case "reversal":
       return "Undone";
     default:
@@ -266,7 +388,7 @@ export function Balance({ cents }: { cents: number }) {
 }
 
 
-// The family Schedule page's link to Money
+// The family Schedule page's link to Finances
 export function MoneyCard({ owed, dueBack, pending, className }: { owed: Cents; dueBack: Cents; pending: number; className?: string }) {
   const line =
     owed > 0 ? (

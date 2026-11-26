@@ -28,14 +28,15 @@ import {
   readId,
   readMembers,
   readMethod,
+  readShares,
   readText,
   runLedgerAction,
 } from "~/utils/ledger-forms.server";
 import {
   CATEGORY_LABELS,
+  FULL_SHARE,
   ITEM_CATEGORIES,
   LedgerError,
-  chargeLines,
   coverLines,
   creditLines,
   expenseLines,
@@ -47,12 +48,13 @@ import {
 } from "~/utils/ledger";
 import { allocate, formatCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
-import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, TextField, UndoButton } from "~/components/money";
+import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton } from "~/components/money";
+import { expenseTargets, saveShares } from "~/utils/billing.server";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowBendUpLeft, ArrowRight, HandCoins, PencilSimple, PiggyBank, Plus } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowRight, HandCoins, PencilSimple, PiggyBank, UsersThree } from "@phosphor-icons/react";
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.item.name ?? "Charge"} - Finances - BenchTalk` }];
+  return [{ title: `${data?.item.name ?? "Expense"} - Finances - BenchTalk` }];
 }
 
 async function load(teamId: number, itemId: number) {
@@ -73,18 +75,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const names = await activityNames(team.id, book, members, items);
   const [summary] = summarizeItems(book, [item], members);
 
+  const { shares, targets } = await expenseTargets(team.id, item);
+  const shareOf = new Map(shares.map((s) => [memberKey(s.member), s]));
+  const targetOf = new Map(targets.map((t) => [memberKey(t.member), t.cents]));
+
+  // Everyone who shares it, plus anyone with money on it from before
   const rows = members
-    .map((m) => ({ m, s: m.statement.items.find((i) => i.itemId === item.id) }))
-    .filter((r) => r.s && (r.s.charged || r.s.covered || r.s.credited))
-    .map(({ m, s }) => ({
-      key: memberKey(m.member),
+    .map((m) => ({ m, s: m.statement.items.find((i) => i.itemId === item.id), key: memberKey(m.member) }))
+    .filter((r) => shareOf.has(r.key) || (r.s && (r.s.charged || r.s.covered || r.s.credited)))
+    .map(({ m, s, key }) => ({
+      key,
       type: m.member.type,
       id: m.member.id,
       name: m.name,
       detail: m.detail,
-      ...s!,
+      charged: s?.charged ?? 0,
+      covered: s?.covered ?? 0,
+      credited: s?.credited ?? 0,
+      paid: s?.paid ?? 0,
+      remaining: s?.remaining ?? 0,
       reducible: maxReducible(s),
+      half: shareOf.get(key)?.weight === 1,
+      target: targetOf.get(key) ?? 0,
+      // Their share less what's been invoiced: goes on the next invoice
+      notInvoiced: (targetOf.get(key) ?? 0) - (s?.charged ?? 0),
     }));
+  const onTeam = members.filter((m) => m.onTeam);
 
   return data({
     teamId: team.id,
@@ -96,7 +112,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rows,
     funds: funds.map((f) => ({ id: f.id, name: f.name, balance: held.fund(f.id) })),
     staff: staff.map((s) => ({ userId: s.userId, name: s.name || s.email.split("@")[0] })),
-    everyone: members.filter((m) => m.onTeam).map((m) => ({ key: memberKey(m.member), label: m.name, detail: m.detail ?? undefined })),
+    shareOptions: onTeam.map((m) => {
+      const key = memberKey(m.member);
+      const share = shareOf.get(key);
+      return { key, label: m.name, detail: m.detail ?? undefined, checked: Boolean(share), weight: share?.weight ?? FULL_SHARE, fixedCents: share?.fixedCents ?? null };
+    }),
+    shareTotal: targets.reduce((a, t) => a + t.cents, 0),
+    notInvoiced: rows.reduce((a, r) => a + r.notInvoiced, 0),
     activity: describeBook(book.filter((t) => t.itemId === item.id), names).reverse(),
   });
 }
@@ -146,7 +168,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         const cap = perMember.get(memberKey(s.member))?.reducible ?? 0;
         if (s.cents > cap) {
           const name = members.find((m) => memberKey(m.member) === memberKey(s.member))?.name ?? "Someone";
-          throw new FormError(`${name} can only have ${formatCents(cap)} more ${verb}: that's what's left of their charge.`);
+          throw new FormError(`${name} can only have ${formatCents(cap)} more ${verb}: that's what's left of their invoiced share.`);
         }
       }
     };
@@ -158,6 +180,11 @@ export async function action({ request, params }: Route.ActionArgs) {
         const categoryRaw = String(formData.get("category") ?? item.category);
         const category: ItemCategory = (ITEM_CATEGORIES as readonly string[]).includes(categoryRaw) ? (categoryRaw as ItemCategory) : item.category;
         const due = String(formData.get("dueDate") ?? "");
+        // The total and rounding set the share price, which is fixed once it's been invoiced
+        const pricing =
+          item.shareMode === "split" && item.unitCents === null
+            ? { totalCents: readCents(formData, "total", "the total"), rounding: formData.get("rounding") === "dollar" ? ("dollar" as const) : ("cent" as const) }
+            : {};
         await db
           .update(ledgerItems)
           .set({
@@ -166,18 +193,15 @@ export async function action({ request, params }: Route.ActionArgs) {
             details: readText(formData, "details", 1000),
             dueDate: /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null,
             refundable: formData.get("refundable") === "1",
+            ...pricing,
             updatedAt: new Date().toISOString(),
           })
           .where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
         return;
       }
-      case "charge": {
-        const picked = readMembers(formData);
-        if (picked.length === 0) throw new FormError("Pick who pays it");
-        const cents = readCents(formData, "cents");
-        const amounts = formData.get("mode") === "split" ? allocate(cents, picked.map(() => 1)) : picked.map(() => cents);
-        if (amounts.some((a) => a === 0)) throw new FormError("That total is too small to split between that many people");
-        await postTxn({ teamId: team.id, kind: "charge", itemId: item.id, lines: chargeLines(item.id, picked.map((m, i) => ({ member: m, cents: amounts[i] }))), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
+      case "shares": {
+        if (!item.shareMode) throw new LedgerError("This expense was made before shares, so it can't be edited this way");
+        await saveShares(team.id, item.id, readShares(formData, item.shareMode));
         return;
       }
       case "cover": {
@@ -188,7 +212,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         return;
       }
       case "credit": {
-        if (!item.refundable) throw new LedgerError("This charge isn't refundable. To pay for someone, cover it from a fund instead.");
+        if (!item.refundable) throw new LedgerError("This expense isn't refundable. To pay for someone, cover it from a fund instead.");
         const shares = sharesFromForm(formData, readMembers(formData), perMember);
         capCheck(shares, "back");
         await postTxn({ teamId: team.id, kind: "credit", itemId: item.id, lines: creditLines(item.id, shares), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
@@ -235,7 +259,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, everyone, activity } = loaderData;
+  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity } = loaderData;
   const base = `/dashboard/team/${teamId}/finances`;
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -248,6 +272,8 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
           <span className="flex flex-wrap items-center gap-1.5">
             <Badge>{CATEGORY_LABELS[item.category]}</Badge>
             {item.refundable && <Badge tone="primary">Refundable</Badge>}
+            {item.shareMode === "split" && item.totalCents !== null && <Badge>{formatCents(item.totalCents)} split{item.rounding === "dollar" ? ", rounded up" : ""}</Badge>}
+            {item.shareMode === "fixed" && <Badge>Each person's own amount</Badge>}
             {item.dueDate && <span className="text-sm">Due {item.dueDate}</span>}
           </span>
         }
@@ -255,13 +281,17 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
       {item.details && <p className="-mt-3 mb-6 max-w-prose text-muted">{item.details}</p>}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Fig label="Charged" cents={summary.charged} sub={`${summary.people} ${summary.people === 1 ? "person" : "people"}`} />
-        <Fig label="Collected" cents={summary.collected} sub="Paid or covered" />
-        <Fig label="Still owed" cents={summary.stillOwed} />
         <Fig
-          label="Not yet passed on"
-          cents={summary.notPassedOn}
-          sub={`${formatCents(summary.passedOn)} passed on${summary.returned ? `, ${formatCents(summary.returned)} came back` : ""}`}
+          label="Shares"
+          cents={item.shareMode ? shareTotal : summary.charged}
+          sub={`${rows.filter((r) => r.target || r.charged).length} ${rows.length === 1 ? "person" : "people"}${notInvoiced ? ` · ${formatCents(notInvoiced)} not invoiced yet` : ""}`}
+        />
+        <Fig label="Collected" cents={summary.collected} sub="Paid, or covered by a fund" />
+        <Fig label="Still owed" cents={summary.stillOwed} sub="On invoices, not paid yet" />
+        <Fig
+          label="Paid out"
+          cents={summary.passedOn}
+          sub={`To the hotel, league or tournament${summary.returned ? ` · ${formatCents(summary.returned)} refunded` : ""}`}
         />
       </div>
 
@@ -273,9 +303,10 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 <thead>
                   <tr className="border-b border-line text-left text-xs text-muted">
                     <th scope="col" className="px-4 py-3 font-semibold">Who</th>
-                    <th scope="col" className="px-3 py-3 text-right font-semibold">Charged</th>
+                    <th scope="col" className="px-3 py-3 text-right font-semibold">Share</th>
+                    <th scope="col" className="px-3 py-3 text-right font-semibold">Invoiced</th>
                     <th scope="col" className="px-3 py-3 text-right font-semibold">Covered</th>
-                    {item.refundable && <th scope="col" className="px-3 py-3 text-right font-semibold">Back</th>}
+                    {item.refundable && <th scope="col" className="px-3 py-3 text-right font-semibold">Refunded</th>}
                     <th scope="col" className="px-3 py-3 text-right font-semibold">Paid</th>
                     <th scope="col" className="px-4 py-3 text-right font-semibold">Left</th>
                   </tr>
@@ -288,13 +319,18 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                           {r.name}
                         </Link>
                         {r.detail && <span className="ml-1.5 text-muted">{r.detail}</span>}
+                        {r.half && <Badge className="ml-1.5">Half</Badge>}
                       </td>
-                      <td className="px-3 py-2.5 text-right"><Amount cents={r.charged} /></td>
+                      <td className="px-3 py-2.5 text-right">{item.shareMode ? <Amount cents={r.target} /> : "–"}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Amount cents={r.charged} />
+                        {r.notInvoiced !== 0 && <span className="block text-xs text-warning">{r.notInvoiced > 0 ? "+" : "−"}{formatCents(Math.abs(r.notInvoiced))} next</span>}
+                      </td>
                       <td className="px-3 py-2.5 text-right text-muted">{r.covered ? <Amount cents={r.covered} /> : "–"}</td>
                       {item.refundable && <td className="px-3 py-2.5 text-right text-muted">{r.credited ? <Amount cents={r.credited} /> : "–"}</td>}
                       <td className="px-3 py-2.5 text-right">{r.paid ? <Amount cents={r.paid} /> : "–"}</td>
-                      <td className={cx("px-4 py-2.5 text-right font-semibold", r.remaining ? "text-danger" : "text-success")}>
-                        {r.remaining ? <Amount cents={r.remaining} /> : "Done"}
+                      <td className={cx("px-4 py-2.5 text-right font-semibold", r.remaining ? "text-danger" : r.charged ? "text-success" : "text-muted")}>
+                        {r.remaining ? <Amount cents={r.remaining} /> : r.charged ? "Paid" : "–"}
                       </td>
                     </tr>
                   ))}
@@ -305,6 +341,9 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
 
           <section>
             <h2 className="mb-3 font-semibold">History</h2>
+            {activity.length === 0 ? (
+              <p className="text-sm text-muted">Nothing yet. Shares are billed when you send invoices.</p>
+            ) : (
             <Card>
               <ul className="divide-y divide-line">
                 {activity.map((a) => (
@@ -315,16 +354,36 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                       <span className="block text-xs text-muted">#{a.id} · {a.occurredOn}{a.by && ` · ${a.by}`}</span>
                     </span>
                     <Amount cents={a.cents} className="font-semibold" />
-                    {!a.reversed && a.kind !== "reversal" && <UndoButton txnId={a.id} formKey={formKey} />}
+                    {!a.reversed && !["reversal", "charge", "adjust", "settle"].includes(a.kind) && <UndoButton txnId={a.id} formKey={formKey} />}
                   </li>
                 ))}
               </ul>
             </Card>
+            )}
           </section>
         </div>
 
         <aside className="space-y-3">
-          <ActionPanel title="Pass money on" hint={`Paid to whoever it's for. The team holds ${formatCents(cash)}.`} icon={<ArrowRight size={18} />}>
+          {item.shareMode && (
+            <ActionPanel title="Who shares it" hint="Changes go on each family's next invoice." icon={<UsersThree size={18} />}>
+              <LedgerForm intent="shares" formKey={formKey} submitLabel="Save">
+                <ShareEditor
+                  mode={item.shareMode}
+                  options={shareOptions}
+                  totalCents={item.totalCents}
+                  rounding={item.rounding}
+                  unitCents={item.unitCents}
+                />
+                {item.unitCents !== null && (
+                  <p className={hintClass}>
+                    A full share is fixed at {formatCents(item.unitCents)} since the first invoice, so anyone added pays the same. Settle up at the end to even it out.
+                  </p>
+                )}
+              </LedgerForm>
+            </ActionPanel>
+          )}
+
+          <ActionPanel title="Pay out" hint={`To the hotel, league or tournament. The team holds ${formatCents(cash)}.`} icon={<ArrowRight size={18} />}>
             <LedgerForm intent="expense" formKey={formKey} submitLabel="Record it">
               <MoneyField name="cents" label="Amount" defaultCents={summary.notPassedOn > 0 ? Math.min(summary.notPassedOn, Math.max(cash, 0)) || null : null} />
               <div>
@@ -341,7 +400,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 <MethodField />
                 <DateField today={today} />
               </div>
-              <TextField name="memo" label="Note for staff" placeholder="Deposit to the Hilton" />
+              <TextField name="memo" label="Note for staff" placeholder="Check to Quartz Hill AYSO" />
             </LedgerForm>
           </ActionPanel>
 
@@ -362,18 +421,18 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 options={[
                   { value: "rest", label: "Whatever each still owes on it" },
                   { value: "each", label: "This amount each" },
-                  { value: "split", label: "Split this total", hint: "In proportion to what each was charged." },
+                  { value: "split", label: "Split this total", hint: "In proportion to each share." },
                 ]}
               />
               <MoneyField name="cents" label="Amount" required={false} hint="Not needed for “whatever each still owes”." />
               <TextField name="memo" label="Note the family sees" placeholder="Thanks to Acme Plumbing" />
-              <p className={hintClass}>Covering someone who already paid gives them that much credit.</p>
+              <p className={hintClass}>Only invoiced shares can be covered. It shows on the family's next invoice; covering someone who already paid gives them that much credit.</p>
             </LedgerForm>
           </ActionPanel>
 
           {item.refundable && (
             <>
-              <ActionPanel title="Money came back" hint="The hotel or tournament refunded the team." icon={<ArrowBendUpLeft size={18} />}>
+              <ActionPanel title="Refund received" hint="The hotel or tournament sent money back to the team." icon={<ArrowBendUpLeft size={18} />}>
                 <LedgerForm intent="vendorRefund" formKey={formKey} submitLabel="Record it">
                   <MoneyField name="cents" label="Amount" />
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -381,41 +440,26 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                     <DateField today={today} />
                   </div>
                   <TextField name="memo" label="Note for staff" />
-                  <p className={hintClass}>Then give it back to families below.</p>
+                  <p className={hintClass}>Then refund families below.</p>
                 </LedgerForm>
               </ActionPanel>
-              <ActionPanel title="Give money back" hint="Families are owed it until you pay them." icon={<HandCoins size={18} />}>
-                <LedgerForm intent="credit" formKey={formKey} submitLabel="Give it back">
+              <ActionPanel title="Refund families" hint="Goes on their next invoice as money back." icon={<HandCoins size={18} />}>
+                <LedgerForm intent="credit" formKey={formKey} submitLabel="Refund them">
                   <MemberChecklist options={reducible.map((r) => ({ key: r.key, label: r.name, detail: <Amount cents={r.charged} /> }))} defaultChecked={() => true} />
                   <Choice
                     name="mode"
                     defaultValue="split"
                     options={[
-                      { value: "split", label: "Split this total", hint: "In proportion to what each was charged." },
+                      { value: "split", label: "Split this total", hint: "In proportion to each share." },
                       { value: "each", label: "This amount each" },
                     ]}
                   />
                   <MoneyField name="cents" label="Amount" />
-                  <TextField name="memo" label="Note the family sees" placeholder="Hotel refunded one night" />
+                  <TextField name="memo" label="Note the family sees" placeholder="Referee deposit returned" />
                 </LedgerForm>
               </ActionPanel>
             </>
           )}
-
-          <ActionPanel title="Charge more people" icon={<Plus size={18} />}>
-            <LedgerForm intent="charge" formKey={formKey} submitLabel="Charge them">
-              <MemberChecklist options={everyone.filter((o) => !rows.some((r) => r.key === o.key))} />
-              <Choice
-                name="mode"
-                defaultValue="each"
-                options={[
-                  { value: "each", label: "Each person pays this amount" },
-                  { value: "split", label: "Split this total evenly" },
-                ]}
-              />
-              <MoneyField name="cents" label="Amount" />
-            </LedgerForm>
-          </ActionPanel>
 
           <ActionPanel title="Edit details" icon={<PencilSimple size={18} />}>
             <LedgerForm intent="edit" formKey={formKey} submitLabel="Save">
@@ -445,7 +489,18 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 <input type="checkbox" name="refundable" value="1" defaultChecked={item.refundable} />
                 <span className="text-sm font-medium">Refundable</span>
               </label>
-              <p className={hintClass}>To change an amount, undo the charge in History and charge it again.</p>
+              {item.shareMode === "split" && item.unitCents === null && (
+                <>
+                  <MoneyField name="total" label="Total" defaultCents={item.totalCents} />
+                  <label className="flex cursor-pointer items-center gap-3">
+                    <input type="checkbox" name="rounding" value="dollar" defaultChecked={item.rounding === "dollar"} />
+                    <span className="text-sm font-medium">Round shares up to the dollar</span>
+                  </label>
+                </>
+              )}
+              {item.shareMode === "split" && item.unitCents !== null && (
+                <p className={hintClass}>The total can't change once it's been invoiced. If the real cost turns out different, settling up at the end evens it out.</p>
+              )}
             </LedgerForm>
           </ActionPanel>
         </aside>

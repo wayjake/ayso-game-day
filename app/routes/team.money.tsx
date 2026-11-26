@@ -26,8 +26,9 @@ import { sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { Amount, Balance, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx, inputClass, labelClass, hintClass } from "~/components/ui";
-import { Bank, CurrencyDollar, HandCoins, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
+import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
+import { invoicePreview, shareTotals } from "~/utils/billing.server";
 
 export function meta() {
   return [{ title: "Finances - BenchTalk" }];
@@ -58,11 +59,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       dueBackToFamilies: sumCents(players.map((m) => m.statement.dueBack)),
       owedToStaff: sumCents(staff.map((m) => m.statement.dueBack)),
     },
-    items: summarizeItems(book, items, members),
+    items: await shareTotals(team.id).then((totals) =>
+      summarizeItems(book, items, members).map((s) => ({ ...s, total: s.item.shareMode === "split" ? s.item.totalCents ?? 0 : totals.get(s.item.id) ?? s.charged }))
+    ),
     people: members
       .filter((m) => m.onTeam || m.statement.balance !== 0)
       .map((m) => ({ key: memberKey(m.member), type: m.member.type, id: m.member.id, name: m.name, detail: m.detail, balance: m.statement.balance })),
     claims: claims.map((c) => ({ ...c, forNames: c.playerIds.map((id) => playerName.get(id) ?? "a player") })),
+    toInvoice: await invoicePreview(team.id).then((p) => ({ families: p.drafts.length, totalCents: p.totalCents })),
     activity,
   });
 }
@@ -119,12 +123,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function Money({ loaderData }: Route.ComponentProps) {
-  const { teamId, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity } = loaderData;
+  const { teamId, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity, toInvoice } = loaderData;
   const base = `/dashboard/team/${teamId}/finances`;
   const newItem = (
     <Link to={`${base}/items/new`} className={buttonClass()}>
       <Plus size={18} weight="bold" />
-      New charge
+      New expense
     </Link>
   );
 
@@ -132,9 +136,13 @@ export default function Money({ loaderData }: Route.ComponentProps) {
     <Page>
       <PageHeader
         title="Finances"
-        description="What families and staff owe, what's been paid, and what's been passed on."
+        description="What families and staff owe, what's been collected, and what's been paid out."
         actions={
           <>
+            <Link to={`${base}/invoices`} className={buttonClass({ variant: "secondary" })}>
+              <Invoice size={18} />
+              Invoices
+            </Link>
             <Link to={`${base}/funds`} className={buttonClass({ variant: "secondary" })}>
               <PiggyBank size={18} />
               Funds
@@ -145,8 +153,8 @@ export default function Money({ loaderData }: Route.ComponentProps) {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Team holds" cents={cash} hint="Venmo, cash and checks received, less what's been passed on" icon={<Bank size={18} />} />
-        <Stat label="Owed to the team" cents={totals.owedToTeam} icon={<HandCoins size={18} />} />
+        <Stat label="Team holds" cents={cash} hint="Collected on Venmo, in cash or by check, less what's been paid out" icon={<Bank size={18} />} />
+        <Stat label="Owed to the team" cents={totals.owedToTeam} hint="On invoices, not paid yet" icon={<HandCoins size={18} />} />
         <Stat label="Due back to families" cents={totals.dueBackToFamilies} icon={<Receipt size={18} />} />
         <Stat label="Owed to staff" cents={totals.owedToStaff} hint="Money staff fronted" icon={<CurrencyDollar size={18} />} />
       </div>
@@ -166,24 +174,43 @@ export default function Money({ loaderData }: Route.ComponentProps) {
             </section>
           )}
 
+          {toInvoice.families > 0 && (
+            <Link
+              to={`${base}/invoices`}
+              className="flex items-center gap-4 rounded-2xl bg-primary-soft p-4 ring-1 ring-primary/30 transition hover:ring-primary"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-primary">
+                <Invoice size={22} weight="fill" />
+              </span>
+              <span className="min-w-0 flex-1 text-sm">
+                <span className="block font-semibold text-ink">Ready to invoice</span>
+                <span className="block text-muted">
+                  {toInvoice.families} {toInvoice.families === 1 ? "family" : "families"} · <Amount cents={toInvoice.totalCents} className="font-semibold text-ink" /> not invoiced yet. Families only see it once you send.
+                </span>
+              </span>
+              <CaretRight size={18} className="shrink-0 text-muted" />
+            </Link>
+          )}
+
           <section>
-            <CardHeader title="Charges" count={items.length} className="mb-3" />
+            <CardHeader title="Expenses" count={items.length} className="mb-3" />
             {items.length === 0 ? (
               <Card>
-                <EmptyState icon={<Receipt size={24} />} title="Nothing charged yet" action={newItem}>
-                  Make a charge for ref fees, a tournament or the hotel, and pick who pays it. Families see what they owe and pay you on Venmo.
+                <EmptyState icon={<Receipt size={24} />} title="No expenses yet" action={newItem}>
+                  Add an expense like ref fees, a tournament or the hotel, and pick who shares it. Track what the team has paid and what each family still owes. Families pay you on Venmo.
                 </EmptyState>
               </Card>
             ) : (
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {items.map((s) => {
-                  const pct = s.charged ? Math.round((s.collected / s.charged) * 100) : 0;
+                  const total = s.total;
+                  const pct = total ? Math.min(100, Math.round((s.collected / total) * 100)) : 0;
                   return (
                     <li key={s.item.id}>
                       <Link to={`${base}/items/${s.item.id}`} className="block h-full rounded-2xl bg-surface p-4 shadow-card ring-1 ring-line transition hover:ring-line-strong">
                         <div className="flex items-start justify-between gap-3">
                           <p className="min-w-0 font-semibold">{s.item.name}</p>
-                          <Amount cents={s.charged} className="font-semibold" />
+                          <Amount cents={total} className="font-semibold" />
                         </div>
                         <p className="mt-1 flex flex-wrap gap-1.5 text-sm text-muted">
                           <Badge>{CATEGORY_LABELS[s.item.category]}</Badge>
@@ -196,7 +223,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
                           <Figure label="Collected" cents={s.collected} />
                           <Figure label="Still owed" cents={s.stillOwed} />
-                          <Figure label="Passed on" cents={s.passedOn} />
+                          <Figure label="Paid out" cents={s.passedOn} />
                         </dl>
                       </Link>
                     </li>
@@ -224,7 +251,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         </span>
                       </span>
                       <Amount cents={a.cents} className="font-semibold" />
-                      {!a.reversed && a.kind !== "reversal" && <UndoButton txnId={a.id} formKey={formKey} />}
+                      {!a.reversed && !["reversal", "charge", "adjust", "settle"].includes(a.kind) && <UndoButton txnId={a.id} formKey={formKey} />}
                     </li>
                   ))}
                 </ul>
