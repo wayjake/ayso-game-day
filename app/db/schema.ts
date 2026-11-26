@@ -877,7 +877,7 @@ export const ledgerTxns = sqliteTable('ledger_txns', {
   memo: text('memo'), // Shown to the families on it
   // Of a payout, the part that was a service or card fee (shown, and part of the cost)
   feeCents: integer('fee_cents'),
-  method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }), // Money that moved outside the app
+  method: text('method', { enum: ['venmo', 'card', 'cash', 'check', 'other'] }), // Money that moved outside the app
   // Who the money came from. A payer's name is shown only to that payer and staff,
   // since two households can share a kid.
   payerUserId: text('payer_user_id').references(() => users.id),
@@ -921,7 +921,7 @@ export const ledgerClaims = sqliteTable('ledger_claims', {
   userId: text('user_id').notNull().references(() => users.id), // The parent
   playerIds: text('player_ids').notNull(), // JSON array: the kids it's for
   cents: integer('cents').notNull(),
-  method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }).notNull(),
+  method: text('method', { enum: ['venmo', 'card', 'cash', 'check', 'other'] }).notNull(),
   note: text('note'),
   status: text('status', { enum: ['pending', 'confirmed', 'dismissed'] }).notNull().default('pending'),
   txnId: text('txn_id').references(() => ledgerTxns.id),

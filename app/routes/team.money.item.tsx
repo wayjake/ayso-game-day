@@ -29,6 +29,7 @@ import {
   expenseLines,
   maxReducible,
   vendorRefundLines,
+  contributionLines,
   type ItemCategory,
   type Member,
   type Share,
@@ -41,7 +42,7 @@ import { games as gamesTable } from "~/db";
 import { formatGameDate } from "~/utils/dates";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ExpenseFiles } from "~/components/ExpenseFiles";
-import { ArrowBendUpLeft, ArrowRight, CalendarBlank, Paperclip, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowRight, CalendarBlank, Paperclip, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree, HandHeart } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 import { parseId, parseIds } from "~/utils/ids";
@@ -114,6 +115,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rows,
     funds: funds.map((f) => ({ id: f.id, name: f.name, balance: held.fund(f.id) })),
     staff: staff.map((s) => ({ userId: s.userId, name: s.name || s.email.split("@")[0] })),
+    staffOwed: staff.map((s) => ({
+      userId: s.userId,
+      name: s.name || s.email.split("@")[0],
+      owed: members.find((m) => m.member.type === "staff" && m.member.id === s.userId)?.statement.dueBack ?? 0,
+    })),
     shareOptions: onTeam.map((m) => {
       const key = memberKey(m.member);
       const share = shareOf.get(key);
@@ -233,11 +239,41 @@ export async function action({ request, params }: Route.ActionArgs) {
         await settleExpense(team.id, item.id, user.id);
         return;
       }
+      case "contribute": {
+        // A coach or sponsor pays part of the cost so families don't (a card fee the coach covers)
+        const cents = readCents(formData, "cents");
+        const fromRaw = parseMember(String(formData.get("from") ?? ""));
+        const from = fromRaw?.type === "staff" ? ({ type: "staff", userId: fromRaw.id } as const) : ({ type: "cash" } as const);
+        if (from.type === "staff") {
+          const owed = members.find((m) => m.member.type === "staff" && m.member.id === from.userId)?.statement.dueBack ?? 0;
+          if (cents > owed) {
+            throw new FormError(
+              owed > 0
+                ? `The team only owes them ${formatCents(owed)}. For more, choose new money they're putting in.`
+                : "The team doesn't owe them anything to put toward it. Choose new money they're putting in."
+            );
+          }
+        }
+        await postTxn({
+          teamId: team.id,
+          kind: "donation",
+          itemId: item.id,
+          lines: contributionLines(item.id, cents, from),
+          method: from.type === "cash" ? readMethod(formData) : null,
+          payerName: from.type === "cash" ? readText(formData, "payerName", 100) : null,
+          occurredOn: readDate(formData),
+          memo: readText(formData, "memo"),
+          createdBy: user.id,
+          clientKey,
+        });
+        return;
+      }
       case "matchTotal": {
-        // Paid out more than the total (a card fee) before anyone's invoiced: bill the real cost
+        // The real cost differs from the total (a card fee paid, or covered) before anyone's invoiced: bill the real cost
         if (item.shareMode !== "split" || item.unitCents !== null) throw new LedgerError("The total can't change once it's been invoiced. Settling up evens it out.");
         const { cost } = await settlePreview(team.id, item);
         if (cost <= 0) throw new LedgerError("Nothing has been paid out yet");
+        if (cost === item.totalCents) return;
         await db.update(ledgerItems).set({ totalCents: cost, updatedAt: new Date().toISOString() }).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
         return;
       }
@@ -312,7 +348,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo, fees, files } = loaderData;
+  const { teamId, teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo, fees, files, staffOwed } = loaderData;
   const base = teamPath(teamCode, "finances");
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -358,11 +394,22 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
-      {item.shareMode === "split" && item.unitCents === null && item.totalCents !== null && settle && settle.cost > item.totalCents && (
+      {item.shareMode === "split" && item.unitCents === null && item.totalCents !== null && settle && settle.paidOut > 0 && settle.cost > 0 && settle.cost !== item.totalCents && (
         <Card className="mb-6 flex flex-wrap items-center gap-3 p-4 text-sm">
           <p className="min-w-0 flex-1">
-            <span className="font-semibold">The team paid {formatCents(settle.cost)}, {formatCents(settle.cost - item.totalCents)} more than the {formatCents(item.totalCents)} total.</span>
-            <span className="block text-muted">Nothing's invoiced yet, so you can raise the total and families cover it in their share now. Otherwise settling up adds it at the end.</span>
+            {settle.cost > item.totalCents ? (
+              <>
+                <span className="font-semibold">The team paid {formatCents(settle.cost)}, {formatCents(settle.cost - item.totalCents)} more than the {formatCents(item.totalCents)} total.</span>
+                <span className="block text-muted">Nothing's invoiced yet, so you can raise the total and families cover it in their share now. Otherwise settling up adds it at the end.</span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">It really costs families {formatCents(settle.cost)}, {formatCents(item.totalCents - settle.cost)} less than the {formatCents(item.totalCents)} total.</span>
+                <span className="block text-muted">
+                  {settle.covered ? `${formatCents(settle.covered)} has been covered. ` : ""}Nothing's invoiced yet, so you can lower the total and shares now. Otherwise settling up gives it back at the end.
+                </span>
+              </>
+            )}
           </p>
           <LedgerForm intent="matchTotal" formKey={formKey} submitLabel={`Make the total ${formatCents(settle.cost)}`} variant="secondary" className="space-y-0" />
         </Card>
@@ -379,7 +426,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         <Fig
           label="Paid out"
           cents={summary.passedOn}
-          sub={`${fees ? `Includes ${formatCents(fees)} in fees` : "To the hotel, league or tournament"}${summary.returned ? ` · ${formatCents(summary.returned)} refunded` : ""}`}
+          sub={`${fees ? `Includes ${formatCents(fees)} in fees` : "To the hotel, league or tournament"}${summary.returned ? ` · ${formatCents(summary.returned)} refunded` : ""}${settle?.covered ? ` · ${formatCents(settle.covered)} covered` : ""}`}
         />
       </div>
 
@@ -501,6 +548,30 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
               <TextField name="memo" label="Note for staff" placeholder="Check to Quartz Hill AYSO" />
             </LedgerForm>
           </ActionPanel>
+
+          {item.shareMode === "split" && (
+            <ActionPanel title="Cover part of the cost" hint="A coach or sponsor pays part of it so families don't, like a card fee." icon={<HandHeart size={18} />}>
+              <LedgerForm intent="contribute" formKey={formKey} submitLabel="Cover it">
+                <MoneyField name="cents" label="Amount" defaultCents={fees || null} />
+                <div>
+                  <label htmlFor="contribute-from" className={labelClass}>Who's covering it</label>
+                  <select id="contribute-from" name="from" defaultValue={staffOwed.find((s) => s.owed > 0) ? `staff:${staffOwed.find((s) => s.owed > 0)!.userId}` : "cash"} className={inputClass}>
+                    {staffOwed.filter((s) => s.owed > 0).map((s) => (
+                      <option key={s.userId} value={`staff:${s.userId}`}>{s.name}, from the {formatCents(s.owed)} the team owes them</option>
+                    ))}
+                    <option value="cash">New money in (a sponsor or coach)</option>
+                  </select>
+                  <p className={hintClass}>Taking it from money the team owes someone means the team pays them back that much less.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TextField name="payerName" label="From (new money)" placeholder="Acme Plumbing" />
+                  <MethodField />
+                </div>
+                <DateField today={today} />
+                <TextField name="memo" label="Note for staff" placeholder="Covering the card fee" />
+              </LedgerForm>
+            </ActionPanel>
+          )}
 
           <ActionPanel title="Cover from a fund" hint="The team fund or a sponsor pays some people's share." icon={<PiggyBank size={18} />}>
             <LedgerForm intent="cover" formKey={formKey} submitLabel="Cover it">

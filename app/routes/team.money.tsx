@@ -22,7 +22,7 @@ import {
   summarizeItems,
 } from "~/utils/ledger.server";
 import { newFormKey, readCents, readClientKey, readDate, readId, readMethod, runLedgerAction } from "~/utils/ledger-forms.server";
-import { CATEGORY_LABELS, METHOD_LABELS } from "~/utils/ledger";
+import { CATEGORY_LABELS, METHOD_LABELS, type PaymentMethod } from "~/utils/ledger";
 import { formatCents, sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
@@ -378,7 +378,7 @@ function ClaimCard({
   formKey,
   today,
 }: {
-  claim: { id: string; cents: number; method: "venmo" | "cash" | "check" | "other"; from: string; forNames: string[]; note: string | null; createdAt: string };
+  claim: { id: string; cents: number; method: PaymentMethod; from: string; forNames: string[]; note: string | null; createdAt: string };
   formKey: string;
   today: string;
 }) {

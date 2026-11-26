@@ -6,7 +6,7 @@ import { createClaim, getFamilyMoney, teamCodeFor, withdrawClaim, type FamilyTea
 import { familyInvoices, type InvoiceView } from "~/utils/billing.server";
 import { FormError, newFormKey, readCents, readClientKey, readId, readMethod, readText, runLedgerAction } from "~/utils/ledger-forms.server";
 import { sendPush } from "~/utils/push.server";
-import { METHOD_LABELS } from "~/utils/ledger";
+import { METHOD_LABELS, type PaymentMethod } from "~/utils/ledger";
 import { formatCents, plainAmount } from "~/utils/money";
 import { Amount, InvoiceCard, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
 import { Badge, Card, buttonClass, cx } from "~/components/ui";
@@ -250,7 +250,7 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
   );
 }
 
-function PendingClaim({ claim }: { claim: { id: string; cents: number; method: "venmo" | "cash" | "check" | "other" } }) {
+function PendingClaim({ claim }: { claim: { id: string; cents: number; method: PaymentMethod } }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warning-soft px-4 py-3 text-sm">
       <HourglassMedium size={18} className="shrink-0 text-warning" />

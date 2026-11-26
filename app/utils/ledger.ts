@@ -28,7 +28,7 @@ export const TXN_KINDS = [
   "charge", // a member owes for a line item
   "payment", // money received from a member, or someone paying on their behalf
   "cover", // a fund pays a member's charge
-  "donation", // money into a fund, from cash received or from a member's credit
+  "donation", // money into a fund, or toward an expense's cost, from cash received or from a member's credit
   "transfer", // between funds
   "expense", // money passed on for an item or out of a fund, by the team or fronted by staff
   "reimburse", // the team pays back a staff member who fronted money
@@ -51,9 +51,9 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   other: "Other",
 };
 
-export const PAYMENT_METHODS = ["venmo", "cash", "check", "other"] as const;
+export const PAYMENT_METHODS = ["venmo", "card", "cash", "check", "other"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
-export const METHOD_LABELS: Record<PaymentMethod, string> = { venmo: "Venmo", cash: "Cash", check: "Check", other: "Other" };
+export const METHOD_LABELS: Record<PaymentMethod, string> = { venmo: "Venmo", card: "Credit card", cash: "Cash", check: "Check", other: "Other" };
 
 // How staff read each kind in activity and undo messages. "Charge" is kept for
 // a card actually being charged, which the app doesn't do yet.
@@ -175,6 +175,16 @@ export function donationLines(fundId: string, cents: Cents, from: { type: "cash"
   positive(cents, "The amount");
   const source = from.type === "cash" ? CASH : member(from.member);
   return tidy([{ account: source, cents }, { account: { type: "fund", id: fundId }, cents: -cents }]);
+}
+
+// Someone covers part of an expense's cost so families don't: a coach giving
+// up money the team owes them (a card fee they paid), or new money from a
+// sponsor or coach. The expense then really costs that much less, so shares
+// (and settling up) come out lower.
+export function contributionLines(itemId: string, cents: Cents, from: { type: "cash" } | { type: "staff"; userId: string }): Line[] {
+  positive(cents, "The amount");
+  const source: Account = from.type === "cash" ? CASH : { type: "staff", id: from.userId };
+  return [{ account: source, cents }, { account: { type: "item", id: itemId }, cents: -cents }];
 }
 
 export function transferLines(fromFundId: string, toFundId: string, cents: Cents): Line[] {

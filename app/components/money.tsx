@@ -410,7 +410,7 @@ export function memberLineText(row: { kind: TxnKind; cents: Cents; itemName: str
     case "reimburse":
       return `Paid back${row.method ? ` · ${METHOD_LABELS[row.method]}` : ""}`;
     case "donation":
-      return `Credit donated to ${row.fundName ?? "the team"}`;
+      return row.itemName && !row.fundName ? `Covered part of ${row.itemName}` : `Credit donated to ${row.fundName ?? "the team"}`;
     case "expense":
       return `Paid out for ${item}`;
     case "reversal":
