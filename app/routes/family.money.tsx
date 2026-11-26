@@ -1,5 +1,5 @@
 import type { Route } from "./+types/family.money";
-import { Link, data } from "react-router";
+import { data } from "react-router";
 import { useState } from "react";
 import { getCoachUserIds, requireParent, requireParentOnTeam } from "~/utils/family.server";
 import { createClaim, getFamilyMoney, withdrawClaim, type FamilyTeamMoney } from "~/utils/ledger.server";
@@ -9,11 +9,10 @@ import { METHOD_LABELS } from "~/utils/ledger";
 import { formatCents, plainAmount } from "~/utils/money";
 import { Amount, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
 import { Badge, Card, buttonClass, cx } from "~/components/ui";
-import { navMotion } from "~/utils/nav-motion";
-import { ArrowLeft, CheckCircle, Copy, HourglassMedium } from "@phosphor-icons/react";
+import { CheckCircle, Copy, HourglassMedium } from "@phosphor-icons/react";
 
 export function meta() {
-  return [{ title: "Money - BenchTalk" }];
+  return [{ title: "Finances - BenchTalk" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -41,7 +40,7 @@ export async function action({ request }: Route.ActionArgs) {
       await sendPush(await getCoachUserIds(teamId), "payments", {
         title: `${who} sent ${formatCents(cents)}`,
         body: `On ${METHOD_LABELS[method]}. Confirm it once it arrives.`,
-        url: `/dashboard/team/${teamId}/money`,
+        url: `/dashboard/team/${teamId}/finances`,
         tag: `ledger-claim-${teamId}`,
       });
     });
@@ -65,11 +64,7 @@ export default function FamilyMoney({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-8 pt-6 pb-8 sm:pt-8">
       <div>
-        <Link to="/family" {...navMotion("back")} className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition hover:text-ink">
-          <ArrowLeft size={16} weight="bold" />
-          Schedule
-        </Link>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Money</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight">Finances</h1>
         <p className="mt-1 text-muted">What you owe the team, what you've paid, and anything coming back to you.</p>
       </div>
 

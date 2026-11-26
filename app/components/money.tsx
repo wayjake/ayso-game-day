@@ -277,12 +277,12 @@ export function MoneyCard({ owed, dueBack, pending, className }: { owed: Cents; 
       <>You're all paid up</>
     );
   return (
-    <Link to="/family/money" {...navMotion("push")} className={cx("flex items-center gap-4 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-line transition hover:ring-line-strong", className)}>
+    <Link to="/family/finances" {...navMotion("push")} className={cx("flex items-center gap-4 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-line transition hover:ring-line-strong", className)}>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
         <Wallet size={22} weight="fill" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold">Money</span>
+        <span className="block font-semibold">Finances</span>
         <span className="block text-sm text-muted">
           {line}
           {pending > 0 && " · waiting for the coach to confirm a payment"}

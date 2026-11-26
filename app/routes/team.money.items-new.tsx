@@ -76,9 +76,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       // A double submit: the first one already made the item and its charges
       await db.delete(ledgerItems).where(and(eq(ledgerItems.id, item.id), eq(ledgerItems.teamId, team.id)));
       const [first] = await db.select({ itemId: ledgerTxns.itemId }).from(ledgerTxns).where(eq(ledgerTxns.id, posted.txnId)).limit(1);
-      return redirect(`/dashboard/team/${team.id}/money${first?.itemId ? `/items/${first.itemId}` : ""}`);
+      return redirect(`/dashboard/team/${team.id}/finances${first?.itemId ? `/items/${first.itemId}` : ""}`);
     }
-    return redirect(`/dashboard/team/${team.id}/money/items/${item.id}`);
+    return redirect(`/dashboard/team/${team.id}/finances/items/${item.id}`);
   } catch (e) {
     if (e instanceof LedgerError || e instanceof FormError) return data({ error: e.message }, { status: 400 });
     throw e;
@@ -92,7 +92,7 @@ export default function NewCharge({ loaderData }: Route.ComponentProps) {
 
   return (
     <Page width="narrow">
-      <PageHeader back={{ to: `/dashboard/team/${teamId}/money`, label: "Money" }} title="New charge" description="What it's for, who pays it and how much." />
+      <PageHeader back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }} title="New charge" description="What it's for, who pays it and how much." />
 
       <fetcher.Form method="post" className="space-y-6">
         <input type="hidden" name="clientKey" value={`${formKey}:charge`} />

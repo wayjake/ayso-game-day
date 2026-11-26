@@ -36,7 +36,7 @@ import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } 
 import { ArrowBendUpLeft, HandCoins, PiggyBank, Plus } from "@phosphor-icons/react";
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.name ?? "Money"} - Money - BenchTalk` }];
+  return [{ title: `${data?.name ?? "Finances"} - Finances - BenchTalk` }];
 }
 
 function readMember(params: { memberType?: string; memberId?: string }): Member {
@@ -180,14 +180,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function MemberMoney({ loaderData }: Route.ComponentProps) {
   const { teamId, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today } = loaderData;
-  const base = `/dashboard/team/${teamId}/money`;
+  const base = `/dashboard/team/${teamId}/finances`;
   const itemName = new Map(items.map((i) => [i.id, i.name]));
   const isStaff = member.type === "staff";
 
   return (
     <Page>
       <PageHeader
-        back={{ to: base, label: "Money" }}
+        back={{ to: base, label: "Finances" }}
         title={name}
         description={
           <span className="flex flex-wrap items-center gap-2">

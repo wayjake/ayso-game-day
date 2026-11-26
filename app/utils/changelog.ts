@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Finances, Families and Tasks get their own tabs",
+    summary: "Everything about money is now called Finances, and it sits in the tab bar for coaches and families alike.",
+    changes: [
+      { kind: "improved", text: "Coaches: Families, Tasks and Finances are tabs of their own instead of buttons on the Roster page. Payments waiting for you to confirm show as a count on Finances, and tasks waiting on you on Tasks. On a phone the tab row slides sideways, with a dot at the edge when a tab off screen has something waiting." },
+      { kind: "new", text: "Families: new To do and Finances tabs. To do holds everything the coaches asked for, with a count of what's still open; the Schedule page links to it while anything is." },
+      { kind: "improved", text: "Money is now called Finances everywhere." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Team money",
     summary: "Track what families and staff owe for ref fees, tournaments and travel, and let families pay you on Venmo.",
     changes: [

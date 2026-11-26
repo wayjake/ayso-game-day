@@ -14,7 +14,7 @@ import { Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~
 import { ArrowsLeftRight, Eye, EyeSlash, HandHeart, Plus, ShoppingCart } from "@phosphor-icons/react";
 
 export function meta() {
-  return [{ title: "Funds - Money - BenchTalk" }];
+  return [{ title: "Funds - Finances - BenchTalk" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -122,7 +122,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
   return (
     <Page>
       <PageHeader
-        back={{ to: `/dashboard/team/${teamId}/money`, label: "Money" }}
+        back={{ to: `/dashboard/team/${teamId}/finances`, label: "Finances" }}
         title="Funds"
         description="Money the team keeps for anyone: sponsor gifts, donations, savings. Use it to cover people's charges or pay for things."
       />
