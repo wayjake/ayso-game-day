@@ -16,18 +16,18 @@ export type FamilyContextView = {
   email: string;
   label: string;
   parentNames: string[];
-  kids: { id: number; name: string; linked: boolean }[];
+  kids: { id: string; name: string; linked: boolean }[];
   status: FamilyStatus;
   inviteUrl: string | null;
   reach: FamilyReach;
   upcoming: {
     key: string;
     type: "game" | "practice";
-    id: number;
+    id: string;
     title: string;
     date: string;
     time: string | null;
-    answers: { playerId: number; name: string; status: RsvpStatus | null }[];
+    answers: { playerId: string; name: string; status: RsvpStatus | null }[];
   }[];
   announcements: Awaited<ReturnType<typeof familyAnnouncements>>;
   notesEmail: string; // Notes are keyed by this email (a thread's own email can differ from the contact email)
@@ -36,7 +36,7 @@ export type FamilyContextView = {
 
 // A thread's family: the one holding the parent's account first (their login
 // email can differ from the contact email), then by email
-export function findFamily(families: Family[], { email, parentUserId }: { email?: string | null; parentUserId?: number | null }) {
+export function findFamily(families: Family[], { email, parentUserId }: { email?: string | null; parentUserId?: string | null }) {
   return (
     (parentUserId ? families.find((f) => f.userIds.includes(parentUserId)) : undefined) ??
     (email ? families.find((f) => f.email === email.toLowerCase()) : undefined) ??
@@ -44,7 +44,7 @@ export function findFamily(families: Family[], { email, parentUserId }: { email?
   );
 }
 
-export async function getFamilyContext(teamId: number, family: Family, notesEmail = family.email): Promise<FamilyContextView> {
+export async function getFamilyContext(teamId: string, family: Family, notesEmail = family.email): Promise<FamilyContextView> {
   const today = todayISO();
   const kidIds = family.kids.map((k) => k.id);
 
@@ -90,7 +90,7 @@ export async function getFamilyContext(teamId: number, family: Family, notesEmai
 }
 
 // For the team chat: who it reaches and who it doesn't yet
-export async function getTeamChatContext(teamId: number) {
+export async function getTeamChatContext(teamId: string) {
   const families = await listFamilies(null, teamId);
   return {
     total: families.length,

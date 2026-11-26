@@ -1,7 +1,9 @@
 // Shared TypeScript types for AI lineup API
 
 export interface PlayerContext {
-  id: number;
+  // A player id as the AI sees it. The live route (route.ts) gives the model
+  // short aliases ("P1", "P2", ...) instead of the real UUIDs and maps them back.
+  id: string;
   name: string;
   description: string;
   preferredPositions: string[];
@@ -20,12 +22,12 @@ export interface QuarterFormationInfo {
 
 export interface CurrentLineup {
   [quarter: number]: {
-    [positionNumber: number]: number; // playerId
+    [positionNumber: number]: string; // playerId
   };
 }
 
 export interface AbsentInjuredContext {
-  playerId: number;
+  playerId: string;
   quarter: number | null;
   reason: string;
 }
@@ -38,13 +40,13 @@ export interface PastGameContext {
 
 export interface AIAssignment {
   positionNumber: number;
-  playerId: number;
+  playerId: string;
 }
 
 export interface AIQuarter {
   number: number;
   assignments: AIAssignment[];
-  substitutes: number[];
+  substitutes: string[];
 }
 
 export interface AIResponse {
@@ -59,7 +61,7 @@ export interface SingleQuarterAIResponse {
   quarter?: {
     number: number;
     assignments: AIAssignment[];
-    substitutes: number[];
+    substitutes: string[];
   };
 }
 
@@ -69,37 +71,37 @@ export interface QuarterPlanningContext {
   previousQuarters: Array<{
     number: number;
     assignments: AIAssignment[];
-    substitutes: number[];
+    substitutes: string[];
   }>;
-  remainingQuartersNeeded: Record<number, number>; // playerId -> quarters still needed
+  remainingQuartersNeeded: Record<string, number>; // playerId -> quarters still needed
 }
 
 // Enhanced context for quarter-specific must-play logic
 export interface QuarterContext {
   quarterNumber: 1 | 2 | 3 | 4;
-  mustPlayPlayerIds: number[];                    // Players who MUST play this quarter (sat previous quarter)
-  previousSubstitutes: number[];                  // Who sat out last quarter
-  playersQuarterCounts: Record<number, number>;  // playerId -> quarters played so far
+  mustPlayPlayerIds: string[];                    // Players who MUST play this quarter (sat previous quarter)
+  previousSubstitutes: string[];                  // Who sat out last quarter
+  playersQuarterCounts: Record<string, number>;  // playerId -> quarters played so far
 }
 
 export interface QuarterWithDetails {
   number: number;
-  players: Record<number, number>;
+  players: Record<number, string>; // position number -> playerId
   changes: Array<{
     positionNumber: number;
     positionName: string;
-    playerId: number;
+    playerId: string;
     playerName: string;
     isChange: boolean;
   }>;
   substitutes: Array<{
-    playerId: number;
+    playerId: string;
     playerName: string;
   }>;
 }
 
 export interface ValidationError {
-  playerId: number;
+  playerId: string;
   playerName: string;
   quartersPlayed: number;
   issue: string;

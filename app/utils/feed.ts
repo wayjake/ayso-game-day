@@ -1,6 +1,7 @@
 // Team feed: types and helpers shared by the server (feed.server.ts) and the
-// browser. Posts are ordered and paged by their integer id: created_at is a
-// one-second, zone-less CURRENT_TIMESTAMP, so it can't break ties.
+// browser. Posts are ordered and paged by their id (a UUIDv7, which sorts by
+// creation time as text): created_at is a one-second, zone-less
+// CURRENT_TIMESTAMP, so it can't break ties.
 
 import type { StaffRole } from "~/utils/team-roles";
 
@@ -12,7 +13,7 @@ export const MAX_COMMENT = 1000;
 export type PostStats = { likes: number; liked: boolean; comments: number };
 
 export type FeedMediaItem = {
-  id: number;
+  id: string;
   type: "image" | "video";
   url: string;
   displayUrl: string | null;
@@ -20,11 +21,11 @@ export type FeedMediaItem = {
   height: number | null;
 };
 
-export type FeedAuthor = { id: number; name: string; role: StaffRole | null };
+export type FeedAuthor = { id: string; name: string; role: StaffRole | null };
 
 export type FeedPost = {
-  id: number;
-  teamId: number;
+  id: string;
+  teamId: string;
   teamName: string;
   caption: string | null;
   createdAt: string;
@@ -38,10 +39,10 @@ export type FeedPost = {
 export type FeedPage = { posts: FeedPost[]; hasMore: boolean };
 
 /** Polling: posts newer than the newest loaded, ids still alive in the loaded window, fresh counts */
-export type FeedUpdates = { posts: FeedPost[]; liveIds: number[]; stats: Record<number, PostStats> };
+export type FeedUpdates = { posts: FeedPost[]; liveIds: string[]; stats: Record<string, PostStats> };
 
 export type PostComment = {
-  id: number;
+  id: string;
   clientId: string;
   body: string;
   createdAt: string;
@@ -49,25 +50,25 @@ export type PostComment = {
   canDelete: boolean;
 };
 
-export type Liker = { id: number; name: string };
+export type Liker = { id: string; name: string };
 
 /** Which feed a page shows: every team the parent has kids on, or one team (coach view) */
-export type FeedScope = { kind: "family" } | { kind: "team"; teamId: number };
+export type FeedScope = { kind: "family" } | { kind: "team"; teamId: string };
 
 export const feedScopeKey = (scope: FeedScope) => (scope.kind === "family" ? "family" : `team:${scope.teamId}`);
 
 export const feedScopeQuery = (scope: FeedScope) =>
   scope.kind === "family" ? "scope=family" : `team=${scope.teamId}`;
 
-/** The post page: in the family app, or under the team in the dashboard */
-export function postPath(base: "family" | { teamId: number }, postId: number) {
-  return base === "family" ? `/family/feed/${postId}` : `/dashboard/team/${base.teamId}/feed/${postId}`;
+/** The post page: in the family app, or under the team (by its URL code) in the dashboard */
+export function postPath(base: "family" | { teamCode: string }, postId: string) {
+  return base === "family" ? `/family/feed/${postId}` : `/dashboard/team/${base.teamCode}/feed/${postId}`;
 }
 
 export type PostAction =
   | { intent: "like"; liked: boolean }
   | { intent: "comment"; clientId: string; body: string }
-  | { intent: "deleteComment"; commentId: number }
+  | { intent: "deleteComment"; commentId: string }
   | { intent: "delete" };
 
 /**
@@ -75,7 +76,7 @@ export type PostAction =
  * loader revalidation and errors don't go to the route error boundary.
  * Resolves to the post's fresh counts.
  */
-export async function sendPostAction(postId: number, action: PostAction): Promise<PostStats> {
+export async function sendPostAction(postId: string, action: PostAction): Promise<PostStats> {
   const res = await fetch(`/api/feed/posts/${postId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

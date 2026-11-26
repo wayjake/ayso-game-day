@@ -1,10 +1,11 @@
 import { NavLink } from "react-router";
 import { cx } from "~/components/ui";
+import { teamPath } from "~/utils/team-path";
 
 // Inbox | Announcements switch at the top of the Messages tab. Two equal
 // halves at every width, so the selected pill always fills its side.
-export function MessagesTabs({ teamId, needsReply = 0, className }: { teamId: number; needsReply?: number; className?: string }) {
-  const base = `/dashboard/team/${teamId}`;
+export function MessagesTabs({ teamCode, needsReply = 0, className }: { teamCode: string; needsReply?: number; className?: string }) {
+  const base = teamPath(teamCode);
   const tab = ({ isActive }: { isActive: boolean }) =>
     cx(
       "flex min-w-0 items-center justify-center rounded-lg px-3 py-2 text-center text-sm font-semibold break-words transition",

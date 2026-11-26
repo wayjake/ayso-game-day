@@ -27,6 +27,7 @@ import { buildFormationContext } from './prompt-builder';
 import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parseId } from "~/utils/ids";
 
 const MAX_ITERATIONS = 10; // Safety limit to prevent infinite loops
 
@@ -44,8 +45,8 @@ interface AutonomousGenerationContext {
 
 export async function handleAutonomousGeneration(formData: FormData, user: any) {
   try {
-    const gameId = parseInt(formData.get("gameId") as string);
-    const teamId = parseInt(formData.get("teamId") as string);
+    const gameId = parseId(formData.get("gameId")) ?? "";
+    const teamId = parseId(formData.get("teamId")) ?? "";
     const userInput = formData.get("userInput") as string;
 
     console.log('\n=== AUTONOMOUS ITERATIVE AI LINEUP GENERATION ===\n');
@@ -132,11 +133,11 @@ export async function handleAutonomousGeneration(formData: FormData, user: any) 
       const currentQuarterLineup = currentLineup[qNum] || {};
       const formationInfo = quarterFormationInfo[qNum];
 
-      const players: Record<number, number> = {};
+      const players: Record<number, string> = {};
       const changes: Array<{
         positionNumber: number;
         positionName: string;
-        playerId: number;
+        playerId: string;
         playerName: string;
         isChange: boolean;
       }> = [];
@@ -161,7 +162,7 @@ export async function handleAutonomousGeneration(formData: FormData, user: any) 
 
       changes.sort((a, b) => a.positionNumber - b.positionNumber);
 
-      const substitutes = (quarter.substitutes || []).map((playerId: number) => {
+      const substitutes = (quarter.substitutes || []).map((playerId: string) => {
         const player = playersContext.find(p => p.id === playerId);
 
         // Check if this player is absent/injured for this quarter

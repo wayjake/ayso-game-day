@@ -9,11 +9,14 @@ import { gameNotesText, parseGameNotes, serializeGameNotes } from "~/utils/game-
 import { notifyFamilies } from "~/utils/schedule.server";
 import { formatGameDateTime } from "~/utils/dates";
 import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 async function loadGame(request: Request, params: Route.LoaderArgs["params"]) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const gameId = parseInt(params.gameId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const gameId = parseId(params.gameId) ?? ""; // Not an id: matches nothing, so 404s below
   const { team } = await requireTeamAccess(teamId, user.id);
 
   const [game] = await db
@@ -64,7 +67,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
-  return redirect(`/dashboard/team/${team.id}/games`);
+  return redirect(`${teamPath(team)}/games`);
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -77,7 +80,7 @@ export function meta({}: Route.MetaArgs) {
 export default function EditGame({ loaderData, actionData }: Route.ComponentProps) {
   const { team, game, notesText } = loaderData;
   const error = actionData?.error;
-  const gamesUrl = `/dashboard/team/${team.id}/games`;
+  const gamesUrl = `${teamPath(team)}/games`;
 
   return (
     <Page width="narrow">

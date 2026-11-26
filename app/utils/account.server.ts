@@ -10,7 +10,7 @@ export type AccountResult = { intent: string; error: string } | { intent: string
 
 /** Handles the account forms (`_action` updateName / updateSendingEmail / resetCalendar). Null when the intent isn't one of them. */
 export async function accountAction(
-  user: { id: number; role: string },
+  user: { id: string; role: string },
   formData: FormData,
 ): Promise<{ result: AccountResult; status: number } | null> {
   const intent = String(formData.get("_action") ?? "");

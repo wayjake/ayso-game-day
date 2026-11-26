@@ -10,7 +10,7 @@ export const QUARTERS = [1, 2, 3, 4] as const;
 export type Format = "7v7" | "9v9" | "11v11";
 
 export type LineupPlayer = {
-  id: number;
+  id: string;
   name: string;
   jerseyNumber: number | null;
   profilePicture?: string | null;
@@ -18,14 +18,14 @@ export type LineupPlayer = {
 };
 
 export type SavedAssignment = {
-  playerId: number;
+  playerId: string;
   positionNumber: number;
   quarter: number | null;
   isSittingOut: boolean | null;
 };
 
 export type SavedAbsence = {
-  playerId: number;
+  playerId: string;
   quarter: number | null;
   reason: string | null;
 };
@@ -37,9 +37,9 @@ export type QuarterPlan = {
   // position number -> player on the field
   lineup: QuarterLineup;
   // on the bench (not on the field, not absent)
-  sittingOut: Set<number>;
+  sittingOut: Set<string>;
   // absent or injured, with the reason
-  unavailable: Map<number, string>;
+  unavailable: Map<string, string>;
 };
 
 export function buildQuarterPlans({

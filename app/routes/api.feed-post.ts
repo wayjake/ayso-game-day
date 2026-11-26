@@ -5,6 +5,7 @@ import { getUser } from "~/utils/auth.server";
 import { addComment, deleteComment, deletePost, feedRole, getPostRow, getPostStats, setLiked } from "~/utils/feed.server";
 import { publishFeed } from "~/utils/realtime.server";
 import { MAX_COMMENT } from "~/utils/feed";
+import { isId, parseId } from "~/utils/ids";
 
 // POST /api/feed/posts/:postId: like, comment, delete a comment, delete the
 // post. Access is checked against the post's own team. Answers with the post's
@@ -13,7 +14,7 @@ import { MAX_COMMENT } from "~/utils/feed";
 const body = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("like"), liked: z.boolean() }),
   z.object({ intent: z.literal("comment"), clientId: z.string().uuid(), body: z.string().trim().min(1).max(MAX_COMMENT) }),
-  z.object({ intent: z.literal("deleteComment"), commentId: z.number().int().positive() }),
+  z.object({ intent: z.literal("deleteComment"), commentId: z.string().refine((v) => isId(v), "Not an id") }),
   z.object({ intent: z.literal("delete") }),
 ]);
 
@@ -21,8 +22,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request, false);
   if (!user) throw new Response("Sign in again", { status: 401 });
   const parsed = body.safeParse(await request.json().catch(() => null));
-  const postId = Number(params.postId);
-  if (!parsed.success || !Number.isInteger(postId)) throw new Response("Bad request", { status: 400 });
+  const postId = parseId(params.postId);
+  if (!parsed.success || !postId) throw new Response("Bad request", { status: 400 });
   const b = parsed.data;
 
   // Same answer for a deleted post and someone else's team, so ids can't be probed

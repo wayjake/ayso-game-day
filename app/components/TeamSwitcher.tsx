@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useRouteLoaderData } from "react-router";
 import type { loader as dashboardLoader } from "~/routes/dashboard";
 import { CaretUpDown, Check, Plus, SquaresFour } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 interface TeamSwitcherProps {
-  team: { id: number; name: string };
+  team: { id: string; name: string };
 }
 
 // Team name that opens a menu of the coach's other teams, so switching
@@ -54,7 +55,7 @@ export function TeamSwitcher({ team }: TeamSwitcherProps) {
               {otherTeams.map((t) => (
                 <Link
                   key={t.id}
-                  to={`/dashboard/team/${t.id}`}
+                  to={teamPath(t)}
                   role="menuitem"
                   className="block rounded-lg px-3 py-2 transition hover:bg-surface-2"
                 >

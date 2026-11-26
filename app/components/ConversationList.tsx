@@ -7,7 +7,7 @@ import { StaffBadge } from "~/components/StaffBadge";
 import type { StaffRole } from "~/utils/team-roles";
 
 export type ConversationListItem = {
-  id: number;
+  id: string;
   kind: "team" | "direct" | "group";
   title: string;
   subtitle: string;
@@ -30,8 +30,8 @@ export function ConversationList({
   className,
 }: {
   items: ConversationListItem[];
-  hrefFor: (id: number) => string;
-  selectedId?: number | null; // Highlighted when the list sits beside the open thread
+  hrefFor: (id: string) => string;
+  selectedId?: string | null; // Highlighted when the list sits beside the open thread
   prefetch?: "intent" | "none"; // "none" where opening a thread marks it read
   className?: string;
 }) {

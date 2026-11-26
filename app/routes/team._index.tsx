@@ -1,7 +1,7 @@
 import type { Route } from "./+types/team._index";
 import { data, Link } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { requireTeamAccess, teamIdFromCode } from "~/utils/team-access.server";
 import { db, games, players, assignments } from "~/db";
 import { eq, and, gte, count } from "drizzle-orm";
 import { addDays, formatGameDate, formatGameTime, formatTimeRange, relativeGameDay, todayISO } from "~/utils/dates";
@@ -12,6 +12,7 @@ import { listCoachConversations } from "~/utils/messages.server";
 import { countUnmatched } from "~/utils/inbound-email.server";
 import { listFamilies } from "~/utils/parent-invites.server";
 import { getAnnouncementTracker, listAnnouncements } from "~/utils/announcements.server";
+import { teamPath } from "~/utils/team-path";
 import {
   AddressBook,
   ChatCircleDots,
@@ -34,7 +35,7 @@ import {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team } = await requireTeamAccess(teamId, user.id);
 
   // Next few games; the first one gets the spotlight
@@ -159,7 +160,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function TeamOverview({ loaderData }: Route.ComponentProps) {
   const { team, today, upcomingGames, plannedQuarters, roster, totalGames, schedule, todo } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const [nextGame, ...laterGames] = upcomingGames;
   const plannedCount = plannedQuarters.length;
   const isGameDay = nextGame ? relativeGameDay(nextGame.gameDate, today) === "Today" : false;

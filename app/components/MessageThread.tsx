@@ -4,6 +4,7 @@ import { ArrowBendUpLeft, ArrowLeft, CaretDown, ChatCircle, Check, CheckCircle, 
 import { formatMessageDateTime, formatMessageTime, formatReadTime, parseDbTimestamp, APP_TIME_ZONE } from "~/utils/dates";
 import { readersOf, type MessageReader, type ReadReceipts } from "~/utils/read-receipts";
 import { REACTIONS } from "~/utils/reactions";
+import { isId } from "~/utils/ids";
 import { Badge, Button, cx } from "~/components/ui";
 import { Sheet, SheetTitle } from "~/components/Sheet";
 import { StaffBadge } from "~/components/StaffBadge";
@@ -31,8 +32,8 @@ import { typingLabel, useConversationRealtime, type RealtimeConfig, type Typist,
 export type ReactionView = { emoji: string; count: number; mine: boolean; names: string[] };
 
 export type ThreadMessageView = {
-  id: number;
-  senderId: number | null; // Null for an email reply from a family with no account
+  id: string;
+  senderId: string | null; // Null for an email reply from a family with no account
   senderName: string;
   senderIsCoach: boolean;
   senderRole?: StaffRole | null; // Staff role badge; families see it too
@@ -41,7 +42,7 @@ export type ThreadMessageView = {
   viaEmail?: boolean;
   emailedTo?: string | null;
   fullEmail?: string | null;
-  announcement?: { id: number; subject: string; ask: "none" | "ack" | "reply" } | null;
+  announcement?: { id: string; subject: string; ask: "none" | "ack" | "reply" } | null;
   reactions?: ReactionView[];
   thread?: { count: number; lastAt: string; names: string[] } | null;
   /** Deleted by its sender: a placeholder, still holding the replies under it */
@@ -89,9 +90,9 @@ export function MessageThread({
   /** Text to start the main composer with, e.g. a drafted task reminder. Fills the box each time it changes. */
   initialDraft?: string | null;
   /** Staff: under announcements that asked for "Got it", who has (by message id) */
-  acks?: Record<number, AckSummaryView>;
+  acks?: Record<string, AckSummaryView>;
   /** Staff: the announcement's tracker */
-  ackHref?: (announcementId: number) => string;
+  ackHref?: (announcementId: string) => string;
   /** Shown instead of the composer when nobody can write here any more */
   readOnly?: string | null;
   messages: ThreadMessageView[];
@@ -99,12 +100,12 @@ export function MessageThread({
   realtime?: RealtimeConfig;
   /** The open thread (?thread=), if any */
   thread?: { root: ThreadMessageView; replies: ThreadMessageView[] } | null;
-  meId: number;
+  meId: string;
   emptyText: string;
   placeholder?: string;
   widthClass?: string; // Match the page column so the composer lines up with the thread
   showEmailDetails?: boolean; // Coaches: who a message was emailed to, and full emails
-  acknowledged?: number[]; // Parents: announcement messages already answered "Got it" (enables the button)
+  acknowledged?: string[]; // Parents: announcement messages already answered "Got it" (enables the button)
   composerExtra?: ReactNode; // Inside the form above the composer, e.g. the "Also send by email" checkbox
 }) {
   const pane = layout === "pane";
@@ -148,7 +149,7 @@ export function MessageThread({
   }, [revalidator, live.connected]);
 
   // Stay pinned to the newest message when the user is already near it
-  const lastId = messages[messages.length - 1]?.id ?? 0;
+  const lastId = messages[messages.length - 1]?.id ?? "";
   const firstRender = useRef(true);
   useLayoutEffect(() => {
     // The pane scrolls itself only where its CSS makes it scrollable (lg up)
@@ -247,12 +248,12 @@ function ThreadPanel({
   ackHref,
   canDelete,
 }: {
-  acks?: Record<number, AckSummaryView>;
-  ackHref?: (announcementId: number) => string;
+  acks?: Record<string, AckSummaryView>;
+  ackHref?: (announcementId: string) => string;
   canDelete: boolean;
   root: ThreadMessageView;
   replies: ThreadMessageView[];
-  meId: number;
+  meId: string;
   showEmailDetails: boolean;
   widthClass: string;
   onTyping: (where: TypingWhere) => void;
@@ -276,7 +277,7 @@ function ThreadPanel({
     };
   }, []);
 
-  const lastId = shown[shown.length - 1]?.id ?? 0;
+  const lastId = shown[shown.length - 1]?.id ?? "";
   const firstRender = useRef(true);
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -355,20 +356,20 @@ function MessageList({
   receipts?: ReadReceipts | null;
   /** Offer Delete on your own messages */
   canDelete?: boolean;
-  acks?: Record<number, AckSummaryView>;
-  ackHref?: (announcementId: number) => string;
+  acks?: Record<string, AckSummaryView>;
+  ackHref?: (announcementId: string) => string;
   messages: Shown[];
   /** When the list continues from an earlier message (a thread's replies), skip repeating its day */
   after?: string;
-  meId: number;
+  meId: string;
   showEmailDetails: boolean;
-  acknowledged?: number[];
+  acknowledged?: string[];
   /** Offer "Reply" and show thread links (the main list, not inside a thread) */
   canReply?: boolean;
 }) {
   const ackFetcher = useFetcher();
   const submit = useSubmit();
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Shown | null>(null);
 
   // Tap anywhere else, or Esc, to put the reaction bar away
@@ -386,14 +387,14 @@ function MessageList({
     };
   }, [selected]);
 
-  const react = (messageId: number, emoji: string) => {
+  const react = (messageId: string, emoji: string) => {
     submit(
       { _action: "react", messageId: String(messageId), emoji },
       { method: "post", navigate: false, fetcherKey: `react-${messageId}-${emoji}-${Date.now()}` }
     );
   };
 
-  const remove = (messageId: number) => {
+  const remove = (messageId: string) => {
     submit({ _action: "delete", messageId: String(messageId) }, { method: "post", navigate: false, fetcherKey: `delete-${messageId}` });
   };
 
@@ -419,11 +420,11 @@ function MessageList({
           const acked = acknowledged?.includes(m.id) || ackPending;
           const isSelected = selected === m.id;
           // Read receipts: only where someone else on the app could read it
-          const showReceipts = Boolean(receipts && receipts.participants > 1 && !m.pending && m.id > 0);
+          const showReceipts = Boolean(receipts && receipts.participants > 1 && !m.pending && isId(m.id));
           const readers = showReceipts ? readersOf(receipts, m.id, m.senderId) : [];
           // A direct thread has one other reader, so only your own messages say anything
           const readInfo = showReceipts && receipts && (receipts.kind !== "direct" || mine);
-          const deletable = canDelete && mine && !m.pending && !m.deleted && !m.announcement && !m.viaEmail && m.id > 0;
+          const deletable = canDelete && mine && !m.pending && !m.deleted && !m.announcement && !m.viaEmail && isId(m.id);
           if (m.deleted) {
             return (
               <li key={m.id} data-message={m.id}>
@@ -679,7 +680,7 @@ function Composer({
   onTyping?: (where: TypingWhere) => void;
   typists?: Typist[];
   fetcherKey: string;
-  replyTo?: number;
+  replyTo?: string;
   placeholder: string;
   className: string;
   innerClassName: string;
@@ -812,15 +813,15 @@ function pendingSendBody(fetcher: { state: string; formData?: FormData }) {
   return fetcher.state !== "idle" && fetcher.formData?.get("_action") === "send" ? String(fetcher.formData.get("body") ?? "") : null;
 }
 
-function pendingMessage(meId: number, body: string): Shown {
-  return { id: -1, senderId: meId, senderName: "", senderIsCoach: false, body, createdAt: new Date().toISOString(), pending: true };
+function pendingMessage(meId: string, body: string): Shown {
+  return { id: "pending", senderId: meId, senderName: "", senderIsCoach: false, body, createdAt: new Date().toISOString(), pending: true };
 }
 
 // Reactions show the moment they're tapped, before the server answers
 function usePendingReactions() {
   const toggles = useFetchers()
     .filter((f) => f.state !== "idle" && f.formData?.get("_action") === "react")
-    .map((f) => ({ messageId: Number(f.formData!.get("messageId")), emoji: String(f.formData!.get("emoji")) }));
+    .map((f) => ({ messageId: String(f.formData!.get("messageId")), emoji: String(f.formData!.get("emoji")) }));
 
   const apply = <T extends ThreadMessageView>(m: T): T => {
     const mine = toggles.filter((t) => t.messageId === m.id);
@@ -849,14 +850,14 @@ function usePendingDeletes() {
   const ids = new Set(
     useFetchers()
       .filter((f) => f.state !== "idle" && f.formData?.get("_action") === "delete")
-      .map((f) => Number(f.formData!.get("messageId")))
+      .map((f) => String(f.formData!.get("messageId")))
   );
   const apply = <T extends ThreadMessageView>(m: T): T =>
     ids.has(m.id) ? { ...m, deleted: true, body: "", reactions: [], emailedTo: null } : m;
   return { apply };
 }
 
-export type AckSummaryView = { announcementId: number; total: number; names: string[] };
+export type AckSummaryView = { announcementId: string; total: number; names: string[] };
 
 // Staff, under an announcement that asked for "Got it": who has so far
 function AckLine({ summary, href }: { summary: AckSummaryView; href: string }) {

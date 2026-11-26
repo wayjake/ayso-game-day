@@ -7,28 +7,28 @@ import { Alert, Badge, Button, cx, inputClass, labelClass } from '~/components/u
 interface AIAssistantCoachProps {
   isOpen: boolean;
   onClose: () => void;
-  gameId: number;
-  teamId: number;
+  gameId: string;
+  teamId: string;
   onAcceptLineup: (quarters: QuarterLineup[]) => void;
 }
 
 interface QuarterChange {
   positionNumber: number;
   positionName: string;
-  playerId: number;
+  playerId: string;
   playerName: string;
   isChange: boolean;
 }
 
 interface Substitute {
-  playerId: number;
+  playerId: string;
   playerName: string;
 }
 
 interface QuarterLineup {
   number: number;
   completed: boolean;
-  players: Record<number, number>; // positionNumber -> playerId
+  players: Record<number, string>; // positionNumber -> playerId
   changes?: QuarterChange[];
   substitutes?: Substitute[];
 }

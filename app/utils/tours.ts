@@ -7,7 +7,7 @@ export type TourStep = {
   title: string;
   body: string;
   target?: string;
-  path?: (teamId: number) => string;
+  path?: (teamCode: string) => string; // Given the team's URL code
 };
 
 export type Tour = {
@@ -18,7 +18,7 @@ export type Tour = {
   steps: TourStep[];
 };
 
-const team = (teamId: number) => `/dashboard/team/${teamId}`;
+const team = (teamCode: string) => `/dashboard/team/${teamCode}`;
 
 export const TOURS: Tour[] = [
   {

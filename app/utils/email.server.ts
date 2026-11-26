@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isTeamCode } from "~/utils/ids";
 
 // Email through Resend's REST API. Nothing is sent unless both RESEND_API_KEY
 // and EMAIL_FROM are set, so callers must handle `sent: false` (invites, for
@@ -128,35 +129,40 @@ function slug(value: string, max: number) {
     .replace(/-+$/, "");
 }
 
-// One address per coach per team, e.g. jake.thunder.12-3@benchtalk.app.
-// Only the trailing "<teamId>-<coachId>" identifies it; the names are for
-// people, so renaming a team or coach doesn't break replies to old mail.
+// One address per coach per team, e.g. jake.thunder.k7xm2pq-1a6c5e40@benchtalk.app.
+// Only the trailing "<team code>-<end of the coach's id>" identifies it: two
+// UUIDs wouldn't fit in the 64 characters an address's local part allows. The
+// names are for people, so renaming a team or coach doesn't break replies to
+// old mail.
+const COACH_KEY_LENGTH = 8;
+
 export function coachTeamAddress(
-  coach: { id: number; name: string | null; email: string },
-  team: { id: number; name: string }
+  coach: { id: string; name: string | null; email: string },
+  team: { code: string; name: string }
 ) {
   const domain = sendingDomain();
   if (!domain) return null;
   const coachPart = slug(coach.name?.trim().split(/\s+/)[0] || coach.email.split("@")[0], 20) || "coach";
-  const teamPart = slug(team.name, 24) || "team";
-  return `${coachPart}.${teamPart}.${team.id}-${coach.id}@${domain}`;
+  const teamPart = slug(team.name, 20) || "team";
+  return `${coachPart}.${teamPart}.${team.code}-${coach.id.slice(-COACH_KEY_LENGTH)}@${domain}`;
 }
 
-// The team and coach a coach+team address stands for. The caller still checks
-// that the coach is on that team: anyone can type any address.
+// The team (by code) and the end of the coach's id that a coach+team address
+// stands for. The caller finds the coach on that team's staff whose id ends
+// with coachKey, which also checks they're on it: anyone can type any address.
 export function parseCoachTeamAddress(address: string) {
   const domain = sendingDomain();
   if (!domain) return null;
-  const match = address.trim().toLowerCase().match(/\.(\d+)-(\d+)@(.+)$/);
-  if (!match || match[3] !== domain) return null;
-  return { teamId: Number(match[1]), coachId: Number(match[2]) };
+  const match = address.trim().toLowerCase().match(/\.([a-z0-9]+)-([0-9a-f]{8})@(.+)$/);
+  if (!match || match[3] !== domain || !isTeamCode(match[1])) return null;
+  return { teamCode: match[1], coachKey: match[2] };
 }
 
 // "Jake Berg" <jake@benchtalk.app> for an admin with their own address,
 // otherwise the coach+team address (or the shared one when there's no team)
 export function coachFromAddress(
-  coach: { id: number; name: string | null; email: string; sendingEmail: string | null },
-  team?: { id: number; name: string } | null
+  coach: { id: string; name: string | null; email: string; sendingEmail: string | null },
+  team?: { code: string; name: string } | null
 ) {
   const address =
     coach.sendingEmail && isOnSendingDomain(coach.sendingEmail)

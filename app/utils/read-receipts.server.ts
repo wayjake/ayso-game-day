@@ -15,7 +15,7 @@ import { publishConversation } from "~/utils/realtime.server";
 
 async function participants(conversation: Conversation) {
   if (conversation.kind === "direct") {
-    return [conversation.staffUserId, conversation.parentUserId].filter((id): id is number => id != null);
+    return [conversation.staffUserId, conversation.parentUserId].filter((id): id is string => id != null);
   }
   if (conversation.kind === "group") {
     const rows = await db
@@ -32,7 +32,7 @@ async function participants(conversation: Conversation) {
 // that moves this person's marker in a direct thread or group, the others'
 // open pages reload to show the read receipt. Not in the team chat: every
 // family reloading on every read would be too much, and its polling covers it.
-export async function markConversationRead(conversation: Conversation, userId: number) {
+export async function markConversationRead(conversation: Conversation, userId: string) {
   const moved = await markRead(conversation.id, userId, await latestMessageId(conversation.id));
   if (moved && conversation.kind !== "team") await publishConversation(conversation, { kind: "read" });
 }
@@ -58,12 +58,12 @@ export async function getReadReceipts(conversation: Conversation): Promise<ReadR
     kind: conversation.kind,
     participants: ids.length,
     readers: reads
-      .filter((r) => r.upTo > 0)
+      .flatMap((r) => (r.upTo ? [{ ...r, upTo: r.upTo }] : [])) // No marker: read nothing yet
       .map((r) => ({
         userId: r.userId,
         name: names.get(r.userId) ?? "Someone",
         upTo: r.upTo,
-        marks: marks.filter((m) => m.userId === r.userId).map((m) => [m.upTo, m.at] as [number, string]),
+        marks: marks.filter((m) => m.userId === r.userId).map((m) => [m.upTo, m.at] as [string, string]),
       })),
   };
 }

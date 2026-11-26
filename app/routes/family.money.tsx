@@ -2,7 +2,7 @@ import type { Route } from "./+types/family.money";
 import { data } from "react-router";
 import { useState } from "react";
 import { getCoachUserIds, requireParent, requireParentOnTeam } from "~/utils/family.server";
-import { createClaim, getFamilyMoney, withdrawClaim, type FamilyTeamMoney } from "~/utils/ledger.server";
+import { createClaim, getFamilyMoney, teamCodeFor, withdrawClaim, type FamilyTeamMoney } from "~/utils/ledger.server";
 import { familyInvoices, type InvoiceView } from "~/utils/billing.server";
 import { FormError, newFormKey, readCents, readClientKey, readId, readMethod, readText, runLedgerAction } from "~/utils/ledger-forms.server";
 import { sendPush } from "~/utils/push.server";
@@ -11,6 +11,8 @@ import { formatCents, plainAmount } from "~/utils/money";
 import { Amount, InvoiceCard, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
 import { Badge, Card, buttonClass, cx } from "~/components/ui";
 import { CheckCircle, Copy, HourglassMedium } from "@phosphor-icons/react";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export function meta() {
   return [{ title: "Finances - BenchTalk" }];
@@ -30,7 +32,8 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = formData.get("_action");
 
   if (intent === "claim") {
-    const teamId = Number(formData.get("teamId"));
+    const teamId = parseId(formData.get("teamId"));
+    if (!teamId) throw new Response("Team not found", { status: 404 });
     const { user, kidsOnTeam } = await requireParentOnTeam(request, teamId);
     return runLedgerAction(async () => {
       const cents = readCents(formData, "cents", "how much you sent");
@@ -44,7 +47,7 @@ export async function action({ request }: Route.ActionArgs) {
       await sendPush(await getCoachUserIds(teamId), "payments", {
         title: `${who} sent ${formatCents(cents)}`,
         body: `On ${METHOD_LABELS[method]}. Confirm it once it arrives.`,
-        url: `/dashboard/team/${teamId}/finances`,
+        url: teamPath(await teamCodeFor(teamId), "finances"),
         tag: `ledger-claim-${teamId}`,
       });
     });
@@ -237,7 +240,7 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
   );
 }
 
-function PendingClaim({ claim }: { claim: { id: number; cents: number; method: "venmo" | "cash" | "check" | "other" } }) {
+function PendingClaim({ claim }: { claim: { id: string; cents: number; method: "venmo" | "cash" | "check" | "other" } }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warning-soft px-4 py-3 text-sm">
       <HourglassMedium size={18} className="shrink-0 text-warning" />

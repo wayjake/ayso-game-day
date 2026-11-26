@@ -249,7 +249,7 @@ export async function completeMagicCode(rawEmail: string, rawCode: string): Prom
   return user ? { ok: true, user } : expired;
 }
 
-async function signInWithLink(link: { id: number; email: string }) {
+async function signInWithLink(link: { id: string; email: string }) {
   // Claim the token first so a double submit can't use it twice
   const claimed = await db
     .update(loginLinks)

@@ -7,28 +7,29 @@ import { NewMessageForm } from "~/components/PeoplePicker";
 import { Card, cx } from "~/components/ui";
 import { ArrowLeft } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
+import { parseId } from "~/utils/ids";
 
 // Families start a conversation: one staff member opens their private thread,
 // anyone else (other families, several staff) makes a group chat that only its
 // members can see, coaches included unless they're in it.
 
-function teamsOf(kids: { teamId: number; teamName: string }[]) {
+function teamsOf(kids: { teamId: string; teamName: string }[]) {
   return [...new Map(kids.map((k) => [k.teamId, { teamId: k.teamId, teamName: k.teamName }])).values()];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, kids } = await requireParent(request);
   const teams = teamsOf(kids);
-  const asked = Number(new URL(request.url).searchParams.get("team"));
-  const teamId = teams.some((t) => t.teamId === asked) ? asked : teams[0].teamId;
+  const asked = parseId(new URL(request.url).searchParams.get("team"));
+  const teamId = teams.find((t) => t.teamId === asked)?.teamId ?? teams[0].teamId;
   return data({ teams, teamId, people: await pickerOptions(teamId, user.id) });
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const { user, teamIds } = await requireParent(request);
   const formData = await request.formData();
-  const teamId = Number(formData.get("teamId"));
-  if (!teamIds.includes(teamId)) return data({ startError: "Pick a team" }, { status: 400 });
+  const teamId = parseId(formData.get("teamId"));
+  if (!teamId || !teamIds.includes(teamId)) return data({ startError: "Pick a team" }, { status: 400 });
   const result = await startConversation(teamId, { id: user.id, side: "parent" }, formData.getAll("key").map(String), String(formData.get("name") ?? ""));
   if ("error" in result) return data({ startError: result.error }, { status: 400 });
   return redirect(`/family/messages/${result.conversationId}`);

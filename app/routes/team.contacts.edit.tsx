@@ -7,11 +7,14 @@ import { Alert, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labe
 import { Trash } from "@phosphor-icons/react";
 import { eq, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const contactId = parseInt(params.contactId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const contactId = parseId(params.contactId) ?? ""; // Not an id: matches nothing, so 404s below
 
   // Get team details
   const [team] = await db
@@ -55,8 +58,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
-  const contactId = parseInt(params.contactId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const contactId = parseId(params.contactId) ?? ""; // Not an id: matches nothing, so 404s below
   const intent = formData.get("intent") as string;
 
   // Verify team ownership
@@ -88,7 +91,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         .delete(contacts)
         .where(eq(contacts.id, contactId));
 
-      return redirect(`/dashboard/team/${teamId}/contacts`);
+      return redirect(`${teamPath(params.teamCode)}/contacts`);
     } catch (error) {
       console.error("Error deleting contact:", error);
       return data(
@@ -132,7 +135,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   try {
-    const playerId = playerIdStr && playerIdStr !== "" ? parseInt(playerIdStr) : null;
+    const playerId = parseId(playerIdStr);
     const validRelationships = ['parent', 'guardian', 'self', 'emergency'] as const;
     const relationshipValue = validRelationships.includes(relationship as typeof validRelationships[number])
       ? (relationship as typeof validRelationships[number])
@@ -152,7 +155,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       })
       .where(eq(contacts.id, contactId));
 
-    return redirect(`/dashboard/team/${teamId}/contacts`);
+    return redirect(`${teamPath(params.teamCode)}/contacts`);
   } catch (error) {
     console.error("Error updating contact:", error);
     return data(
@@ -176,7 +179,7 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
   return (
     <Page width="narrow">
       <PageHeader
-        back={{ to: `/dashboard/team/${team.id}/contacts`, label: "Contacts" }}
+        back={{ to: `${teamPath(team)}/contacts`, label: "Contacts" }}
         title="Edit contact"
         description={contact.name}
       />
@@ -308,7 +311,7 @@ export default function EditContact({ loaderData, actionData }: Route.ComponentP
               in a field saves; flex-row-reverse still shows Delete on the left. */}
           <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-4 sm:px-6">
             <div className="flex gap-2">
-              <Link to={`/dashboard/team/${team.id}/contacts`} className={buttonClass({ variant: "ghost" })}>
+              <Link to={`${teamPath(team)}/contacts`} className={buttonClass({ variant: "ghost" })}>
                 Cancel
               </Link>
               <button

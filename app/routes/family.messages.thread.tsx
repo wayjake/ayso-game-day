@@ -26,26 +26,29 @@ import { getStaffRoles } from "~/utils/team-access.server";
 import type { StaffRole } from "~/utils/team-roles";
 import { ArrowLeft, UsersThree } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
-async function access(request: Request, conversationId: number) {
+async function access(request: Request, conversationId: string | null) {
   const { user } = await requireParent(request);
   const found = await getConversationAccess(conversationId, user.id);
   if (!found) throw new Response("Conversation not found", { status: 404 });
   // Coaching this team too: use the coach view of the thread
   if (found.viewer === "coach") {
-    throw redirect(`/dashboard/team/${found.conversation.teamId}/messages/${found.conversation.id}`);
+    const [team] = await db.select({ code: teams.code }).from(teams).where(eq(teams.id, found.conversation.teamId)).limit(1);
+    throw redirect(teamPath(team ?? "", `messages/${found.conversation.id}`));
   }
   return { user, conversation: found.conversation, canPost: found.canPost };
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { user, conversation, canPost } = await access(request, Number(params.conversationId));
+  const { user, conversation, canPost } = await access(request, parseId(params.conversationId));
   // In the team chat, a family's email reply shows as its trimmed text only:
   // the whole email (signature, quoted history) is for the staff
   const forFamilies = <T extends { fullEmail: string | null }>(m: T) => (conversation.kind !== "direct" ? { ...m, fullEmail: null } : m);
   const messages = (await getThread(conversation.id, user.id)).map(forFamilies);
   const threadParam = new URL(request.url).searchParams.get("thread");
-  const replies = threadParam ? await getReplies(conversation.id, Number(threadParam), user.id) : null;
+  const replies = threadParam ? await getReplies(conversation.id, parseId(threadParam), user.id) : null;
   const thread = replies ? { root: forFamilies(replies.root), replies: replies.replies.map(forFamilies) } : null;
   // Everything is on screen or summed up under its thread, so all of it counts as read
   await markConversationRead(conversation, user.id);
@@ -82,7 +85,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { user, conversation, canPost } = await access(request, Number(params.conversationId));
+  const { user, conversation, canPost } = await access(request, parseId(params.conversationId));
   const formData = await request.formData();
   const grouped = await handleGroupAction(formData, conversation, user);
   if (grouped) {
@@ -90,23 +93,23 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data(grouped, { status: "error" in grouped ? 400 : 200 });
   }
   if (formData.get("_action") === "ack") {
-    await acknowledgeFromThread(Number(formData.get("messageId")), conversation, user.id);
+    await acknowledgeFromThread(parseId(formData.get("messageId")), conversation, user.id);
     return data({ ok: true });
   }
   // Your own messages can be deleted even once the thread is read-only
   if (formData.get("_action") === "delete") {
-    const deleted = await deleteMessage(conversation, user.id, Number(formData.get("messageId")));
+    const deleted = await deleteMessage(conversation, user.id, parseId(formData.get("messageId")));
     return deleted ? data({ ok: true }) : data({ error: "That message can't be deleted" }, { status: 400 });
   }
   // Their staff member has left the team: the history stays, but nobody's there to read new messages
   if (!canPost) return data({ error: "They're no longer on the team staff" }, { status: 403 });
   if (formData.get("_action") === "react") {
-    await toggleReaction(conversation, user, Number(formData.get("messageId")), String(formData.get("emoji") ?? ""));
+    await toggleReaction(conversation, user, parseId(formData.get("messageId")), String(formData.get("emoji") ?? ""));
     return data({ ok: true });
   }
   if (formData.get("_action") !== "send") return data({ error: "Unknown action" }, { status: 400 });
   const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
-    replyTo: Number(formData.get("replyTo")) || null,
+    replyTo: parseId(formData.get("replyTo")),
   });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   return data({ ok: true });

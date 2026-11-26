@@ -9,8 +9,8 @@ export function validateAYSOCompliance(
   const errors: ValidationError[] = [];
 
   // Count quarters per player
-  const playerQuarterCount: Map<number, number> = new Map();
-  const playerGoalkeeperCount: Map<number, number> = new Map();
+  const playerQuarterCount: Map<string, number> = new Map();
+  const playerGoalkeeperCount: Map<string, number> = new Map();
 
   // Initialize counts
   teamPlayers.forEach(player => {

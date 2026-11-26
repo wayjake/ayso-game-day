@@ -27,7 +27,7 @@ export function describeSeries(weekdays: number[], dates: string[], startTime: s
 }
 
 // Deletes practices and their RSVPs
-export async function deletePractices(teamId: number, ids: number[]) {
+export async function deletePractices(teamId: string, ids: string[]) {
   if (ids.length === 0) return;
   await db.delete(rsvps).where(and(eq(rsvps.eventType, "practice"), inArray(rsvps.eventId, ids)));
   await db.delete(practices).where(and(eq(practices.teamId, teamId), inArray(practices.id, ids)));

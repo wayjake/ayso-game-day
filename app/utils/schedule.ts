@@ -5,10 +5,10 @@ import { formatGameDate, formatTimeRange, relativeGameDay } from "~/utils/dates"
 export type RsvpStatus = "yes" | "no" | "maybe";
 
 export type ScheduleEvent = {
-  key: string; // "game-12", "practice-40"
+  key: string; // "game-<id>", "practice-<id>"
   type: "game" | "practice";
-  id: number;
-  teamId: number;
+  id: string;
+  teamId: string;
   date: string; // YYYY-MM-DD
   time: string | null; // HH:MM
   endTime: string | null;
@@ -29,8 +29,8 @@ export const RSVP_LABELS: Record<RsvpStatus, string> = {
 export type RsvpCounts = { yes: number; no: number; maybe: number; none: number };
 
 export function countRsvps(
-  playerIds: number[],
-  answers: { playerId: number; status: RsvpStatus }[]
+  playerIds: string[],
+  answers: { playerId: string; status: RsvpStatus }[]
 ): RsvpCounts {
   const byPlayer = new Map(answers.map((a) => [a.playerId, a.status]));
   const counts: RsvpCounts = { yes: 0, no: 0, maybe: 0, none: 0 };

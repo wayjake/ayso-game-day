@@ -20,7 +20,7 @@ export function parentInviteUrl(request: Request, shareCode: string) {
 const isExpired = (invite: { expiresAt: string }) => new Date(invite.expiresAt).getTime() < Date.now();
 
 // Players on the team with a contact at this email
-async function playersForEmail(teamId: number, email: string) {
+async function playersForEmail(teamId: string, email: string) {
   return db
     .selectDistinct({ id: players.id, name: players.name })
     .from(contacts)
@@ -34,7 +34,7 @@ export type FamilyStatus = "joined" | "invited" | "expired" | "not-invited";
 export type Family = {
   email: string;
   parentNames: string[];
-  kids: { id: number; name: string; linked: boolean }[];
+  kids: { id: string; name: string; linked: boolean }[];
   status: FamilyStatus;
   invitedAt: string | null;
   inviteUrl: string | null;
@@ -43,13 +43,13 @@ export type Family = {
   // it counts as their invite: inviting them again as a parent would send a
   // second email.
   staffInvite: StaffRole | null;
-  userIds: number[]; // Parent accounts that belong to this family email
+  userIds: string[]; // Parent accounts that belong to this family email
 };
 
 // Every family on the team (grouped by contact email) with where they are in
 // the invite flow. A family is "joined" once an account with that email, or
 // the account that accepted their invite, is linked to one of their kids.
-export async function listFamilies(request: Request | null, teamId: number): Promise<Family[]> {
+export async function listFamilies(request: Request | null, teamId: string): Promise<Family[]> {
   const rows = await db
     .select({
       email: contacts.email,
@@ -131,7 +131,7 @@ export async function listFamilies(request: Request | null, teamId: number): Pro
 
 // Links an account to every player on the team that lists this email. Returns
 // the player ids newly linked.
-export async function linkFamily(teamId: number, email: string, userId: number) {
+export async function linkFamily(teamId: string, email: string, userId: string) {
   const kids = await playersForEmail(teamId, normalizeEmail(email));
   if (kids.length === 0) return [];
   const existing = await db
@@ -161,9 +161,9 @@ export async function inviteFamily({
   invitedBy,
 }: {
   request: Request;
-  teamId: number;
+  teamId: string;
   email: string;
-  invitedBy: { id: number; name: string | null; email: string };
+  invitedBy: { id: string; name: string | null; email: string };
 }): Promise<
   | { result: "linked"; linkedCount: number }
   | { result: "sent"; url: string }
@@ -370,7 +370,7 @@ export async function getParentInviteByCode(shareCode: string) {
   };
 }
 
-export async function acceptParentInvite(shareCode: string, userId: number) {
+export async function acceptParentInvite(shareCode: string, userId: string) {
   const found = await getParentInviteByCode(shareCode);
   if (!found || found.state !== "pending") return null;
 

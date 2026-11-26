@@ -2,7 +2,7 @@ import { db, players, assignments, sitOuts } from "~/db";
 import { and, eq, inArray } from "drizzle-orm";
 
 // Everything a read-only lineup view needs beyond the team and game rows
-export async function getLineupRows(teamId: number, gameId: number) {
+export async function getLineupRows(teamId: string, gameId: string) {
   const [teamPlayers, savedAssignments, absences] = await Promise.all([
     db
       .select({

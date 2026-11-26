@@ -25,6 +25,8 @@ import type { StaffRole } from "~/utils/team-roles";
 import type { GroupMember } from "~/utils/groups";
 import { sendPush } from "~/utils/push.server";
 import { isReaction } from "~/utils/reactions";
+import { isId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 import { publishConversation } from "~/utils/realtime.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail, textToHtml, escapeHtml } from "~/utils/email.server";
 
@@ -48,7 +50,7 @@ export const MAX_EMAIL_MESSAGE_LENGTH = 10000;
 
 const lower = (email: string) => email.trim().toLowerCase();
 
-export async function getOrCreateTeamConversation(teamId: number) {
+export async function getOrCreateTeamConversation(teamId: string) {
   const [existing] = await db
     .select()
     .from(conversations)
@@ -67,7 +69,7 @@ export async function getOrCreateTeamConversation(teamId: number) {
 
 // Every lookup and insert of a direct thread names its staff member. Without
 // that, the insert-or-reselect below would land one coach in another's thread.
-export async function getOrCreateDirectConversation(teamId: number, parentUserId: number, staffUserId: number) {
+export async function getOrCreateDirectConversation(teamId: string, parentUserId: string, staffUserId: string) {
   const where = and(
     eq(conversations.teamId, teamId),
     eq(conversations.kind, "direct"),
@@ -82,7 +84,7 @@ export async function getOrCreateDirectConversation(teamId: number, parentUserId
   return created;
 }
 
-async function findFamilyEmailConversation(teamId: number, familyEmail: string, staffUserId: number) {
+async function findFamilyEmailConversation(teamId: string, familyEmail: string, staffUserId: string) {
   const [row] = await db
     .select()
     .from(conversations)
@@ -130,10 +132,10 @@ async function mergeConversation(from: typeof conversations.$inferSelect, into: 
 // A staff member's direct thread with a family on a team, by email and (if
 // they're on the app) account. Creates it if needed and keeps the two keys in step.
 export async function getOrCreateFamilyConversation(
-  teamId: number,
+  teamId: string,
   rawEmail: string,
-  parentUserId: number | null | undefined,
-  staffUserId: number
+  parentUserId: string | null | undefined,
+  staffUserId: string
 ) {
   const familyEmail = lower(rawEmail);
   const byEmail = await findFamilyEmailConversation(teamId, familyEmail, staffUserId);
@@ -162,7 +164,7 @@ export async function getOrCreateFamilyConversation(
 // After a parent proves an email (invite or magic link), the email-only threads
 // for it (one per staff member who wrote to it) become theirs. Never called on
 // a bare users.email match.
-export async function claimFamilyConversation(teamId: number, rawEmail: string, userId: number) {
+export async function claimFamilyConversation(teamId: string, rawEmail: string, userId: string) {
   const familyEmail = lower(rawEmail);
   const unclaimed = await db
     .select()
@@ -200,7 +202,7 @@ export async function claimFamilyConversation(teamId: number, rawEmail: string, 
 
 // Groups this family was added to before they were on the app become theirs.
 // Where the account is already a member, the email-only row just goes.
-async function claimGroupMemberships(teamId: number, familyEmail: string, userId: number) {
+async function claimGroupMemberships(teamId: string, familyEmail: string, userId: string) {
   const pending = await db
     .select({ id: conversationMembers.id, conversationId: conversationMembers.conversationId })
     .from(conversationMembers)
@@ -217,7 +219,7 @@ async function claimGroupMemberships(teamId: number, familyEmail: string, userId
   }
 }
 
-async function isGuardianOnTeam(userId: number, teamId: number) {
+async function isGuardianOnTeam(userId: string, teamId: string) {
   const [row] = await db
     .select({ id: guardians.id })
     .from(guardians)
@@ -227,14 +229,14 @@ async function isGuardianOnTeam(userId: number, teamId: number) {
 }
 
 // Which side of the team someone is on right now: staff wins over parent
-async function teamSide(teamId: number, userId: number) {
+async function teamSide(teamId: string, userId: string) {
   if (await getTeamForUser(teamId, userId)) return "coach" as const;
   if (await isGuardianOnTeam(userId, teamId)) return "parent" as const;
   return null;
 }
 
 /** A group's member accounts who are still on its team: the people who can read it */
-export async function activeGroupMemberIds(conversation: { id: number; teamId: number }) {
+export async function activeGroupMemberIds(conversation: { id: string; teamId: string }) {
   const rows = await db
     .select({ userId: conversationMembers.userId })
     .from(conversationMembers)
@@ -247,7 +249,7 @@ export async function activeGroupMemberIds(conversation: { id: number; teamId: n
 }
 
 /** Group ids on these teams that list this account as a member (callers pass teams they're on) */
-export async function groupIdsFor(userId: number, teamIds: number[]) {
+export async function groupIdsFor(userId: string, teamIds: string[]) {
   if (teamIds.length === 0) return [];
   const rows = await db
     .select({ id: conversations.id })
@@ -276,11 +278,11 @@ export async function conversationReaderIds(conversation: typeof conversations.$
 // included. An email-only thread (no parentUserId) is its staff member's only.
 // `canPost` is false for a parent whose staff member has left the team: they
 // keep the history but can't write into a thread nobody reads.
-export async function getConversationAccess(conversationId: number, userId: number) {
-  if (!Number.isInteger(conversationId)) return null;
+export async function getConversationAccess(conversationId: string | null, userId: string) {
+  if (!isId(conversationId)) return null;
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!conversation) return null;
-  const onStaff = (id: number | null) => (id == null ? Promise.resolve(false) : getTeamForUser(conversation.teamId, id).then(Boolean));
+  const onStaff = (id: string | null) => (id == null ? Promise.resolve(false) : getTeamForUser(conversation.teamId, id).then(Boolean));
 
   if (conversation.kind === "group") {
     const [member] = await db
@@ -310,12 +312,12 @@ export async function getConversationAccess(conversationId: number, userId: numb
 }
 
 /** Direct threads a staff member is in, on one team */
-function staffDirects(teamId: number, staffUserId: number) {
+function staffDirects(teamId: string, staffUserId: string) {
   return and(eq(conversations.teamId, teamId), eq(conversations.kind, "direct"), eq(conversations.staffUserId, staffUserId));
 }
 
-async function unreadCounts(conversationIds: number[], userId: number) {
-  if (conversationIds.length === 0) return new Map<number, number>();
+async function unreadCounts(conversationIds: string[], userId: string) {
+  if (conversationIds.length === 0) return new Map<string, number>();
   const rows = await db
     .select({ conversationId: messages.conversationId, count: sql<number>`count(*)` })
     .from(messages)
@@ -327,8 +329,9 @@ async function unreadCounts(conversationIds: number[], userId: number) {
       inArray(messages.conversationId, conversationIds),
       isNull(messages.deletedAt),
       // Email replies have no sender account; they still count as unread
-      sql`coalesce(${messages.senderId}, 0) <> ${userId}`,
-      sql`${messages.id} > coalesce(${conversationReads.lastReadMessageId}, 0)`,
+      sql`coalesce(${messages.senderId}, '') <> ${userId}`,
+      // Ids are UUIDv7, so text order is time order; no marker means nothing read
+      sql`${messages.id} > coalesce(${conversationReads.lastReadMessageId}, '')`,
       // A reply only counts in a thread you started or replied to
       sql`(${messages.parentId} is null or exists (
         select 1 from messages m2
@@ -339,7 +342,7 @@ async function unreadCounts(conversationIds: number[], userId: number) {
   return new Map(rows.map((r) => [r.conversationId, Number(r.count)]));
 }
 
-export async function totalUnread(conversationIds: number[], userId: number) {
+export async function totalUnread(conversationIds: string[], userId: string) {
   let total = 0;
   for (const n of (await unreadCounts(conversationIds, userId)).values()) total += n;
   return total;
@@ -349,7 +352,7 @@ export async function totalUnread(conversationIds: number[], userId: number) {
 // direct threads and the groups they're in.
 // Separate queries on purpose: Turso's planner fails ("internal query planner
 // error") on an OR of them over this table's partial indexes.
-export async function coachConversationIds(teamId: number, userId: number) {
+export async function coachConversationIds(teamId: string, userId: string) {
   const [team, directs, groups] = await Promise.all([
     db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.teamId, teamId), eq(conversations.kind, "team"))),
     db.select({ id: conversations.id }).from(conversations).where(staffDirects(teamId, userId)),
@@ -360,14 +363,14 @@ export async function coachConversationIds(teamId: number, userId: number) {
 
 // Teams this account coaches, among these. Their groups there open in the
 // dashboard, so the family app leaves them out (and doesn't count them twice).
-async function coachedAmong(userId: number, teamIds: number[]) {
-  if (teamIds.length === 0) return new Set<number>();
+async function coachedAmong(userId: string, teamIds: string[]) {
+  if (teamIds.length === 0) return new Set<string>();
   const rows = await db.select({ id: teams.id }).from(teams).where(and(inArray(teams.id, teamIds), canAccessTeam(userId)));
   return new Set(rows.map((r) => r.id));
 }
 
 // Conversation ids a parent can see across their teams
-export async function parentConversationIds(userId: number, teamIds: number[]) {
+export async function parentConversationIds(userId: string, teamIds: string[]) {
   if (teamIds.length === 0) return [];
   const coached = await coachedAmong(userId, teamIds);
   // Separate queries, not an OR (see coachConversationIds)
@@ -383,8 +386,8 @@ export async function parentConversationIds(userId: number, teamIds: number[]) {
 }
 
 export type ConversationSummary = {
-  id: number;
-  teamId: number;
+  id: string;
+  teamId: string;
   teamName: string;
   kind: "team" | "direct" | "group";
   title: string;
@@ -403,21 +406,21 @@ export type ConversationSummary = {
 };
 
 // Kids' first names per parent on a team: "Ricardo & Christian"
-async function kidsByParent(teamId: number, parentUserIds: number[]) {
-  if (parentUserIds.length === 0) return new Map<number, string>();
+async function kidsByParent(teamId: string, parentUserIds: string[]) {
+  if (parentUserIds.length === 0) return new Map<string, string>();
   const rows = await db
     .select({ userId: guardians.userId, name: players.name })
     .from(guardians)
     .innerJoin(players, eq(guardians.playerId, players.id))
     .where(and(eq(guardians.teamId, teamId), inArray(guardians.userId, parentUserIds)))
     .orderBy(players.name);
-  const map = new Map<number, string[]>();
+  const map = new Map<string, string[]>();
   for (const r of rows) map.set(r.userId, [...(map.get(r.userId) ?? []), r.name.split(" ")[0]]);
   return new Map([...map].map(([k, v]) => [k, v.join(" & ")]));
 }
 
 // Contact names and kids' first names per family email on a team
-export async function familyLabels(teamId: number, emails: string[]) {
+export async function familyLabels(teamId: string, emails: string[]) {
   const result = new Map<string, { names: string[]; kids: string[] }>();
   if (emails.length === 0) return result;
   const rows = await db
@@ -437,7 +440,7 @@ export async function familyLabels(teamId: number, emails: string[]) {
   return result;
 }
 
-export async function listCoachConversations(teamId: number, userId: number): Promise<ConversationSummary[]> {
+export async function listCoachConversations(teamId: string, userId: string): Promise<ConversationSummary[]> {
   const team = await getOrCreateTeamConversation(teamId);
   const [teamRow] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
 
@@ -526,21 +529,21 @@ export async function listCoachConversations(teamId: number, userId: number): Pr
 // The family's Messages list: per team, the team chat, then a private thread
 // with each staff member (their role shown as a badge). Threads are made on
 // first open, so a staff member they've never written to links to
-// /family/messages/with/:teamId/:staffId. A thread with someone who has left
+// /family/messages/with/:teamCode/:staffId. A thread with someone who has left
 // the staff stays listed while it has history. A parent who is on the staff
 // of the same team still gets their family threads with the other staff here
 // (never one with themselves), so the list shows everything the unread badge counts.
 export async function listParentConversations(
-  userId: number,
-  teamList: { teamId: number; teamName: string }[]
+  userId: string,
+  teamList: { teamId: string; teamCode: string; teamName: string }[]
 ): Promise<ConversationSummary[]> {
   const teamChats: ConversationSummary[] = [];
   const directs: ConversationSummary[] = [];
   const unstarted: ConversationSummary[] = [];
-  const ids: number[] = [];
+  const ids: string[] = [];
   const coached = await coachedAmong(userId, teamList.map((t) => t.teamId));
 
-  for (const { teamId, teamName } of teamList) {
+  for (const { teamId, teamCode, teamName } of teamList) {
     const chat = await getOrCreateTeamConversation(teamId);
     ids.push(chat.id);
     teamChats.push({
@@ -569,7 +572,7 @@ export async function listParentConversations(
       const name = member.name || member.email.split("@")[0];
       if (thread) ids.push(thread.convo.id);
       (thread?.convo.lastMessageAt ? directs : unstarted).push({
-        id: thread?.convo.id ?? 0,
+        id: thread?.convo.id ?? "", // No thread yet: opens by href
         teamId,
         teamName,
         kind: "direct",
@@ -581,7 +584,7 @@ export async function listParentConversations(
         needsReply: false,
         emailOnly: false,
         staffRole: member.role,
-        href: thread ? undefined : `/family/messages/with/${teamId}/${member.userId}`,
+        href: thread ? undefined : `/family/messages/with/${teamCode}/${member.userId}`,
       });
     }
     // Someone who has left the staff: keep the history readable
@@ -637,8 +640,8 @@ export async function listParentConversations(
 
 // Members of these groups who are still on the team, oldest first. People who
 // have left the team (or a family whose contacts were removed) drop out.
-export async function loadGroupMembers(teamId: number, conversationIds: number[]) {
-  const result = new Map<number, GroupMember[]>();
+export async function loadGroupMembers(teamId: string, conversationIds: string[]) {
+  const result = new Map<string, GroupMember[]>();
   if (conversationIds.length === 0) return result;
   const rows = await db
     .select({
@@ -695,14 +698,14 @@ export async function loadGroupMembers(teamId: number, conversationIds: number[]
 }
 
 /** Who can rename the group and add or remove people: whoever started it, or if they've gone, the longest-standing member */
-export function groupManagerId(conversation: { createdBy: number | null }, members: GroupMember[]) {
+export function groupManagerId(conversation: { createdBy: string | null }, members: GroupMember[]) {
   const accounts = members.filter((m) => m.userId != null);
   if (conversation.createdBy != null && accounts.some((m) => m.userId === conversation.createdBy)) return conversation.createdBy;
   return accounts[0]?.userId ?? null;
 }
 
 /** "Maria, Chen & Priya", "Maria, Chen, Priya +2": everyone in it but the viewer */
-export function groupTitle(name: string | null, members: GroupMember[], viewerId: number) {
+export function groupTitle(name: string | null, members: GroupMember[], viewerId: string) {
   if (name) return name;
   const others = members.filter((m) => m.userId !== viewerId).map((m) => m.name.split(" ")[0]);
   if (others.length === 0) return "Just you";
@@ -714,7 +717,7 @@ export function groupSubtitle(members: GroupMember[]) {
   return `Group · ${members.length} ${members.length === 1 ? "person" : "people"}`;
 }
 
-async function groupSummaries(teamId: number, ids: number[], viewerId: number) {
+async function groupSummaries(teamId: string, ids: string[], viewerId: string) {
   if (ids.length === 0) return [];
   const [rows, members] = await Promise.all([
     db.select().from(conversations).where(inArray(conversations.id, ids)),
@@ -734,8 +737,8 @@ async function groupSummaries(teamId: number, ids: number[], viewerId: number) {
 }
 
 export type ThreadMessage = {
-  id: number;
-  senderId: number | null;
+  id: string;
+  senderId: string | null;
   senderName: string;
   senderIsCoach: boolean; // On the team staff (any role)
   senderRole: StaffRole | null; // Their staff role, shown as a badge
@@ -744,8 +747,8 @@ export type ThreadMessage = {
   viaEmail: boolean; // Came in as an email reply
   emailedTo: string | null; // A coach message that was also emailed
   fullEmail: string | null; // The whole email when the reply was trimmed
-  announcement: { id: number; subject: string; ask: "none" | "ack" | "reply" } | null;
-  parentId: number | null;
+  announcement: { id: string; subject: string; ask: "none" | "ack" | "reply" } | null;
+  parentId: string | null;
   /** Its sender deleted it: shown as a placeholder, kept only while replies hang under it */
   deleted: boolean;
   reactions: ReactionSummary[];
@@ -758,13 +761,13 @@ export type ThreadSummary = { count: number; lastAt: string; names: string[] };
 
 // The conversation's top-level messages (replies live in threads under them),
 // each with its reactions and a summary of its thread.
-export async function getThread(conversationId: number, viewerId: number, limit = 200): Promise<ThreadMessage[]> {
+export async function getThread(conversationId: string, viewerId: string, limit = 200): Promise<ThreadMessage[]> {
   return loadMessages(conversationId, viewerId, sql`${messages.parentId} is null`, limit);
 }
 
 // One thread: its root and every reply, oldest first. A reply's id finds its root.
-export async function getReplies(conversationId: number, messageId: number, viewerId: number) {
-  if (!Number.isInteger(messageId)) return null;
+export async function getReplies(conversationId: string, messageId: string | null, viewerId: string) {
+  if (!isId(messageId)) return null;
   const [hit] = await db
     .select({ id: messages.id, parentId: messages.parentId })
     .from(messages)
@@ -782,7 +785,7 @@ export async function getReplies(conversationId: number, messageId: number, view
   return root ? { root, replies: rows.filter((m) => m.id !== rootId) } : null;
 }
 
-async function loadMessages(conversationId: number, viewerId: number, where: ReturnType<typeof sql>, limit: number): Promise<ThreadMessage[]> {
+async function loadMessages(conversationId: string, viewerId: string, where: ReturnType<typeof sql>, limit: number): Promise<ThreadMessage[]> {
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!conversation) return [];
   const rows = await db
@@ -863,8 +866,8 @@ function displayName(r: { name: string | null; senderName: string | null; email:
   return r.name || r.senderName || r.email?.split("@")[0] || r.senderEmail || "Family";
 }
 
-async function reactionsFor(messageIds: number[], viewerId: number) {
-  const result = new Map<number, ReactionSummary[]>();
+async function reactionsFor(messageIds: string[], viewerId: string) {
+  const result = new Map<string, ReactionSummary[]>();
   if (messageIds.length === 0) return result;
   const rows = await db
     .select({ messageId: messageReactions.messageId, emoji: messageReactions.emoji, userId: messageReactions.userId, name: users.name, email: users.email })
@@ -887,8 +890,8 @@ async function reactionsFor(messageIds: number[], viewerId: number) {
   return result;
 }
 
-async function threadSummaries(rootIds: number[]) {
-  const result = new Map<number, ThreadSummary>();
+async function threadSummaries(rootIds: string[]) {
+  const result = new Map<string, ThreadSummary>();
   if (rootIds.length === 0) return result;
   const rows = await db
     .select({
@@ -916,25 +919,25 @@ async function threadSummaries(rootIds: number[]) {
 }
 
 /** Newest message id in a conversation, replies included: opening it marks all of it read */
-export async function latestMessageId(conversationId: number) {
+export async function latestMessageId(conversationId: string): Promise<string | null> {
   const [row] = await db
-    .select({ id: sql<number>`max(${messages.id})` })
+    .select({ id: sql<string | null>`max(${messages.id})` })
     .from(messages)
     .where(eq(messages.conversationId, conversationId));
-  return Number(row?.id ?? 0);
+  return row?.id ?? null;
 }
 
 // Moves this person's read marker up to lastMessageId. Returns whether it
 // moved; each move is also logged in conversationReadMarks, which is where
 // read receipts get the time a message was read.
-export async function markRead(conversationId: number, userId: number, lastMessageId: number) {
+export async function markRead(conversationId: string, userId: string, lastMessageId: string | null) {
   if (!lastMessageId) return false;
   const [current] = await db
     .select({ upTo: conversationReads.lastReadMessageId })
     .from(conversationReads)
     .where(and(eq(conversationReads.conversationId, conversationId), eq(conversationReads.userId, userId)))
     .limit(1);
-  if (current && current.upTo >= lastMessageId) return false;
+  if (current?.upTo && current.upTo >= lastMessageId) return false;
   await db
     .insert(conversationReads)
     .values({ conversationId, userId, lastReadMessageId: lastMessageId })
@@ -942,7 +945,8 @@ export async function markRead(conversationId: number, userId: number, lastMessa
       target: [conversationReads.conversationId, conversationReads.userId],
       // Never move the read marker backwards
       set: {
-        lastReadMessageId: sql`max(${conversationReads.lastReadMessageId}, ${lastMessageId})`,
+        // coalesce: SQLite's max() is NULL if either side is (a marker that never moved)
+        lastReadMessageId: sql`max(coalesce(${conversationReads.lastReadMessageId}, ''), ${lastMessageId})`,
         updatedAt: sql`CURRENT_TIMESTAMP`,
       },
     });
@@ -956,7 +960,7 @@ export function preview(body: string, length = 120) {
 }
 
 // Families waiting on this staff member (each has their own threads)
-export async function countNeedsReply(teamId: number, userId: number) {
+export async function countNeedsReply(teamId: string, userId: string) {
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(conversations)
@@ -964,7 +968,7 @@ export async function countNeedsReply(teamId: number, userId: number) {
   return Number(row?.n ?? 0);
 }
 
-export async function setNeedsReply(conversationId: number, needsReply: boolean) {
+export async function setNeedsReply(conversationId: string, needsReply: boolean) {
   await db.update(conversations).set({ needsReply }).where(eq(conversations.id, conversationId));
 }
 
@@ -976,12 +980,12 @@ export async function setNeedsReply(conversationId: number, needsReply: boolean)
 // parent holding the thread gets push notifications on some device; without
 // them the email is the only way they'd know there's a message.
 
-type Sender = { id: number; name: string | null; email: string; sendingEmail?: string | null };
+type Sender = { id: string; name: string | null; email: string; sendingEmail?: string | null };
 
 /** Which of these users have at least one device subscribed to push */
-export async function usersWithPush(userIds: number[]) {
+export async function usersWithPush(userIds: string[]) {
   const ids = [...new Set(userIds)];
-  if (ids.length === 0) return new Set<number>();
+  if (ids.length === 0) return new Set<string>();
   const rows = await db
     .selectDistinct({ userId: pushSubscriptions.userId })
     .from(pushSubscriptions)
@@ -1015,7 +1019,7 @@ export async function familyDelivery(conversation: typeof conversations.$inferSe
 
 // Message-IDs to thread a new email under: the family's latest email to us,
 // and the latest we sent them
-async function threadingHeaders(conversationId: number) {
+async function threadingHeaders(conversationId: string) {
   const [lastIn] = await db
     .select({ id: inboundEmails.emailMessageId, refs: inboundEmails.references, subject: inboundEmails.subject })
     .from(inboundEmails)
@@ -1048,7 +1052,7 @@ async function emailCoachMessage(
     .from(users)
     .where(eq(users.id, sender.id))
     .limit(1);
-  const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
+  const [team] = await db.select({ code: teams.code, name: teams.name }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
   const from = coachFromAddress(coach ?? { id: sender.id, name: sender.name, email: sender.email, sendingEmail: null }, team);
   const thread = await threadingHeaders(conversation.id);
   const deliverTo = familyDeliveryAddress(to, coach?.email ?? sender.email);
@@ -1085,14 +1089,14 @@ export async function postMessage(
     /** Coach messages to a family: also email it. Only when the coach ticks "Send by email"; never for thread replies. */
     email?: boolean;
     /** Reply in the thread under this message */
-    replyTo?: number | null;
+    replyTo?: string | null;
   } = {}
 ) {
   const text = body.trim().slice(0, MAX_MESSAGE_LENGTH);
   if (!text) return null;
 
   // Threads are one level deep: replying to a reply joins the same thread
-  let rootId: number | null = null;
+  let rootId: string | null = null;
   if (options.replyTo) {
     const [parent] = await db
       .select({ id: messages.id, parentId: messages.parentId })
@@ -1155,8 +1159,8 @@ export async function postMessage(
 // email reply with no account)
 export async function notifyThreadReply(
   conversation: typeof conversations.$inferSelect,
-  rootId: number,
-  senderId: number | null,
+  rootId: string,
+  senderId: string | null,
   senderName: string,
   text: string
 ) {
@@ -1182,10 +1186,10 @@ export async function notifyThreadReply(
 export async function toggleReaction(
   conversation: typeof conversations.$inferSelect,
   user: Sender,
-  messageId: number,
+  messageId: string | null,
   emoji: string
 ) {
-  if (!isReaction(emoji) || !Number.isInteger(messageId)) return false;
+  if (!isReaction(emoji) || !isId(messageId)) return false;
   const [message] = await db
     .select({ id: messages.id, senderId: messages.senderId, parentId: messages.parentId, body: messages.body })
     .from(messages)
@@ -1220,8 +1224,8 @@ export async function toggleReaction(
 // already went out, and a notification already on their phone, can't be taken
 // back: the page warns about both before it asks. Announcement copies can't be
 // deleted here, since the tracker and "Got it" hang off them.
-export async function deleteMessage(conversation: typeof conversations.$inferSelect, userId: number, messageId: number) {
-  if (conversation.kind !== "direct" || !Number.isInteger(messageId)) return false;
+export async function deleteMessage(conversation: typeof conversations.$inferSelect, userId: string, messageId: string | null) {
+  if (conversation.kind !== "direct" || !isId(messageId)) return false;
   const [message] = await db
     .select({ id: messages.id, parentId: messages.parentId })
     .from(messages)
@@ -1266,11 +1270,12 @@ export async function deleteMessage(conversation: typeof conversations.$inferSel
 // the team chat and groups, anyone on the team staff is staff.
 async function pushToConversation(
   conversation: typeof conversations.$inferSelect,
-  userIds: number[],
+  userIds: string[],
   kind: "chat" | "replies" | "reactions",
-  p: { title: string; body: string; tag: string; threadId?: number }
+  p: { title: string; body: string; tag: string; threadId?: string }
 ) {
   const query = p.threadId ? `?thread=${p.threadId}` : "";
+  const [team] = await db.select({ code: teams.code }).from(teams).where(eq(teams.id, conversation.teamId)).limit(1);
   const staffIds = conversation.kind === "direct" ? [conversation.staffUserId] : await getCoachUserIds(conversation.teamId);
   const coaches = userIds.filter((id) => staffIds.includes(id));
   const parents = userIds.filter((id) => !staffIds.includes(id));
@@ -1278,7 +1283,7 @@ async function pushToConversation(
     sendPush(coaches, kind, {
       title: p.title,
       body: p.body,
-      url: `/dashboard/team/${conversation.teamId}/messages/${conversation.id}${query}`,
+      url: team ? teamPath(team, `messages/${conversation.id}${query}`) : `/dashboard${query}`,
       tag: p.tag,
     }),
     sendPush(parents, kind, {

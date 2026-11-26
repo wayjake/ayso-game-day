@@ -7,6 +7,7 @@ import { LedgerError } from "~/utils/ledger";
 import { FULL_SHARE, PAYMENT_METHODS, type Member, type PaymentMethod, type ShareSpec } from "~/utils/ledger";
 import { parseCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
+import { parseId } from "~/utils/ids";
 
 export class FormError extends Error {}
 
@@ -41,8 +42,8 @@ export function readText(formData: FormData, name: string, max = 200) {
 }
 
 export function readId(formData: FormData, name: string) {
-  const id = Number(formData.get(name));
-  if (!Number.isSafeInteger(id) || id <= 0) throw new FormError("Something's missing from the form. Reload and try again.");
+  const id = parseId(formData.get(name));
+  if (!id) throw new FormError("Something's missing from the form. Reload and try again.");
   return id;
 }
 
@@ -50,10 +51,11 @@ export function readClientKey(formData: FormData) {
   return String(formData.get("clientKey") ?? "");
 }
 
-// "player:12" / "staff:3"
+// "player:<uuid>" / "staff:<uuid>"
 export function parseMember(value: string): Member | null {
-  const m = value.match(/^(player|staff):(\d+)$/);
-  return m ? { type: m[1] as Member["type"], id: Number(m[2]) } : null;
+  const m = value.match(/^(player|staff):(.+)$/);
+  const id = m ? parseId(m[2]) : null;
+  return m && id ? { type: m[1] as Member["type"], id } : null;
 }
 
 export function readMembers(formData: FormData, name = "member"): Member[] {
@@ -61,8 +63,8 @@ export function readMembers(formData: FormData, name = "member"): Member[] {
   const out: Member[] = [];
   for (const v of formData.getAll(name)) {
     const m = parseMember(String(v));
-    if (m && !seen.has(String(v))) {
-      seen.add(String(v));
+    if (m && !seen.has(`${m.type}:${m.id}`)) {
+      seen.add(`${m.type}:${m.id}`);
       out.push(m);
     }
   }

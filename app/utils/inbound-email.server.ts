@@ -28,6 +28,8 @@ import { MAX_EMAIL_MESSAGE_LENGTH, familyLabels, getOrCreateFamilyConversation, 
 import { getCoachUserIds } from "~/utils/family.server";
 import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
+import { teamPath } from "~/utils/team-path";
+import { parseId } from "~/utils/ids";
 
 // Everything that comes back from Resend: delivery events for mail we sent,
 // and email received on the domain.
@@ -54,8 +56,8 @@ function tag(event: WebhookEvent, name: string) {
 
 // The recipient row an event is about: by our tag, or by Resend's email id
 async function recipientFor(event: WebhookEvent) {
-  const id = Number(tag(event, "recipient_id"));
-  if (Number.isInteger(id) && id > 0) {
+  const id = parseId(tag(event, "recipient_id"));
+  if (id) {
     const [row] = await db.select().from(announcementRecipients).where(eq(announcementRecipients.id, id)).limit(1);
     if (row) return row;
   }
@@ -133,9 +135,9 @@ export async function handleWebhookEvent(event: WebhookEvent) {
   }
 
   // A coach's reply that went out by email: remember its Message-ID for threading
-  const messageTag = Number(tag(event, "message_id"));
+  const messageTag = parseId(tag(event, "message_id"));
   if (event.data.message_id && (event.type === "email.sent" || event.type === "email.delivered")) {
-    const where = Number.isInteger(messageTag) && messageTag > 0
+    const where = messageTag
       ? eq(messages.id, messageTag)
       : event.data.email_id
         ? eq(messages.resendEmailId, event.data.email_id)
@@ -148,12 +150,12 @@ export async function handleWebhookEvent(event: WebhookEvent) {
 // Matching a received email to a family
 
 type Match = {
-  teamId: number;
+  teamId: string;
   familyEmail: string;
-  recipientId: number | null;
-  conversationId: number | null;
+  recipientId: string | null;
+  conversationId: string | null;
   /** Whose private thread a new one should be, when conversationId is null */
-  staffUserId?: number | null;
+  staffUserId?: string | null;
   by: "headers" | "sender";
 };
 
@@ -187,7 +189,7 @@ async function matchByHeaders(refs: string[]): Promise<Match | null> {
 // 2. Sender: a family writing fresh. Only trusted when the email passed
 // SPF/DKIM/DMARC, so nobody can drop a message into a family's thread by
 // faking their address.
-async function matchBySender(address: string, subject: string | null, ownerUserId: number | null, toTeamId: number | null): Promise<Match | null> {
+async function matchBySender(address: string, subject: string | null, ownerUserId: string | null, toTeamId: string | null): Promise<Match | null> {
   const teamRows = await db
     .selectDistinct({ teamId: contacts.teamId })
     .from(contacts)
@@ -201,7 +203,7 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
 
   // Sent to a particular coach's address: prefer that coach's teams
   if (ownerUserId && teamIds.length > 1) {
-    const mine: number[] = [];
+    const mine: string[] = [];
     for (const teamId of teamIds) if ((await getCoachUserIds(teamId)).includes(ownerUserId)) mine.push(teamId);
     if (mine.length > 0) teamIds = mine;
   }
@@ -244,7 +246,7 @@ async function matchBySender(address: string, subject: string | null, ownerUserI
 
 // How a family's email reply is signed in the team chat, where every family
 // can see it: their name from the email, or their kids' names, never an address
-async function publicFamilyName(teamId: number, familyEmail: string, fromName: string | null) {
+async function publicFamilyName(teamId: string, familyEmail: string, fromName: string | null) {
   const name = fromName?.trim();
   if (name && !name.includes("@")) return name;
   const kids = (await familyLabels(teamId, [familyEmail])).get(familyEmail)?.kids ?? [];
@@ -253,7 +255,7 @@ async function publicFamilyName(teamId: number, familyEmail: string, fromName: s
 
 // Whose private thread a family's email goes to when nothing says: the staff
 // member who wrote to them most recently, else the team owner
-async function defaultStaffFor(teamId: number, familyEmail: string, parentUserId: number | null) {
+async function defaultStaffFor(teamId: string, familyEmail: string, parentUserId: string | null) {
   const staff = await getCoachUserIds(teamId);
   const recent = await db
     .select({ staffUserId: conversations.staffUserId })
@@ -280,7 +282,7 @@ const baseSubject = (subject: string | null) =>
 // The parent account for a family email on a team, if they've joined. Only
 // proven links count: an account with that email, or the one that accepted
 // that email's invite.
-async function familyUserId(teamId: number, familyEmail: string) {
+async function familyUserId(teamId: string, familyEmail: string) {
   const [byEmail] = await db
     .select({ id: users.id })
     .from(users)
@@ -310,7 +312,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   // An announcement sent to everyone lives in the team chat. A real reply to it
   // goes there too, in the public thread under it. Anything else (an
   // out-of-office, a fresh email that doesn't answer it) stays private.
-  let rootId: number | null = null;
+  let rootId: string | null = null;
   let familyName: string | null = null;
   let staffUserId = match.staffUserId ?? null;
   if (conversation?.kind === "team") {
@@ -341,7 +343,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   const text = (body || inbound.subject || "(empty email)").slice(0, MAX_EMAIL_MESSAGE_LENGTH);
 
   // Written by the family's own account address: show it as theirs
-  let senderId: number | null = null;
+  let senderId: string | null = null;
   if (userId) {
     const [account] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
     if (account && account.email.toLowerCase() === inbound.fromEmail) senderId = userId;
@@ -401,7 +403,7 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
       await sendPush([conversation.staffUserId!], "chat", {
         title: `${who} replied by email`,
         body: preview(text, 180),
-        url: `/dashboard/team/${match.teamId}/messages/${conversation.id}`,
+        url: await conversationUrl(match.teamId, conversation.id),
         tag: `conversation-${conversation.id}`,
       });
     }
@@ -409,12 +411,24 @@ async function fileIntoThread(inbound: typeof inboundEmails.$inferSelect, match:
   return conversation;
 }
 
+// A coach+team address carries the team's code and the end of the coach's
+// id (ids are too long to fit two in an address). The coach is whoever on
+// that team's staff has an id ending that way.
 async function coachTeamFromAddresses(to: string[]) {
   for (const address of to) {
     const parsed = parseCoachTeamAddress(address);
-    if (parsed && (await getCoachUserIds(parsed.teamId)).includes(parsed.coachId)) return parsed;
+    if (!parsed) continue;
+    const [team] = await db.select({ id: teams.id }).from(teams).where(eq(teams.code, parsed.teamCode)).limit(1);
+    if (!team) continue;
+    const coaches = (await getCoachUserIds(team.id)).filter((id) => id.endsWith(parsed.coachKey));
+    if (coaches.length === 1) return { teamId: team.id, coachId: coaches[0] };
   }
   return null;
+}
+
+async function conversationUrl(teamId: string, conversationId: string) {
+  const [team] = await db.select({ code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  return team ? teamPath(team, `messages/${conversationId}`) : "/dashboard";
 }
 
 export async function receiveEmail(resendEmailId: string) {
@@ -473,7 +487,7 @@ export async function receiveEmail(resendEmailId: string) {
 
 // Unmatched email a coach can see: sent to their address, or guessed onto one
 // of their teams. Mail to nobody in particular goes to admins.
-function unmatchedVisibleTo(user: { id: number; role: string }, teamId: number) {
+function unmatchedVisibleTo(user: { id: string; role: string }, teamId: string) {
   return or(
     eq(inboundEmails.ownerUserId, user.id),
     eq(inboundEmails.teamId, teamId),
@@ -482,7 +496,7 @@ function unmatchedVisibleTo(user: { id: number; role: string }, teamId: number) 
 }
 
 // How many emails wait in "Emails to sort", without loading them
-export async function countUnmatched(user: { id: number; role: string }, teamId: number) {
+export async function countUnmatched(user: { id: string; role: string }, teamId: string) {
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(inboundEmails)
@@ -490,7 +504,7 @@ export async function countUnmatched(user: { id: number; role: string }, teamId:
   return Math.min(Number(row?.n ?? 0), 50);
 }
 
-export async function listUnmatched(user: { id: number; role: string }, teamId: number) {
+export async function listUnmatched(user: { id: string; role: string }, teamId: string) {
   const visible = unmatchedVisibleTo(user, teamId);
   return db
     .select({
@@ -509,21 +523,22 @@ export async function listUnmatched(user: { id: number; role: string }, teamId: 
     .limit(50);
 }
 
-async function unmatchedFor(user: { id: number; role: string }, teamId: number, inboundId: number) {
+async function unmatchedFor(user: { id: string; role: string }, teamId: string, inboundId: string | null) {
+  if (!inboundId) return null;
   const rows = await listUnmatched(user, teamId);
   if (!rows.some((r) => r.id === inboundId)) return null;
   const [row] = await db.select().from(inboundEmails).where(eq(inboundEmails.id, inboundId)).limit(1);
   return row ?? null;
 }
 
-export async function assignUnmatched(user: { id: number; role: string }, teamId: number, inboundId: number, familyEmail: string) {
+export async function assignUnmatched(user: { id: string; role: string }, teamId: string, inboundId: string | null, familyEmail: string) {
   const inbound = await unmatchedFor(user, teamId, inboundId);
   if (!inbound) return null;
   // Whoever sorts it answers it: it goes in their own private thread with the family
   return fileIntoThread(inbound, { teamId, familyEmail: familyEmail.toLowerCase(), recipientId: null, conversationId: null, staffUserId: user.id, by: "coach" });
 }
 
-export async function dismissUnmatched(user: { id: number; role: string }, teamId: number, inboundId: number) {
+export async function dismissUnmatched(user: { id: string; role: string }, teamId: string, inboundId: string | null) {
   const inbound = await unmatchedFor(user, teamId, inboundId);
   if (!inbound) return false;
   await db.update(inboundEmails).set({ status: "dismissed" }).where(eq(inboundEmails.id, inbound.id));

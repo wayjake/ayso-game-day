@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Private links",
+    summary: "Links to your team, messages and games no longer give anything away, and you'll need to sign in once.",
+    changes: [
+      { kind: "improved", text: "Team links now use a short code, like /dashboard/team/k7xm2pq, and every message, game and player has a private id that can't be guessed. Links no longer show how many teams or messages there are." },
+      { kind: "improved", text: "Everyone signs in again once after this update (families can use the email sign-in link or code as before). Links in older emails and notifications, and bookmarks to team pages, won't open: start from the app instead." },
+      { kind: "improved", text: "If you subscribed to your calendar link, your games and practices show up fresh once; nothing else changes." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Expenses on the schedule",
     summary: "Link an expense to the games it's for, and everyone sees what each game costs.",
     changes: [

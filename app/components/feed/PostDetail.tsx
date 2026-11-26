@@ -18,7 +18,7 @@ export type PostDetailProps = {
   post: FeedPost | null;
   comments: PostComment[];
   likers: Liker[];
-  me: { id: number; name: string };
+  me: { id: string; name: string };
   feedHref: string;
   showTeamName: boolean;
   channels: string[];
@@ -113,7 +113,7 @@ function PostBody({
   post: FeedPost;
   comments: PostComment[];
   likers: Liker[];
-  me: { id: number; name: string };
+  me: { id: string; name: string };
   showTeamName: boolean;
   focusComment: boolean;
   onDeleted: () => void;
@@ -133,7 +133,7 @@ function PostBody({
 
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PostComment[]>([]);
-  const [hidden, setHidden] = useState<ReadonlySet<number>>(new Set());
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -153,7 +153,7 @@ function PostBody({
     setError(null);
     setPending((list) => [
       ...list,
-      { id: -Date.now(), clientId, body, createdAt: new Date().toISOString(), author: { id: me.id, name: me.name, role: null }, canDelete: false },
+      { id: `pending:${clientId}`, clientId, body, createdAt: new Date().toISOString(), author: { id: me.id, name: me.name, role: null }, canDelete: false },
     ]);
     requestAnimationFrame(() => end.current?.scrollIntoView({ behavior: "smooth", block: "end" }));
     try {
@@ -165,7 +165,7 @@ function PostBody({
     }
   };
 
-  const remove = async (id: number) => {
+  const remove = async (id: string) => {
     setError(null);
     setHidden((h) => new Set([...h, id]));
     try {
@@ -208,7 +208,7 @@ function PostBody({
         {shown.length > 0 ? (
           <ul className="space-y-3 border-t border-line pt-3">
             {shown.map((c) => {
-              const sending = c.id < 0;
+              const sending = c.id.startsWith("pending:");
               return (
                 <li key={c.clientId} className={cx("flex gap-2.5", sending && "opacity-60")}>
                   <PersonAvatar person={c.author} size="sm" />

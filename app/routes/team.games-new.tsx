@@ -10,10 +10,12 @@ import { notifyFamilies } from "~/utils/schedule.server";
 import { formatGameDateTime } from "~/utils/dates";
 import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 import { CalendarCheck, Lightbulb } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Get team details
   const [team] = await db
@@ -34,7 +36,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Verify team ownership
   const [team] = await db
@@ -67,7 +69,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     
     // Redirect to lineup planning page for the new game
-    return redirect(`/dashboard/team/${teamId}/games/${newGame.id}/lineup`);
+    return redirect(`${teamPath(params.teamCode)}/games/${newGame.id}/lineup`);
   } catch (error) {
     console.error("Error creating game:", error);
     return data(
@@ -87,7 +89,7 @@ export function meta({}: Route.MetaArgs) {
 export default function NewGame({ loaderData, actionData }: Route.ComponentProps) {
   const { team } = loaderData;
   const error = actionData?.error;
-  const gamesUrl = `/dashboard/team/${team.id}/games`;
+  const gamesUrl = `${teamPath(team)}/games`;
 
   return (
     <Page width="narrow">

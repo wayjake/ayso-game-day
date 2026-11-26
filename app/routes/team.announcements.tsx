@@ -8,6 +8,8 @@ import { formatMessageTime } from "~/utils/dates";
 import { MessagesTabs } from "~/components/MessagesTabs";
 import { Badge, Card, EmptyState, buttonClass, cx } from "~/components/ui";
 import { Megaphone, Plus, Warning } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 // Announcements layout, the same workspace as Messages (team.messages.tsx).
 // Phones show the list or one announcement as separate screens. From lg up
@@ -18,10 +20,10 @@ export const handle = { workspace: true };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const { team } = await requireTeamAccess(teamId, user.id);
   const [items, needsReply] = await Promise.all([listAnnouncements(teamId), countNeedsReply(teamId, user.id)]);
-  return data({ team: { id: team.id, name: team.name }, items, needsReply });
+  return data({ team: { id: team.id, code: team.code, name: team.name }, items, needsReply });
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -32,7 +34,7 @@ const askLabel = { none: "Just sharing", ack: "Asked for “Got it”", reply: "
 
 export default function AnnouncementsLayout({ loaderData }: Route.ComponentProps) {
   const { team, items, needsReply } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const params = useParams();
   const { pathname } = useLocation();
   // Something is open in the right pane: an announcement, or the compose form
@@ -57,7 +59,7 @@ export default function AnnouncementsLayout({ loaderData }: Route.ComponentProps
               <span className="max-lg:hidden">Announcement</span>
             </Link>
           </header>
-          <MessagesTabs teamId={team.id} needsReply={needsReply} className="lg:mb-0" />
+          <MessagesTabs teamCode={team.code} needsReply={needsReply} className="lg:mb-0" />
         </div>
 
         <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">

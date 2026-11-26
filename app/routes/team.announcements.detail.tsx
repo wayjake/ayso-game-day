@@ -27,12 +27,15 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const { team } = await requireTeamAccess(teamId, user.id);
-  const tracker = await getAnnouncementTracker(Number(params.announcementId), teamId, user.id);
+  const tracker = await getAnnouncementTracker(parseId(params.announcementId), teamId, user.id);
   if (!tracker) throw new Response("Announcement not found", { status: 404 });
 
   // The family panel, opened with ?family=<email>
@@ -44,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // A team chat copy: replies are in the thread under it, linked from the panel.
     const own = selected.mine && selected.conversationId ? selected.conversationId : null;
     const thread = own ? await getThread(own, user.id, 30) : [];
-    if (own) await markRead(own, user.id, thread[thread.length - 1]?.id ?? 0);
+    if (own) await markRead(own, user.id, thread[thread.length - 1]?.id ?? null);
     panel = { recipient: selected, thread, notes: await familyNotesView(teamId, selected.familyEmail) };
   }
 
@@ -53,7 +56,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -62,12 +65,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (notes) return data(notes);
 
   if (intent === "remind") {
-    const { reminded } = await remindAnnouncement(request, Number(params.announcementId), teamId, user);
+    const { reminded } = await remindAnnouncement(request, parseId(params.announcementId), teamId, user);
     return data({ ok: true, reminded });
   }
 
   if (intent === "reply" || intent === "done" || intent === "undone") {
-    const found = await getConversationAccess(Number(formData.get("conversationId")), user.id);
+    const found = await getConversationAccess(parseId(formData.get("conversationId")), user.id);
     if (!found || found.viewer !== "coach" || found.conversation.teamId !== teamId) {
       return data({ error: "Thread not found" }, { status: 404 });
     }
@@ -129,7 +132,7 @@ function StateBadge({ r, opensTracked }: { r: RecipientView; opensTracked: boole
 
 export default function AnnouncementTracker({ loaderData, actionData }: Route.ComponentProps) {
   const { team, me, announcement, senderName, recipients, stats, panel } = loaderData;
-  const base = `/dashboard/team/${team.id}`;
+  const base = teamPath(team);
   const [params, setParams] = useSearchParams();
   const navigation = useNavigation();
   const reminding = navigation.state === "submitting" && navigation.formData?.get("_action") === "remind";
@@ -303,7 +306,7 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
         {panel && (
           <FamilyPanel
             key={panel.recipient.id}
-            teamId={team.id}
+            teamCode={team.code}
             me={me}
             senderName={senderName}
             panel={panel}
@@ -324,15 +327,15 @@ export default function AnnouncementTracker({ loaderData, actionData }: Route.Co
 type Panel = NonNullable<Route.ComponentProps["loaderData"]["panel"]>;
 
 function FamilyPanel({
-  teamId,
+  teamCode,
   me,
   senderName,
   panel,
   opensTracked,
   onClose,
 }: {
-  teamId: number;
-  me: number;
+  teamCode: string;
+  me: string;
   senderName: string;
   panel: Panel;
   opensTracked: boolean;
@@ -417,7 +420,7 @@ function FamilyPanel({
               <p className="text-muted">This went to every family, so replies are in the team chat, under the announcement.</p>
               {r.conversationId && r.messageId && (
                 <Link
-                  to={`/dashboard/team/${teamId}/messages/${r.conversationId}?thread=${r.messageId}`}
+                  to={teamPath(teamCode, `messages/${r.conversationId}?thread=${r.messageId}`)}
                   className={buttonClass({ variant: "secondary", size: "sm" })}
                 >
                   <ArrowSquareOut size={16} />
@@ -471,7 +474,7 @@ function FamilyPanel({
             <reply.Form method="post">
               <input type="hidden" name="_action" value="reply" />
               <input type="hidden" name="conversationId" value={r.conversationId ?? ""} />
-              <EmailToggle email={r.familyEmail} pushReady={r.pushReady} conversationId={r.conversationId ?? 0} />
+              <EmailToggle email={r.familyEmail} pushReady={r.pushReady} conversationId={r.conversationId ?? ""} />
               <div className="flex items-end gap-2">
                 <label htmlFor="panel-reply" className="sr-only">Reply</label>
                 <textarea
@@ -506,7 +509,7 @@ function FamilyPanel({
                   </done.Form>
                 )}
                 {r.conversationId && (
-                  <Link to={`/dashboard/team/${teamId}/messages/${r.conversationId}`} className="tap flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Open full thread">
+                  <Link to={teamPath(teamCode, `messages/${r.conversationId}`)} className="tap flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink" aria-label="Open full thread">
                     <ArrowSquareOut size={18} />
                   </Link>
                 )}

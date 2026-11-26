@@ -21,7 +21,7 @@ const PAGE_SIZE = 15;
 export type FeedRole = "staff" | "parent";
 
 /** Staff (any coach role) or a parent of a player on the team; null for anyone else */
-export async function feedRole(userId: number, teamId: number): Promise<FeedRole | null> {
+export async function feedRole(userId: string, teamId: string): Promise<FeedRole | null> {
   if (await getTeamForUser(teamId, userId)) return "staff";
   const [row] = await db
     .select({ id: guardians.id })
@@ -32,7 +32,7 @@ export async function feedRole(userId: number, teamId: number): Promise<FeedRole
 }
 
 /** Teams a parent sees in the family feed: every team they have a kid on */
-export async function parentFeedTeamIds(userId: number) {
+export async function parentFeedTeamIds(userId: string) {
   const rows = await db.selectDistinct({ teamId: guardians.teamId }).from(guardians).where(eq(guardians.userId, userId));
   return rows.map((r) => r.teamId);
 }
@@ -40,7 +40,7 @@ export async function parentFeedTeamIds(userId: number) {
 // ---------------------------------------------------------------------------
 // Reading
 
-export async function getFeedPage({ viewerId, teamIds, beforeId }: { viewerId: number; teamIds: number[]; beforeId?: number }): Promise<FeedPage> {
+export async function getFeedPage({ viewerId, teamIds, beforeId }: { viewerId: string; teamIds: string[]; beforeId?: string }): Promise<FeedPage> {
   if (teamIds.length === 0) return { posts: [], hasMore: false };
   const rows = await db
     .select()
@@ -62,10 +62,10 @@ export async function getFeedUpdates({
   sinceId,
   oldestId,
 }: {
-  viewerId: number;
-  teamIds: number[];
-  sinceId: number;
-  oldestId?: number;
+  viewerId: string;
+  teamIds: string[];
+  sinceId: string;
+  oldestId?: string;
 }): Promise<FeedUpdates> {
   if (teamIds.length === 0) return { posts: [], liveIds: [], stats: {} };
   const fresh = await db
@@ -84,7 +84,7 @@ export async function getFeedUpdates({
 }
 
 /** One post, or null if it's gone or the viewer isn't on its team */
-export async function getPost(postId: number, viewerId: number) {
+export async function getPost(postId: string, viewerId: string) {
   const [row] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
   if (!row) return null;
   const role = await feedRole(viewerId, row.teamId);
@@ -93,7 +93,7 @@ export async function getPost(postId: number, viewerId: number) {
   return { post, role };
 }
 
-async function hydrate(rows: (typeof posts.$inferSelect)[], viewerId: number): Promise<FeedPost[]> {
+async function hydrate(rows: (typeof posts.$inferSelect)[], viewerId: string): Promise<FeedPost[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const teamIds = [...new Set(rows.map((r) => r.teamId))];
@@ -127,13 +127,13 @@ async function hydrate(rows: (typeof posts.$inferSelect)[], viewerId: number): P
   });
 }
 
-async function staffByTeam(teamIds: number[]) {
+async function staffByTeam(teamIds: string[]) {
   const entries = await Promise.all(teamIds.map(async (id) => [id, await getStaffRoles(id)] as const));
-  return new Map<number, Map<number, StaffRole>>(entries);
+  return new Map<string, Map<string, StaffRole>>(entries);
 }
 
-async function getStats(postIds: number[], viewerId: number) {
-  const result = new Map<number, PostStats>();
+async function getStats(postIds: string[], viewerId: string) {
+  const result = new Map<string, PostStats>();
   if (postIds.length === 0) return result;
   const [likes, comments] = await Promise.all([
     db
@@ -157,11 +157,11 @@ async function getStats(postIds: number[], viewerId: number) {
   return result;
 }
 
-export async function getPostStats(postId: number, viewerId: number) {
+export async function getPostStats(postId: string, viewerId: string) {
   return (await getStats([postId], viewerId)).get(postId)!;
 }
 
-export async function getComments(postId: number, teamId: number, viewerId: number): Promise<PostComment[]> {
+export async function getComments(postId: string, teamId: string, viewerId: string): Promise<PostComment[]> {
   const [rows, roles] = await Promise.all([
     db
       .select({
@@ -190,7 +190,7 @@ export async function getComments(postId: number, teamId: number, viewerId: numb
   }));
 }
 
-export async function getLikers(postId: number): Promise<Liker[]> {
+export async function getLikers(postId: string): Promise<Liker[]> {
   const rows = await db
     .select({ id: users.id, name: users.name, email: users.email })
     .from(postLikes)
@@ -217,11 +217,11 @@ export async function publishPost({
   caption,
   files,
 }: {
-  userId: number;
-  teamId: number;
+  userId: string;
+  teamId: string;
   caption: string | null;
   files: PublishFile[];
-}): Promise<{ postId: number; created: boolean } | null> {
+}): Promise<{ postId: string; created: boolean } | null> {
   const keys = files.map((f) => f.key);
   const copyKeys = files.flatMap((f) => [f.displayKey, f.thumbKey]).filter((k): k is string => Boolean(k));
 
@@ -279,7 +279,7 @@ export async function publishPost({
 }
 
 /** Files taken out of the composer, or a draft left behind: gone from storage too */
-export async function discardUploads(userId: number, keys: string[]) {
+export async function discardUploads(userId: string, keys: string[]) {
   const deleted = await db
     .delete(postUploads)
     .where(and(eq(postUploads.userId, userId), inArray(postUploads.fileKey, keys)))
@@ -309,21 +309,21 @@ async function deleteFiles(keys: string[]) {
 }
 
 /** Push to the rest of the team (the "posts" category is off unless they turn it on) and tell open feeds */
-export async function announcePost(post: { id: number; teamId: number; caption: string | null }, author: { id: number; name: string }) {
+export async function announcePost(post: { id: string; teamId: string; caption: string | null }, author: { id: string; name: string }) {
   const media = await db.select({ type: postMedia.type }).from(postMedia).where(eq(postMedia.postId, post.id));
   const videos = media.filter((m) => m.type === "video").length;
   const [coaches, parents, [team]] = await Promise.all([
     getCoachUserIds(post.teamId),
     getParentUserIds(post.teamId),
-    db.select({ name: teams.name }).from(teams).where(eq(teams.id, post.teamId)).limit(1),
+    db.select({ name: teams.name, code: teams.code }).from(teams).where(eq(teams.id, post.teamId)).limit(1),
   ]);
   const title = postSummary(author.name.split(" ")[0], media.length - videos, videos);
   const body = post.caption?.slice(0, 140) || team?.name || "Team feed";
-  const others = (ids: number[]) => ids.filter((id) => id !== author.id);
+  const others = (ids: string[]) => ids.filter((id) => id !== author.id);
   const coachSet = new Set(coaches);
   await Promise.all([
     publishFeed(post.teamId, { kind: "post" }),
-    sendPush(others(coaches), "posts", { title, body, url: postPath({ teamId: post.teamId }, post.id), tag: `post-${post.id}` }),
+    sendPush(others(coaches), "posts", { title, body, url: postPath({ teamCode: team?.code ?? "" }, post.id), tag: `post-${post.id}` }),
     sendPush(others(parents.filter((id) => !coachSet.has(id))), "posts", { title, body, url: postPath("family", post.id), tag: `post-${post.id}` }),
   ]);
 }
@@ -331,7 +331,7 @@ export async function announcePost(post: { id: number; teamId: number; caption: 
 // ---------------------------------------------------------------------------
 // Likes, comments, deleting
 
-export async function setLiked(postId: number, userId: number, liked: boolean) {
+export async function setLiked(postId: string, userId: string, liked: boolean) {
   if (liked) await db.insert(postLikes).values({ postId, userId }).onConflictDoNothing();
   else await db.delete(postLikes).where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
 }
@@ -342,8 +342,8 @@ export async function addComment({
   clientId,
   body,
 }: {
-  post: { id: number; teamId: number; authorId: number };
-  user: { id: number; name: string };
+  post: { id: string; teamId: string; authorId: string };
+  user: { id: string; name: string };
   clientId: string;
   body: string;
 }) {
@@ -356,18 +356,18 @@ export async function addComment({
 
   if (post.authorId !== user.id) {
     // Parents open it in the family app, staff in the dashboard
-    const isStaff = Boolean(await getTeamForUser(post.teamId, post.authorId));
+    const staffAccess = await getTeamForUser(post.teamId, post.authorId);
     await sendPush([post.authorId], "comments", {
       title: `${user.name.split(" ")[0]} commented on your post`,
       body: body.slice(0, 140),
-      url: isStaff ? postPath({ teamId: post.teamId }, post.id) : postPath("family", post.id),
+      url: staffAccess ? postPath({ teamCode: staffAccess.team.code }, post.id) : postPath("family", post.id),
       tag: `post-${post.id}-comments`,
     });
   }
 }
 
 /** Deletes a comment on this post if the viewer wrote it or is on the team's staff */
-export async function deleteComment(postId: number, teamId: number, commentId: number, viewerId: number) {
+export async function deleteComment(postId: string, teamId: string, commentId: string, viewerId: string) {
   const [comment] = await db
     .select({ userId: postComments.userId })
     .from(postComments)
@@ -380,7 +380,7 @@ export async function deleteComment(postId: number, teamId: number, commentId: n
 }
 
 /** Deletes the post, its likes and comments, and its files */
-export async function deletePost(postId: number) {
+export async function deletePost(postId: string) {
   const media = await db.select().from(postMedia).where(eq(postMedia.postId, postId));
   await db.transaction(async (tx) => {
     await tx.delete(postLikes).where(eq(postLikes.postId, postId));
@@ -391,7 +391,7 @@ export async function deletePost(postId: number) {
   await deleteFiles(media.flatMap((m) => [m.fileKey, m.displayKey, m.thumbKey]).filter((k): k is string => Boolean(k)));
 }
 
-export async function getPostRow(postId: number) {
+export async function getPostRow(postId: string) {
   const [row] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
   return row ?? null;
 }

@@ -15,6 +15,7 @@ import {
   getMembers,
   loadBook,
   memberKey,
+  parsePlayerIds,
   pendingClaims,
   recordPayment,
   reverseTxn,
@@ -29,6 +30,8 @@ import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx,
 import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
 import { invoicePreview, shareTotals } from "~/utils/billing.server";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export function meta() {
   return [{ title: "Finances - BenchTalk" }];
@@ -36,7 +39,7 @@ export function meta() {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const funds = await ensureDefaultFund(team.id);
   const [book, items, claims] = await Promise.all([loadBook(team.id), getItems(team.id), pendingClaims(team.id)]);
   const members = await getMembers(team.id, book);
@@ -49,6 +52,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const staff = members.filter((m) => m.member.type === "staff");
   return data({
     teamId: team.id,
+    teamCode: team.code,
     venmoHandle: team.venmoHandle,
     formKey: newFormKey(),
     today: todayISO(),
@@ -73,7 +77,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
 
@@ -89,7 +93,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       const claimId = readId(formData, "claimId");
       const [claim] = await db.select().from(ledgerClaims).where(and(eq(ledgerClaims.id, claimId), eq(ledgerClaims.teamId, team.id))).limit(1);
       if (!claim || claim.status !== "pending") throw new LedgerError("Someone already handled that payment");
-      const playerIds: number[] = JSON.parse(claim.playerIds);
+      const playerIds = parsePlayerIds(claim.playerIds);
       await recordPayment({
         teamId: team.id,
         members: playerIds.map((id) => ({ type: "player" as const, id })),
@@ -123,8 +127,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function Money({ loaderData }: Route.ComponentProps) {
-  const { teamId, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity, toInvoice } = loaderData;
-  const base = `/dashboard/team/${teamId}/finances`;
+  const { teamCode, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity, toInvoice } = loaderData;
+  const base = teamPath(teamCode, "finances");
   const newItem = (
     <Link to={`${base}/items/new`} className={buttonClass()}>
       <Plus size={18} weight="bold" />
@@ -247,7 +251,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         {a.text}
                         {a.memo && <span className="block text-muted no-underline">{a.memo}</span>}
                         <span className="block text-xs text-muted">
-                          #{a.id} · {a.occurredOn}
+                          {a.occurredOn}
                           {a.by && ` · ${a.by}`}
                         </span>
                       </span>
@@ -341,7 +345,7 @@ function ClaimCard({
   formKey,
   today,
 }: {
-  claim: { id: number; cents: number; method: "venmo" | "cash" | "check" | "other"; from: string; forNames: string[]; note: string | null; createdAt: string };
+  claim: { id: string; cents: number; method: "venmo" | "cash" | "check" | "other"; from: string; forNames: string[]; note: string | null; createdAt: string };
   formKey: string;
   today: string;
 }) {

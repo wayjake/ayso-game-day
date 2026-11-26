@@ -13,15 +13,16 @@
 //   cash    (one per team)         > 0 money the team holds (Venmo, cash, checks)
 
 import { allocate, isCents, sumCents, type Cents } from "./money.ts";
+import { compareIds } from "./ids.ts";
 
 export const ACCOUNT_TYPES = ["player", "staff", "item", "fund", "cash"] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
-// `id` is the player, user, item or fund id; null for cash
-export type Account = { type: AccountType; id: number | null };
+// `id` is the player, user, item or fund id (a UUID); null for cash
+export type Account = { type: AccountType; id: string | null };
 export type Line = { account: Account; cents: Cents };
 
 // Who can owe the team: a player (their family) or a staff member
-export type Member = { type: "player" | "staff"; id: number };
+export type Member = { type: "player" | "staff"; id: string };
 
 export const TXN_KINDS = [
   "charge", // a member owes for a line item
@@ -118,19 +119,19 @@ function sharesTotal(shares: { cents: Cents }[]) {
 export type Share = { member: Member; cents: Cents };
 
 // Members owe for a line item
-export function chargeLines(itemId: number, shares: Share[]): Line[] {
+export function chargeLines(itemId: string, shares: Share[]): Line[] {
   const total = sharesTotal(shares);
   return tidy([...shares.map((s) => ({ account: member(s.member), cents: s.cents })), { account: { type: "item", id: itemId }, cents: -total }]);
 }
 
 // A fund pays members' charges for an item
-export function coverLines(fundId: number, shares: Share[]): Line[] {
+export function coverLines(fundId: string, shares: Share[]): Line[] {
   const total = sharesTotal(shares);
   return tidy([{ account: { type: "fund", id: fundId }, cents: total }, ...shares.map((s) => ({ account: member(s.member), cents: -s.cents }))]);
 }
 
 // Part of a refundable item comes back: members are owed it
-export function creditLines(itemId: number, shares: Share[]): Line[] {
+export function creditLines(itemId: string, shares: Share[]): Line[] {
   const total = sharesTotal(shares);
   return tidy([{ account: { type: "item", id: itemId }, cents: total }, ...shares.map((s) => ({ account: member(s.member), cents: -s.cents }))]);
 }
@@ -155,7 +156,7 @@ export function splitPayment(cents: Cents, owed: { member: Member; owedCents: Ce
 export function paymentLines(
   cents: Cents,
   owed: { member: Member; owedCents: Cents }[],
-  extraTo: { type: "credit" } | { type: "fund"; fundId: number } = { type: "credit" }
+  extraTo: { type: "credit" } | { type: "fund"; fundId: string } = { type: "credit" }
 ): Line[] {
   const { shares, extra } = splitPayment(cents, owed);
   const lines: Line[] = [{ account: CASH, cents }, ...shares.map((s) => ({ account: member(s.member), cents: -s.cents }))];
@@ -170,13 +171,13 @@ export function paymentLines(
 }
 
 // Money into a fund: received now (from: cash), or a member giving up credit they're owed
-export function donationLines(fundId: number, cents: Cents, from: { type: "cash" } | { type: "member"; member: Member }): Line[] {
+export function donationLines(fundId: string, cents: Cents, from: { type: "cash" } | { type: "member"; member: Member }): Line[] {
   positive(cents, "The amount");
   const source = from.type === "cash" ? CASH : member(from.member);
   return tidy([{ account: source, cents }, { account: { type: "fund", id: fundId }, cents: -cents }]);
 }
 
-export function transferLines(fromFundId: number, toFundId: number, cents: Cents): Line[] {
+export function transferLines(fromFundId: string, toFundId: string, cents: Cents): Line[] {
   positive(cents, "The amount");
   if (fromFundId === toFundId) throw new LedgerError("Pick two different funds");
   return [{ account: { type: "fund", id: fromFundId }, cents }, { account: { type: "fund", id: toFundId }, cents: -cents }];
@@ -185,9 +186,9 @@ export function transferLines(fromFundId: number, toFundId: number, cents: Cents
 // Money passed on for an item, or spent out of a fund. Paid from team cash,
 // or fronted by a staff member, which the team then owes them.
 export function expenseLines(
-  target: { type: "item"; itemId: number } | { type: "fund"; fundId: number },
+  target: { type: "item"; itemId: string } | { type: "fund"; fundId: string },
   cents: Cents,
-  paidBy: { type: "cash" } | { type: "staff"; userId: number }
+  paidBy: { type: "cash" } | { type: "staff"; userId: string }
 ): Line[] {
   positive(cents, "The amount");
   const account: Account = target.type === "item" ? { type: "item", id: target.itemId } : { type: "fund", id: target.fundId };
@@ -195,7 +196,7 @@ export function expenseLines(
   return [{ account, cents }, { account: from, cents: -cents }];
 }
 
-export function reimburseLines(userId: number, cents: Cents): Line[] {
+export function reimburseLines(userId: string, cents: Cents): Line[] {
   positive(cents, "The amount");
   return [{ account: { type: "staff", id: userId }, cents }, { account: CASH, cents: -cents }];
 }
@@ -205,7 +206,7 @@ export function refundLines(m: Member, cents: Cents): Line[] {
   return [{ account: member(m), cents }, { account: CASH, cents: -cents }];
 }
 
-export function vendorRefundLines(itemId: number, cents: Cents): Line[] {
+export function vendorRefundLines(itemId: string, cents: Cents): Line[] {
   positive(cents, "The amount");
   return [{ account: CASH, cents }, { account: { type: "item", id: itemId }, cents: -cents }];
 }
@@ -289,7 +290,7 @@ export function settleTargets(costCents: Cents, shares: ShareSpec[]): MemberCent
 }
 
 // Posts share changes: up adds to what someone owes, down takes it off
-export function shareLines(itemId: number, changes: MemberCents[]): Line[] {
+export function shareLines(itemId: string, changes: MemberCents[]): Line[] {
   const lines = tidy([
     ...changes.map((c) => ({ account: member(c.member), cents: c.cents })),
     { account: { type: "item", id: itemId } as Account, cents: -sumCents(changes.map((c) => c.cents)) },
@@ -304,30 +305,30 @@ export function shareLines(itemId: number, changes: MemberCents[]): Line[] {
 // Players who share a contact email or a parent account are one family, and
 // get one invoice. Linked through any chain, so two brothers listed under mom's
 // email and dad's both land together.
-export function groupFamilies(playerIds: number[], links: { playerId: number; key: string }[]): number[][] {
-  const parent = new Map<number, number>(playerIds.map((id) => [id, id]));
-  const find = (id: number): number => {
+export function groupFamilies(playerIds: string[], links: { playerId: string; key: string }[]): string[][] {
+  const parent = new Map<string, string>(playerIds.map((id) => [id, id]));
+  const find = (id: string): string => {
     let root = id;
     while (parent.get(root) !== root) root = parent.get(root)!;
     parent.set(id, root);
     return root;
   };
-  const firstWithKey = new Map<string, number>();
+  const firstWithKey = new Map<string, string>();
   for (const { playerId, key } of links) {
     if (!parent.has(playerId)) continue;
     const other = firstWithKey.get(key);
     if (other === undefined) firstWithKey.set(key, playerId);
     else parent.set(find(playerId), find(other));
   }
-  const groups = new Map<number, number[]>();
+  const groups = new Map<string, string[]>();
   for (const id of playerIds) groups.set(find(id), [...(groups.get(find(id)) ?? []), id]);
-  return [...groups.values()].map((g) => g.sort((a, b) => a - b)).sort((a, b) => a[0] - b[0]);
+  return [...groups.values()].map((g) => g.sort(compareIds)).sort((a, b) => compareIds(a[0], b[0]));
 }
 
 // Money a family has paid in, applied to their invoices oldest first. An
 // invoice that comes to less than zero (a fund covered a share, a refund) pays
 // toward the others the same way.
-export function invoiceStatuses(invoices: { id: number; totalCents: Cents }[], paidIn: Cents) {
+export function invoiceStatuses(invoices: { id: string; totalCents: Cents }[], paidIn: Cents) {
   let pool = paidIn + sumCents(invoices.map((i) => Math.max(0, -i.totalCents)));
   return invoices.map((inv) => {
     const due = Math.max(0, inv.totalCents);
@@ -374,15 +375,15 @@ export function overdrawn(before: Map<string, Cents>, lines: Line[]): Account[] 
 
 // One line on a member's account, with what it was for
 export type MemberLine = {
-  txnId: number;
+  txnId: string;
   kind: TxnKind;
   cents: Cents; // as on the member's account: + adds to what they owe
-  itemId: number | null;
+  itemId: string | null;
   reversed: boolean; // this transaction was reversed (it and its reversal are both left out)
 };
 
 export type ItemStatus = {
-  itemId: number;
+  itemId: string;
   charged: Cents;
   covered: Cents; // paid by a fund
   credited: Cents; // came back (refundable items)
@@ -407,8 +408,8 @@ export type Statement = {
 // always equals the sum of the lines.
 export function statement(lines: MemberLine[]): Statement {
   const live = lines.filter((l) => !l.reversed && l.kind !== "reversal");
-  const byItem = new Map<number, ItemStatus>();
-  const status = (itemId: number) => {
+  const byItem = new Map<string, ItemStatus>();
+  const status = (itemId: string) => {
     let s = byItem.get(itemId);
     if (!s) byItem.set(itemId, (s = { itemId, charged: 0, covered: 0, credited: 0, paid: 0, remaining: 0 }));
     return s;
@@ -429,14 +430,15 @@ export function statement(lines: MemberLine[]): Statement {
     if (net < 0) pool += -net;
   }
 
-  // When each item was first charged to this member (or first touched at all)
-  const firstSeen = new Map<number, number>();
+  // When each item was first charged to this member (or first touched at all).
+  // Transaction ids are UUIDv7, so the lowest is the oldest.
+  const firstSeen = new Map<string, string>();
   for (const l of live) {
     if (l.itemId === null) continue;
     const seen = firstSeen.get(l.itemId);
     if (seen === undefined || l.txnId < seen) firstSeen.set(l.itemId, l.txnId);
   }
-  const order = [...byItem.values()].sort((a, b) => (firstSeen.get(a.itemId) ?? 0) - (firstSeen.get(b.itemId) ?? 0) || a.itemId - b.itemId);
+  const order = [...byItem.values()].sort((a, b) => compareIds(firstSeen.get(a.itemId) ?? "", firstSeen.get(b.itemId) ?? "") || compareIds(a.itemId, b.itemId));
 
   for (const s of order) {
     if (pool <= 0) break;

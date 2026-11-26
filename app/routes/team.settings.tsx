@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.settings";
 import { Form, Link, data, useNavigation } from "react-router";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { getTeamStaff, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole } from "~/utils/team-access.server";
+import { getTeamStaff, removeFromStaff, requireTeamAccess, requireTeamOwner, setStaffRole, teamIdFromCode } from "~/utils/team-access.server";
 import { inviteUrl } from "~/utils/invites.server";
 import { inviteStaff, setTeamArchived } from "~/utils/staff-invites.server";
 import { CopyButton, RoleSelect, StaffInviteForm } from "~/components/StaffInviteForm";
@@ -14,15 +14,16 @@ import { APP_TIME_ZONE } from "~/utils/dates";
 import { StaffBadge } from "~/components/StaffBadge";
 import { parseStaffRole, staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 import { Archive, ArrowCounterClockwise, Crown, EnvelopeSimple, UserCircle } from "@phosphor-icons/react";
+import { parseId } from "~/utils/ids";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team, role } = await requireTeamAccess(teamId, user.id);
 
   const staff = await getTeamStaff(teamId);
 
-  let pendingInvites: { id: number; email: string | null; role: StaffRole; url: string; expiresAt: string }[] = [];
+  let pendingInvites: { id: string; email: string | null; role: StaffRole; url: string; expiresAt: string }[] = [];
 
   if (role === "owner") {
     const invites = await db
@@ -54,7 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team } = await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
@@ -109,7 +110,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "revokeInvite") {
     await requireTeamOwner(teamId, user.id);
-    const inviteId = parseInt(text("inviteId"));
+    const inviteId = parseId(text("inviteId"));
+    if (!inviteId) return data({ intent, error: "That invite isn't there anymore" }, { status: 400 });
     await db
       .update(teamInvites)
       .set({ status: "revoked" })
@@ -119,19 +121,19 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "setRole") {
     await requireTeamOwner(teamId, user.id);
-    const userId = parseInt(text("userId"));
+    const userId = parseId(text("userId"));
     const role = parseStaffRole(formData.get("role"));
     const member = (await getTeamStaff(teamId)).find((s) => s.userId === userId);
-    if (!member || !role) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
+    if (!userId || !member || !role) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
     await setStaffRole(teamId, userId, role, user.id);
     return data({ intent, success: `${member.name || member.email} is now ${staffRoleLabel(role).toLowerCase()}` });
   }
 
   if (intent === "removeMember") {
     await requireTeamOwner(teamId, user.id);
-    const userId = parseInt(text("userId"));
+    const userId = parseId(text("userId"));
     const member = (await getTeamStaff(teamId)).find((s) => s.userId === userId);
-    if (!member || member.isOwner) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
+    if (!userId || !member || member.isOwner) return data({ intent, error: "That person isn't on the team staff" }, { status: 400 });
     await removeFromStaff(teamId, userId);
     return data({ intent, success: `${member.name || member.email} was removed from the staff. If they're a parent on the team, they still have the family app.` });
   }

@@ -7,10 +7,12 @@ import { db, teams, players, contacts } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass } from "~/components/ui";
 import { AddressBook, EnvelopeSimple, PencilSimple, Phone, Plus, Star } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
 
   // Get team details
   const [team] = await db
@@ -40,15 +42,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .where(eq(contacts.teamId, teamId))
     .orderBy(contacts.name);
 
-  // Group contacts by player
+  // Group contacts by player ("" holds the general team contacts)
   const contactsByPlayer = teamContacts.reduce((acc, contact) => {
-    const playerId = contact.playerId || 0;
+    const playerId = contact.playerId || "";
     if (!acc[playerId]) {
       acc[playerId] = [];
     }
     acc[playerId].push(contact);
     return acc;
-  }, {} as Record<number, typeof teamContacts>);
+  }, {} as Record<string, typeof teamContacts>);
 
   return data({
     team,
@@ -64,7 +66,7 @@ export function meta({ params }: Route.MetaArgs) {
   ];
 }
 
-function ContactRow({ contact, teamId }: { contact: any; teamId: number }) {
+function ContactRow({ contact, teamCode }: { contact: any; teamCode: string }) {
   const relationshipTone = (relationship: string) => {
     switch (relationship) {
       case 'parent':
@@ -113,7 +115,7 @@ function ContactRow({ contact, teamId }: { contact: any; teamId: number }) {
         )}
       </div>
       <Link
-        to={`/dashboard/team/${teamId}/contacts/${contact.id}/edit`}
+        to={`${teamPath(teamCode)}/contacts/${contact.id}/edit`}
         className={buttonClass({ variant: "ghost", size: "sm" })}
       >
         <PencilSimple size={16} />
@@ -135,7 +137,7 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
         description="Contact information for player families."
         actions={
           hasContacts && (
-            <Link to={`/dashboard/team/${team.id}/contacts/new`} className={buttonClass()}>
+            <Link to={`${teamPath(team)}/contacts/new`} className={buttonClass()}>
               <Plus size={18} weight="bold" />
               Add contact
             </Link>
@@ -155,7 +157,7 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
                 <CardHeader title={player.name} count={playerContacts.length} />
                 <ul className="mt-2 divide-y divide-line">
                   {playerContacts.map((contact) => (
-                    <ContactRow key={contact.id} contact={contact} teamId={team.id} />
+                    <ContactRow key={contact.id} contact={contact} teamCode={team.code} />
                   ))}
                 </ul>
               </Card>
@@ -163,12 +165,12 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
           })}
 
           {/* Contacts without a player */}
-          {contactsByPlayer[0] && contactsByPlayer[0].length > 0 && (
+          {contactsByPlayer[""] && contactsByPlayer[""].length > 0 && (
             <Card className="p-5 sm:p-6">
-              <CardHeader title="General team contacts" count={contactsByPlayer[0].length} />
+              <CardHeader title="General team contacts" count={contactsByPlayer[""].length} />
               <ul className="mt-2 divide-y divide-line">
-                {contactsByPlayer[0].map((contact) => (
-                  <ContactRow key={contact.id} contact={contact} teamId={team.id} />
+                {contactsByPlayer[""].map((contact) => (
+                  <ContactRow key={contact.id} contact={contact} teamCode={team.code} />
                 ))}
               </ul>
             </Card>
@@ -180,7 +182,7 @@ export default function TeamContacts({ loaderData }: Route.ComponentProps) {
             icon={<AddressBook size={24} />}
             title="No contacts yet"
             action={
-              <Link to={`/dashboard/team/${team.id}/contacts/new`} className={buttonClass()}>
+              <Link to={`${teamPath(team)}/contacts/new`} className={buttonClass()}>
                 <Plus size={18} weight="bold" />
                 Add your first contact
               </Link>

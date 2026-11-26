@@ -85,7 +85,7 @@ export default function PublicGameView({ loaderData }: Route.ComponentProps) {
   const positionChanges = previous ? changesBetween(previous, current) : [];
 
   // Rings on the field for players who are new or moved since last quarter
-  const highlights = new Map<number, SlotHighlight>();
+  const highlights = new Map<string, SlotHighlight>();
   if (showChangeIndicators) {
     for (const change of positionChanges) {
       if (change.changeType === "new_in") highlights.set(change.playerId, "in");

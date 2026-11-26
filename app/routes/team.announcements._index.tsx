@@ -16,7 +16,7 @@ export default function AnnouncementsIndex({ params }: Route.ComponentProps) {
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
         Choose one on the left to see who opened it, who replied and who still needs a nudge, or send a new one.
       </p>
-      <Link to={`/dashboard/team/${params.teamId}/announcements/new`} className={buttonClass({ className: "mt-5" })}>
+      <Link to={`/dashboard/team/${params.teamCode}/announcements/new`} className={buttonClass({ className: "mt-5" })}>
         <Plus size={18} weight="bold" />
         New announcement
       </Link>

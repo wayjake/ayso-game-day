@@ -149,8 +149,8 @@ export function LineupField({
 }: {
   positions: FormationPosition[];
   lineup: QuarterLineup;
-  players: Array<{ id: number; name: string; jerseyNumber?: number | null }>;
-  highlights?: Map<number, SlotHighlight>;
+  players: Array<{ id: string; name: string; jerseyNumber?: number | null }>;
+  highlights?: Map<string, SlotHighlight>; // by player id
   size?: "md" | "lg";
   className?: string;
 }) {

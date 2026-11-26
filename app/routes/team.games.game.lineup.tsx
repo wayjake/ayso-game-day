@@ -40,11 +40,14 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const gameId = parseInt(params.gameId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const gameId = parseId(params.gameId) ?? ""; // Not an id: matches no game, so 404 below
   
   // Get team details and verify ownership
   const [team] = await db
@@ -153,8 +156,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
-  const gameId = parseInt(params.gameId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const gameId = parseId(params.gameId) ?? ""; // Not an id: matches no game, so 404 below
   
   // Verify team ownership
   const [team] = await db
@@ -193,10 +196,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Rebuild assignment rows from whitelisted fields, forcing this game's id
   const toAssignmentRows = (rows: any[]) =>
     rows
-      .filter((row) => teamPlayerIds.has(Number(row.playerId)))
+      .filter((row) => teamPlayerIds.has(String(row.playerId)))
       .map((row) => ({
         gameId,
-        playerId: Number(row.playerId),
+        playerId: String(row.playerId),
         positionNumber: Number(row.positionNumber),
         positionName: row.positionName ?? null,
         quarter: Number(row.quarter) || 1,
@@ -205,8 +208,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const action = formData.get("_action") as string;
 
+  // Every action that names a player needs one on this team
   const playerIdField = formData.get("playerId");
-  if (playerIdField && !teamPlayerIds.has(parseInt(playerIdField as string))) {
+  const playerId = parseId(playerIdField) ?? "";
+  if ((playerIdField || ["assignPlayer", "sitOutPlayer", "markAbsentInjured", "clearAbsentInjured"].includes(action)) && !teamPlayerIds.has(playerId)) {
     return data(
       { success: false, error: "Player not found" },
       { status: 404 }
@@ -215,7 +220,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   if (action === "assignPlayer") {
     try {
-      const playerId = parseInt(formData.get("playerId") as string);
       const positionNumber = parseInt(formData.get("positionNumber") as string);
       const positionName = formData.get("positionName") as string;
       const quarter = parseInt(formData.get("quarter") as string);
@@ -261,7 +265,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   if (action === "sitOutPlayer") {
     try {
-      const playerId = parseInt(formData.get("playerId") as string);
       const quarter = parseInt(formData.get("quarter") as string);
       
       // Remove any existing assignment for this player in this quarter
@@ -331,7 +334,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         // Special case: clearing a sitting out assignment (position 0)
         if (playerIdStr) {
           // If playerId is provided, only remove that specific player's sitting out assignment
-          const playerId = parseInt(playerIdStr);
           await db.delete(assignments).where(
             and(
               eq(assignments.gameId, gameId),
@@ -425,7 +427,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   if (action === "markAbsentInjured") {
     try {
-      const playerId = parseInt(formData.get("playerId") as string);
       const quartersParam = formData.get("quarters") as string;
       const reason = formData.get("reason") as string; // 'absent' or 'injured'
 
@@ -473,7 +474,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   
   if (action === "clearAbsentInjured") {
     try {
-      const playerId = parseInt(formData.get("playerId") as string);
       const quarter = parseInt(formData.get("quarter") as string);
       
       // Remove absent/injured record
@@ -1154,8 +1154,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const [draggedPlayer, setDraggedPlayer] = useState<any>(null);
   const [currentQuarter, setCurrentQuarter] = useState<number>(1);
   const [quarterAssignments, setQuarterAssignments] = useState<Map<number, Map<number, any>>>(new Map());
-  const [sittingOut, setSittingOut] = useState<Map<number, Set<number>>>(new Map());
-  const [absentInjured, setAbsentInjured] = useState<Map<number, Map<number, string>>>(new Map()); // quarter -> playerId -> reason
+  const [sittingOut, setSittingOut] = useState<Map<number, Set<string>>>(new Map());
+  const [absentInjured, setAbsentInjured] = useState<Map<number, Map<string, string>>>(new Map()); // quarter -> playerId -> reason
   const [showInstructions, setShowInstructions] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -1234,8 +1234,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   // Initialize existing assignments per quarter
   useEffect(() => {
     const quarterMap = new Map<number, Map<number, any>>();
-    const sitOutMap = new Map<number, Set<number>>();
-    const absentInjuredMap = new Map<number, Map<number, string>>();
+    const sitOutMap = new Map<number, Set<string>>();
+    const absentInjuredMap = new Map<number, Map<string, string>>();
 
     // Initialize all quarters with empty sets (players start as "available")
     for (let q = 1; q <= totalQuarters; q++) {
@@ -1488,7 +1488,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     );
   };
   
-  const handleClearAbsentInjured = (playerId: number) => {
+  const handleClearAbsentInjured = (playerId: string) => {
     if (typeof currentQuarter !== 'number') return;
     
     // Optimistic update - update local state immediately
@@ -1516,7 +1516,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     );
   };
   
-  const handleUnsitPlayer = (playerId: number) => {
+  const handleUnsitPlayer = (playerId: string) => {
     if (typeof currentQuarter !== 'number') return;
 
     // Optimistic update - update local state immediately
@@ -1540,18 +1540,18 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   
   // Get current quarter data
   const currentLineup = typeof currentQuarter === 'number' ? quarterAssignments.get(currentQuarter) || new Map() : new Map();
-  const currentSittingOut: Set<number> = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set<number>() : new Set<number>();
+  const currentSittingOut: Set<string> = typeof currentQuarter === 'number' ? sittingOut.get(currentQuarter) || new Set<string>() : new Set<string>();
   const currentAbsentInjured = typeof currentQuarter === 'number' ? absentInjured.get(currentQuarter) || new Map() : new Map();
 
   // Get previous quarter data for hints
   const previousQuarter = currentQuarter > 1 ? currentQuarter - 1 : null;
   const previousLineup = previousQuarter ? quarterAssignments.get(previousQuarter) || new Map() : new Map();
-  const previousSittingOut: Set<number> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<number>() : new Set<number>();
+  const previousSittingOut: Set<string> = previousQuarter ? sittingOut.get(previousQuarter) || new Set<string>() : new Set<string>();
 
   // Calculate position changes between quarters
   // Absent/injured count as off the field, so a player back from an absence
   // shows as coming on (same rule as game day and the public page)
-  const previousAbsentInjured: Map<number, string> = previousQuarter ? absentInjured.get(previousQuarter) || new Map() : new Map();
+  const previousAbsentInjured: Map<string, string> = previousQuarter ? absentInjured.get(previousQuarter) || new Map() : new Map();
   const positionChanges = previousQuarter ? calculatePositionChanges(
     previousLineup,
     currentLineup,
@@ -1578,7 +1578,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const sittingOutPlayers = players.filter((player: any) => currentSittingOut.has(player.id));
 
   // Calculate how many quarters each player is playing
-  const getPlayerQuartersPlaying = (playerId: number): number => {
+  const getPlayerQuartersPlaying = (playerId: string): number => {
     let count = 0;
     for (let q = 1; q <= totalQuarters; q++) {
       const qLineup = quarterAssignments.get(q) || new Map();
@@ -1593,7 +1593,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
     return count;
   };
 
-  const getPlayerQuartersSittingOut = (playerId: number): number => {
+  const getPlayerQuartersSittingOut = (playerId: string): number => {
     let count = 0;
     for (let q = 1; q <= totalQuarters; q++) {
       const qSitOuts = sittingOut.get(q) || new Set();
@@ -1655,8 +1655,8 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
   const handleAcceptAILineup = (quarters: Array<{
     number: number;
     completed: boolean;
-    players: Record<number, number>;
-    substitutes?: Array<{ playerId: number; playerName: string }>;
+    players: Record<number, string>; // positionNumber -> playerId
+    substitutes?: Array<{ playerId: string; playerName: string }>;
   }>) => {
     // Build all assignments for bulk insert
     const allAssignments: any[] = [];
@@ -1707,7 +1707,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
 
     quarters.forEach((quarter) => {
       const quarterLineup = new Map<number, any>();
-      const quarterSubs = new Set<number>();
+      const quarterSubs = new Set<string>();
 
       // Add field position assignments
       Object.entries(quarter.players).forEach(([positionStr, playerId]) => {
@@ -1799,7 +1799,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
             {/* Game day and the assistant up front; everything else in the menu */}
             <div className="flex items-center gap-2">
               <Link
-                to={`/dashboard/team/${team.id}/games/${game.id}/game-day`}
+                to={teamPath(team, `games/${game.id}/game-day`)}
                 className={buttonClass({ variant: "secondary" })}
                 title="Sideline view for during the game"
               >
@@ -1815,7 +1815,7 @@ export default function GameLineup({ loaderData }: Route.ComponentProps) {
                 <span className="hidden sm:inline">AI assistant</span>
               </button>
               <LineupMenu
-                gameCardHref={`/dashboard/team/${team.id}/games/${game.id}/game-card`}
+                gameCardHref={teamPath(team, `games/${game.id}/game-card`)}
                 onShare={handleShare}
                 onSummary={() => setShowOverview(true)}
                 onClear={handleClearLineup}

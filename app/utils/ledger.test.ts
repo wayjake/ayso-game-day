@@ -25,31 +25,39 @@ import {
 } from "./ledger.ts";
 import { sumCents } from "./money.ts";
 
-const ava = { type: "player" as const, id: 1 };
-const ben = { type: "player" as const, id: 2 };
-const coach = { type: "staff" as const, id: 9 };
-const key = (type: string, id: number | null = null) => `${type}:${id ?? ""}`;
+// Ids are UUIDv7 strings; these sort the same way their numbers do, like real ones by age
+const uid = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+
+const ava = { type: "player" as const, id: uid(1) };
+const ben = { type: "player" as const, id: uid(2) };
+const coach = { type: "staff" as const, id: uid(9) };
+const key = (type: string, n: number | null = null) => `${type}:${n === null ? "" : uid(n)}`;
 
 // A tiny in-memory ledger, posting the way the server does: check, then append
 function book() {
-  const txns: { id: number; kind: TxnKind; itemId: number | null; lines: Line[]; reverses?: number }[] = [];
+  const txns: { id: string; kind: TxnKind; itemId: string | null; lines: Line[]; reverses?: string }[] = [];
   return {
     txns,
-    post(kind: TxnKind, lines: Line[], itemId: number | null = null, reverses?: number) {
+    // itemNo is the item's number (its id is uid(itemNo)); returns the new transaction's id
+    post(kind: TxnKind, lines: Line[], itemNo: number | null = null, reverses?: string): string {
+      return this.postFor(kind, lines, itemNo === null ? null : uid(itemNo), reverses);
+    },
+    postFor(kind: TxnKind, lines: Line[], itemId: string | null, reverses?: string): string {
       assertBalanced(lines);
       const before = balances(txns.flatMap((t) => t.lines));
       if (kind !== "reversal" && overdrawn(before, lines).length) throw new LedgerError("overdrawn");
-      txns.push({ id: txns.length + 1, kind, itemId, lines, reverses });
-      return txns.length;
+      const id = uid(txns.length + 1);
+      txns.push({ id, kind, itemId, lines, reverses });
+      return id;
     },
-    reverse(id: number) {
+    reverse(id: string) {
       const t = txns.find((x) => x.id === id)!;
-      return this.post("reversal", reversalLines(t.lines), t.itemId, id);
+      return this.postFor("reversal", reversalLines(t.lines), t.itemId, id);
     },
-    balance(type: string, id: number | null = null) {
-      return balances(txns.flatMap((t) => t.lines)).get(key(type, id)) ?? 0;
+    balance(type: string, n: number | null = null) {
+      return balances(txns.flatMap((t) => t.lines)).get(key(type, n)) ?? 0;
     },
-    memberLines(m: { type: "player" | "staff"; id: number }): MemberLine[] {
+    memberLines(m: { type: "player" | "staff"; id: string }): MemberLine[] {
       const reversed = new Set(txns.filter((t) => t.reverses).map((t) => t.reverses));
       return txns.flatMap((t) =>
         t.lines
@@ -75,7 +83,7 @@ test("assertBalanced rejects anything that doesn't net to zero or isn't whole ce
     { account: ava, cents: 0 },
   ]), LedgerError);
   assert.throws(() => assertBalanced([
-    { account: { type: "cash", id: 3 }, cents: 5 },
+    { account: { type: "cash", id: uid(3) }, cents: 5 },
     { account: ava, cents: -5 },
   ]), LedgerError);
   assert.throws(() => assertBalanced([
@@ -86,20 +94,20 @@ test("assertBalanced rejects anything that doesn't net to zero or isn't whole ce
 
 test("every builder balances", () => {
   const all: Line[][] = [
-    chargeLines(10, [{ member: ava, cents: 8500 }, { member: coach, cents: 8500 }]),
-    coverLines(1, [{ member: ava, cents: 4250 }]),
-    creditLines(11, [{ member: ava, cents: 1000 }, { member: ben, cents: 999 }]),
+    chargeLines(uid(10), [{ member: ava, cents: 8500 }, { member: coach, cents: 8500 }]),
+    coverLines(uid(1), [{ member: ava, cents: 4250 }]),
+    creditLines(uid(11), [{ member: ava, cents: 1000 }, { member: ben, cents: 999 }]),
     paymentLines(20000, [{ member: ava, owedCents: 8500 }, { member: ben, owedCents: 4000 }]),
     paymentLines(5000, [{ member: ava, owedCents: 8500 }, { member: ben, owedCents: 4000 }]),
-    paymentLines(20000, [{ member: ava, owedCents: 8500 }], { type: "fund", fundId: 1 }),
-    donationLines(1, 2500, { type: "cash" }),
-    donationLines(1, 2500, { type: "member", member: ava }),
-    transferLines(1, 2, 700),
-    expenseLines({ type: "item", itemId: 10 }, 17000, { type: "cash" }),
-    expenseLines({ type: "fund", fundId: 1 }, 3000, { type: "staff", userId: 9 }),
-    reimburseLines(9, 3000),
+    paymentLines(20000, [{ member: ava, owedCents: 8500 }], { type: "fund", fundId: uid(1) }),
+    donationLines(uid(1), 2500, { type: "cash" }),
+    donationLines(uid(1), 2500, { type: "member", member: ava }),
+    transferLines(uid(1), uid(2), 700),
+    expenseLines({ type: "item", itemId: uid(10) }, 17000, { type: "cash" }),
+    expenseLines({ type: "fund", fundId: uid(1) }, 3000, { type: "staff", userId: uid(9) }),
+    reimburseLines(uid(9), 3000),
     refundLines(ava, 1000),
-    vendorRefundLines(11, 30000),
+    vendorRefundLines(uid(11), 30000),
   ];
   for (const lines of all) {
     assert.doesNotThrow(() => assertBalanced(lines));
@@ -108,11 +116,11 @@ test("every builder balances", () => {
 });
 
 test("builders refuse zero, negative and fractional amounts", () => {
-  assert.throws(() => chargeLines(10, []), LedgerError);
-  assert.throws(() => chargeLines(10, [{ member: ava, cents: 0 }]), LedgerError);
-  assert.throws(() => chargeLines(10, [{ member: ava, cents: -100 }]), LedgerError);
+  assert.throws(() => chargeLines(uid(10), []), LedgerError);
+  assert.throws(() => chargeLines(uid(10), [{ member: ava, cents: 0 }]), LedgerError);
+  assert.throws(() => chargeLines(uid(10), [{ member: ava, cents: -100 }]), LedgerError);
   assert.throws(() => refundLines(ava, 10.5), LedgerError);
-  assert.throws(() => transferLines(1, 1, 100), LedgerError);
+  assert.throws(() => transferLines(uid(1), uid(1), 100), LedgerError);
   assert.throws(() => paymentLines(0, [{ member: ava, owedCents: 100 }]), LedgerError);
 });
 
@@ -131,7 +139,7 @@ test("splitPayment: in full when it covers everyone, in proportion when it's sho
 test("an overpayment stays as credit unless it's donated", () => {
   const credit = balances(paymentLines(10000, [{ member: ava, owedCents: 8500 }]));
   assert.equal(credit.get(accountKey(ava)), -10000);
-  const donated = balances(paymentLines(10000, [{ member: ava, owedCents: 8500 }], { type: "fund", fundId: 1 }));
+  const donated = balances(paymentLines(10000, [{ member: ava, owedCents: 8500 }], { type: "fund", fundId: uid(1) }));
   assert.equal(donated.get(accountKey(ava)), -8500);
   assert.equal(donated.get(key("fund", 1)), -1500);
 });
@@ -139,9 +147,9 @@ test("an overpayment stays as credit unless it's donated", () => {
 test("a season: charges, payments, a cover, a refund, money passed on", () => {
   const b = book();
   // Ref fees $85 for both kids and the coach's own share
-  b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }, { member: ben, cents: 8500 }, { member: coach, cents: 8500 }]), 10);
+  b.post("charge", chargeLines(uid(10), [{ member: ava, cents: 8500 }, { member: ben, cents: 8500 }, { member: coach, cents: 8500 }]), 10);
   // Hotel $1,237.40 split across the two families' kids... and nobody else
-  b.post("charge", chargeLines(11, [{ member: ava, cents: 61870 }, { member: ben, cents: 61870 }]), 11);
+  b.post("charge", chargeLines(uid(11), [{ member: ava, cents: 61870 }, { member: ben, cents: 61870 }]), 11);
   assert.equal(b.balance("item", 11), -123740);
 
   // Ava's family pays everything on Venmo
@@ -150,25 +158,25 @@ test("a season: charges, payments, a cover, a refund, money passed on", () => {
   assert.equal(b.balance("cash"), 70370);
 
   // A sponsor gives $500 to the team fund, which covers Ben's ref fees
-  b.post("donation", donationLines(1, 50000, { type: "cash" }));
-  b.post("cover", coverLines(1, [{ member: ben, cents: 8500 }]), 10);
+  b.post("donation", donationLines(uid(1), 50000, { type: "cash" }));
+  b.post("cover", coverLines(uid(1), [{ member: ben, cents: 8500 }]), 10);
   assert.equal(b.balance("fund", 1), -41500);
   assert.equal(b.balance("player", 2), 61870);
 
   // The coach fronts the hotel deposit, the team pays them back
-  b.post("expense", expenseLines({ type: "item", itemId: 11 }, 40000, { type: "staff", userId: 9 }), 11);
+  b.post("expense", expenseLines({ type: "item", itemId: uid(11) }, 40000, { type: "staff", userId: uid(9) }), 11);
   assert.equal(b.balance("staff", 9), 8500 - 40000);
-  b.post("reimburse", reimburseLines(9, 31500)); // net of their own $85 share
+  b.post("reimburse", reimburseLines(uid(9), 31500)); // net of their own $85 share
   assert.equal(b.balance("staff", 9), 0);
 
   // Can't pay out more than the team holds
-  assert.throws(() => b.post("expense", expenseLines({ type: "item", itemId: 10 }, 999999, { type: "cash" }), 10), LedgerError);
+  assert.throws(() => b.post("expense", expenseLines({ type: "item", itemId: uid(10) }, 999999, { type: "cash" }), 10), LedgerError);
   // Can't cover more than the fund has
-  assert.throws(() => b.post("cover", coverLines(1, [{ member: ben, cents: 41501 }]), 11), LedgerError);
+  assert.throws(() => b.post("cover", coverLines(uid(1), [{ member: ben, cents: 41501 }]), 11), LedgerError);
 
   // The hotel refunds $300; it's split by what each kid was charged
-  b.post("vendor_refund", vendorRefundLines(11, 30000), 11);
-  b.post("credit", creditLines(11, [{ member: ava, cents: 15000 }, { member: ben, cents: 15000 }]), 11);
+  b.post("vendor_refund", vendorRefundLines(uid(11), 30000), 11);
+  b.post("credit", creditLines(uid(11), [{ member: ava, cents: 15000 }, { member: ben, cents: 15000 }]), 11);
   assert.equal(b.balance("player", 1), -15000); // due back to Ava's family
   b.post("refund", refundLines(ava, 15000));
   assert.equal(b.balance("player", 1), 0);
@@ -180,31 +188,31 @@ test("a season: charges, payments, a cover, a refund, money passed on", () => {
 
 test("a reversal undoes a transaction on every account", () => {
   const b = book();
-  b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
+  b.post("charge", chargeLines(uid(10), [{ member: ava, cents: 8500 }]), 10);
   const pay = b.post("payment", paymentLines(8500, [{ member: ava, owedCents: 8500 }]));
   const snapshot = balances(b.txns.flatMap((t) => t.lines));
   b.reverse(pay);
   assert.equal(b.balance("player", 1), 8500);
   assert.equal(b.balance("cash"), 0);
   // Reversing the reversal puts it back
-  b.reverse(b.txns.length);
+  b.reverse(b.txns[b.txns.length - 1].id);
   assert.deepEqual(balances(b.txns.flatMap((t) => t.lines)), snapshot);
 });
 
 test("statement: payments pay off the oldest charge first, and stay put when a newer charge comes", () => {
   const b = book();
-  b.post("charge", chargeLines(11, [{ member: ava, cents: 20000 }]), 11); // hotel, due Feb 1
+  b.post("charge", chargeLines(uid(11), [{ member: ava, cents: 20000 }]), 11); // hotel, due Feb 1
   b.post("payment", paymentLines(20000, [{ member: ava, owedCents: 20000 }]));
   // Ref fees are due sooner, but the hotel payment is still the hotel's
-  b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
-  b.post("charge", chargeLines(12, [{ member: ava, cents: 5000 }]), 12);
+  b.post("charge", chargeLines(uid(10), [{ member: ava, cents: 8500 }]), 10);
+  b.post("charge", chargeLines(uid(12), [{ member: ava, cents: 5000 }]), 12);
   b.post("payment", paymentLines(10000, [{ member: ava, owedCents: 13500 }]));
 
   const s = statement(b.memberLines(ava));
   assert.deepEqual(s.items.map((i) => [i.itemId, i.paid, i.remaining]), [
-    [11, 20000, 0],
-    [10, 8500, 0],
-    [12, 1500, 3500],
+    [uid(11), 20000, 0],
+    [uid(10), 8500, 0],
+    [uid(12), 1500, 3500],
   ]);
   assert.equal(s.balance, 3500);
   assert.equal(s.owed, 3500);
@@ -213,10 +221,10 @@ test("statement: payments pay off the oldest charge first, and stay put when a n
 
 test("statement: a cover after the family already paid turns into credit", () => {
   const b = book();
-  b.post("donation", donationLines(1, 10000, { type: "cash" }));
-  b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
+  b.post("donation", donationLines(uid(1), 10000, { type: "cash" }));
+  b.post("charge", chargeLines(uid(10), [{ member: ava, cents: 8500 }]), 10);
   b.post("payment", paymentLines(8500, [{ member: ava, owedCents: 8500 }]));
-  b.post("cover", coverLines(1, [{ member: ava, cents: 8500 }]), 10);
+  b.post("cover", coverLines(uid(1), [{ member: ava, cents: 8500 }]), 10);
 
   const s = statement(b.memberLines(ava));
   assert.equal(s.items[0].covered, 8500);
@@ -228,11 +236,11 @@ test("statement: a cover after the family already paid turns into credit", () =>
 
 test("statement: reversed transactions drop out, and the balance still matches the lines", () => {
   const b = book();
-  b.post("charge", chargeLines(10, [{ member: ava, cents: 8500 }]), 10);
-  const wrong = b.post("charge", chargeLines(11, [{ member: ava, cents: 99999 }]), 11);
+  b.post("charge", chargeLines(uid(10), [{ member: ava, cents: 8500 }]), 10);
+  const wrong = b.post("charge", chargeLines(uid(11), [{ member: ava, cents: 99999 }]), 11);
   b.reverse(wrong);
   const s = statement(b.memberLines(ava));
-  assert.deepEqual(s.items.map((i) => i.itemId), [10]);
+  assert.deepEqual(s.items.map((i) => i.itemId), [uid(10)]);
   assert.equal(s.balance, 8500);
 });
 
@@ -244,15 +252,15 @@ test("statement invariants hold over random seasons", () => {
   };
   for (let run = 0; run < 300; run++) {
     const b = book();
-    b.post("donation", donationLines(1, 1_000_000, { type: "cash" }));
+    b.post("donation", donationLines(uid(1), 1_000_000, { type: "cash" }));
     for (let step = 0; step < 25; step++) {
       const itemId = 10 + rand(3);
       const owed = b.balance("player", 1);
       const r = rand(6);
       try {
-        if (r === 0 || r === 1) b.post("charge", chargeLines(itemId, [{ member: ava, cents: 1 + rand(20000) }]), itemId);
+        if (r === 0 || r === 1) b.post("charge", chargeLines(uid(itemId), [{ member: ava, cents: 1 + rand(20000) }]), itemId);
         else if (r === 2) b.post("payment", paymentLines(1 + rand(20000), [{ member: ava, owedCents: owed }]));
-        else if (r === 3) b.post("cover", coverLines(1, [{ member: ava, cents: 1 + rand(5000) }]), itemId);
+        else if (r === 3) b.post("cover", coverLines(uid(1), [{ member: ava, cents: 1 + rand(5000) }]), itemId);
         else if (r === 4 && owed < 0) b.post("refund", refundLines(ava, 1 + rand(-owed)));
         else if (r === 5 && b.txns.length > 1) {
           const t = b.txns[1 + rand(b.txns.length - 1)];

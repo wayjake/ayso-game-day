@@ -9,11 +9,14 @@ import { ImageUploader } from "~/components/ImageUploader";
 import { useState } from "react";
 import { Alert, Button, Card, Page, PageHeader, buttonClass, hintClass, inputClass, labelClass } from "~/components/ui";
 import { Lightbulb } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const playerId = parseInt(params.playerId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const playerId = parseId(params.playerId) ?? ""; // Not an id: matches nothing, so 404s below
   
   // Get team details and verify ownership
   const [team] = await db
@@ -62,8 +65,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
   const formData = await request.formData();
-  const teamId = parseInt(params.teamId);
-  const playerId = parseInt(params.playerId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const playerId = parseId(params.playerId) ?? ""; // Not an id: matches nothing, so 404s below
   
   // Verify team ownership
   const [team] = await db
@@ -136,7 +139,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       })
       .where(eq(players.id, playerId));
     
-    return redirect(`/dashboard/team/${teamId}/roster`);
+    return redirect(`${teamPath(params.teamCode)}/roster`);
   } catch (error) {
     console.error("Error updating player:", error);
     return data(
@@ -177,7 +180,7 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
       <PageHeader
         title={player.name}
         description="Edit details, photo and preferred positions."
-        back={{ to: `/dashboard/team/${team.id}/roster`, label: "Roster" }}
+        back={{ to: `${teamPath(team)}/roster`, label: "Roster" }}
       />
 
       {/* Error message */}
@@ -329,7 +332,7 @@ export default function EditPlayer({ loaderData, actionData }: Route.ComponentPr
           {/* Form actions */}
           <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
             <Link
-              to={`/dashboard/team/${team.id}/roster`}
+              to={`${teamPath(team)}/roster`}
               className={buttonClass({ variant: "secondary" })}
             >
               Cancel

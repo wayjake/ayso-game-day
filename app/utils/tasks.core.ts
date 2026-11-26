@@ -15,21 +15,27 @@ const now = () => new Date().toISOString();
 
 // Tasks given to everyone also cover players added after the task was made.
 // Fills in any missing rows; safe to run on every read.
-export async function ensureAssignments(db: TasksDb, teamId: number) {
-  await db.run(sql`
-    insert into task_assignments (task_id, team_id, player_id)
-    select t.id, t.team_id, p.id
+// Goes through drizzle's insert, not raw SQL, so each row gets its id (ids are
+// made in the app; see utils/ids.ts).
+export async function ensureAssignments(db: TasksDb, teamId: string) {
+  const missing = await db.all<{ taskId: string; playerId: string }>(sql`
+    select t.id as taskId, p.id as playerId
     from tasks t join players p on p.team_id = t.team_id
     where t.team_id = ${teamId} and t.assign_all = 1
-    on conflict (task_id, player_id) do nothing
+      and not exists (select 1 from task_assignments a where a.task_id = t.id and a.player_id = p.id)
   `);
+  if (missing.length === 0) return;
+  await db
+    .insert(taskAssignments)
+    .values(missing.map((m) => ({ taskId: m.taskId, teamId, playerId: m.playerId })))
+    .onConflictDoNothing({ target: [taskAssignments.taskId, taskAssignments.playerId] });
 }
 
 // Siblings for "one per family" tasks: players on the team who share a
 // contact email with any of these players. One hop, so in a blended family a
 // check reaches the kids listed under the same email, not every relative of
 // every relative. The given players are always included.
-export async function siblingIds(db: TasksDb, teamId: number, playerIds: number[]) {
+export async function siblingIds(db: TasksDb, teamId: string, playerIds: string[]) {
   const ids = new Set(playerIds);
   if (playerIds.length === 0) return ids;
   const emails = await db
@@ -50,7 +56,7 @@ export async function siblingIds(db: TasksDb, teamId: number, playerIds: number[
   return ids;
 }
 
-async function getTask(db: TasksDb, teamId: number, taskId: number) {
+async function getTask(db: TasksDb, teamId: string, taskId: string) {
   const [task] = await db
     .select()
     .from(tasks)
@@ -61,7 +67,7 @@ async function getTask(db: TasksDb, teamId: number, taskId: number) {
 
 // The players a check applies to: siblings too on per-family tasks, and only
 // players this task is actually given to
-async function targets(db: TasksDb, task: schema.Task, playerIds: number[]) {
+async function targets(db: TasksDb, task: schema.Task, playerIds: string[]) {
   const ids = task.perFamily ? [...(await siblingIds(db, task.teamId, playerIds))] : playerIds;
   if (ids.length === 0) return [];
   const rows = await db
@@ -99,7 +105,7 @@ export function cleanTaskInput(input: TaskInput): { ok: true; value: Required<Ta
 // Creates a task for everyone on the team ("all") or for chosen players
 export async function createTask(
   db: TasksDb,
-  { teamId, createdBy, input, playerIds }: { teamId: number; createdBy: number | null; input: TaskInput; playerIds: number[] | "all" }
+  { teamId, createdBy, input, playerIds }: { teamId: string; createdBy: string | null; input: TaskInput; playerIds: string[] | "all" }
 ) {
   const clean = cleanTaskInput(input);
   if (!clean.ok) return clean;
@@ -116,7 +122,7 @@ export async function createTask(
   return { ok: true as const, task };
 }
 
-export async function updateTask(db: TasksDb, teamId: number, taskId: number, input: TaskInput) {
+export async function updateTask(db: TasksDb, teamId: string, taskId: string, input: TaskInput) {
   const clean = cleanTaskInput(input);
   if (!clean.ok) return clean;
   const [task] = await db
@@ -128,7 +134,7 @@ export async function updateTask(db: TasksDb, teamId: number, taskId: number, in
 }
 
 // Only players on this team
-async function teamPlayerIds(db: TasksDb, teamId: number, playerIds: number[]) {
+async function teamPlayerIds(db: TasksDb, teamId: string, playerIds: string[]) {
   if (playerIds.length === 0) return [];
   const rows = await db
     .select({ id: players.id })
@@ -137,7 +143,7 @@ async function teamPlayerIds(db: TasksDb, teamId: number, playerIds: number[]) {
   return rows.map((r) => r.id);
 }
 
-export async function assignPlayers(db: TasksDb, task: schema.Task, playerIds: number[]) {
+export async function assignPlayers(db: TasksDb, task: schema.Task, playerIds: string[]) {
   const ids = await teamPlayerIds(db, task.teamId, playerIds);
   if (ids.length === 0) return 0;
   const rows = await db
@@ -150,7 +156,7 @@ export async function assignPlayers(db: TasksDb, task: schema.Task, playerIds: n
 
 // Taking players off a task that was given to everyone turns it into a task
 // for the players left, so they don't come straight back on the next read
-export async function unassignPlayers(db: TasksDb, teamId: number, taskId: number, playerIds: number[]) {
+export async function unassignPlayers(db: TasksDb, teamId: string, taskId: string, playerIds: string[]) {
   const task = await getTask(db, teamId, taskId);
   if (!task || playerIds.length === 0) return 0;
   if (task.assignAll) await db.update(tasks).set({ assignAll: false, updatedAt: now() }).where(eq(tasks.id, task.id));
@@ -161,7 +167,7 @@ export async function unassignPlayers(db: TasksDb, teamId: number, taskId: numbe
   return rows.length;
 }
 
-export async function deleteTask(db: TasksDb, teamId: number, taskId: number) {
+export async function deleteTask(db: TasksDb, teamId: string, taskId: string) {
   const task = await getTask(db, teamId, taskId);
   if (!task) return false;
   await db.batch([
@@ -182,10 +188,10 @@ export async function setFamilyDone(
     by = null,
     via,
     at,
-  }: { teamId: number; taskId: number; playerIds: number[]; done: boolean; by?: number | null; via: "app" | "link" | "import"; at?: string }
+  }: { teamId: string; taskId: string; playerIds: string[]; done: boolean; by?: string | null; via: "app" | "link" | "import"; at?: string }
 ) {
   const task = await getTask(db, teamId, taskId);
-  if (!task) return { task: null, playerIds: [] as number[] };
+  if (!task) return { task: null, playerIds: [] as string[] };
   const ids = await targets(db, task, playerIds);
   if (ids.length === 0) return { task, playerIds: ids };
   const scope = and(eq(taskAssignments.taskId, task.id), inArray(taskAssignments.playerId, ids));
@@ -214,10 +220,10 @@ export async function setConfirmed(
     confirmed,
     by = null,
     at,
-  }: { teamId: number; taskId: number; playerIds: number[]; confirmed: boolean; by?: number | null; at?: string }
+  }: { teamId: string; taskId: string; playerIds: string[]; confirmed: boolean; by?: string | null; at?: string }
 ) {
   const task = await getTask(db, teamId, taskId);
-  if (!task) return { task: null, playerIds: [] as number[] };
+  if (!task) return { task: null, playerIds: [] as string[] };
   const ids = await targets(db, task, playerIds);
   if (ids.length === 0) return { task, playerIds: ids };
   const scope = and(eq(taskAssignments.taskId, task.id), inArray(taskAssignments.playerId, ids));
@@ -242,7 +248,7 @@ export async function setConfirmed(
   return { task, playerIds: ids };
 }
 
-export async function setNote(db: TasksDb, teamId: number, taskId: number, playerId: number, note: string | null) {
+export async function setNote(db: TasksDb, teamId: string, taskId: string, playerId: string, note: string | null) {
   const task = await getTask(db, teamId, taskId);
   if (!task) return false;
   await db

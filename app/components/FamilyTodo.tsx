@@ -8,7 +8,7 @@ import { dueLabel, type TaskState } from "~/utils/tasks";
 // Used in the family app and on the no-login /todo link.
 
 export type FamilyTodoItem = {
-  taskId: number;
+  taskId: string;
   teamName: string;
   title: string;
   details: string | null;
@@ -17,7 +17,7 @@ export type FamilyTodoItem = {
   coachConfirms: boolean;
   state: TaskState;
   confirmed: boolean; // A coach checked it; the family can't undo that
-  playerIds: number[];
+  playerIds: string[];
   kidNames: string[];
 };
 

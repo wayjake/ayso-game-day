@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.tasks";
 import { Link, data, redirect, useFetcher } from "react-router";
 import { db } from "~/db";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { requireTeamAccess, teamIdFromCode } from "~/utils/team-access.server";
 import { getTaskBoard, type BoardFamily, type Cell, type TaskSummary } from "~/utils/tasks.server";
 import { setConfirmed } from "~/utils/tasks.core";
 import { listFamilies } from "~/utils/parent-invites.server";
@@ -12,6 +12,8 @@ import { taskState } from "~/utils/tasks";
 import { Badge, Card, EmptyState, Page, PageHeader, buttonClass, cx } from "~/components/ui";
 import { StatusMark, TaskMeta, statusText } from "~/components/tasks";
 import { ChatCircleText, CheckSquareOffset, Plus } from "@phosphor-icons/react";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 export function meta() {
   return [{ title: "Tasks - BenchTalk" }];
@@ -19,22 +21,25 @@ export function meta() {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess(await teamIdFromCode(params.teamCode), user.id);
   const board = await getTaskBoard(team.id);
-  return data({ teamId: team.id, today: todayISO(), ...board });
+  return data({ teamCode: team.code, today: todayISO(), ...board });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const { team } = await requireTeamAccess(Number(params.teamId), user.id);
+  const { team } = await requireTeamAccess(await teamIdFromCode(params.teamCode), user.id);
   const formData = await request.formData();
   const intent = formData.get("_action");
 
   if (intent === "confirm") {
+    const taskId = parseId(formData.get("taskId"));
+    const playerId = parseId(formData.get("playerId"));
+    if (!taskId || !playerId) return data({ error: "Unknown task or player" }, { status: 400 });
     await setConfirmed(db, {
       teamId: team.id,
-      taskId: Number(formData.get("taskId")),
-      playerIds: [Number(formData.get("playerId"))],
+      taskId,
+      playerIds: [playerId],
       confirmed: formData.get("value") === "1",
       by: user.id,
     });
@@ -48,15 +53,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!family) return data({ error: "That family isn't on this team" }, { status: 400 });
     // Your own private thread with them
     const conversation = await getOrCreateFamilyConversation(team.id, family.email, family.userIds[0], user.id);
-    return redirect(`/dashboard/team/${team.id}/messages/${conversation.id}?draft=tasks`);
+    return redirect(teamPath(team, `messages/${conversation.id}?draft=tasks`));
   }
 
   return data({ error: "Unknown action" }, { status: 400 });
 }
 
 export default function Tasks({ loaderData }: Route.ComponentProps) {
-  const { teamId, today, tasks, families, playerCount } = loaderData;
-  const base = `/dashboard/team/${teamId}`;
+  const { teamCode, today, tasks, families, playerCount } = loaderData;
+  const base = teamPath(teamCode);
   const newTask = (
     <Link to={`${base}/tasks/new`} className={buttonClass()}>
       <Plus size={18} weight="bold" />
@@ -221,7 +226,7 @@ function FamilyHeader({ family }: { family: BoardFamily }) {
   );
 }
 
-function BoardCell({ task, playerId, playerName, cell }: { task: TaskSummary; playerId: number; playerName: string; cell: Cell | null }) {
+function BoardCell({ task, playerId, playerName, cell }: { task: TaskSummary; playerId: string; playerName: string; cell: Cell | null }) {
   const fetcher = useFetcher();
   if (!cell) return <StatusMark state={null} />;
 

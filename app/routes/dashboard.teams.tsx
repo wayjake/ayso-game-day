@@ -7,6 +7,7 @@ import { eq, count, desc, and, gte } from "drizzle-orm";
 import { formatGameDate, formatGameTime, formatMessageTime, todayISO } from "~/utils/dates";
 import { Badge, Card, DateTile, EmptyState, Page, PageHeader, buttonClass } from "~/components/ui";
 import { Archive, CalendarBlank, CaretRight, Plus, SoccerBall, UsersThree } from "@phosphor-icons/react";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -15,6 +16,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userTeams = await db
     .select({
       id: teams.id,
+      code: teams.code,
       name: teams.name,
       format: teams.format,
       ageGroup: teams.ageGroup,
@@ -107,7 +109,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
               {/* The team name link covers the whole card; inner links sit above it */}
               <h2 className="font-display text-2xl font-bold tracking-tight">
                 <Link
-                  to={`/dashboard/team/${team.id}`}
+                  to={teamPath(team)}
                   className="flex items-center justify-between gap-3 after:absolute after:inset-0 after:rounded-2xl"
                 >
                   <span className="min-w-0 truncate">{team.name}</span>
@@ -127,7 +129,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
               {/* Next game */}
               {team.nextGame ? (
                 <Link
-                  to={`/dashboard/team/${team.id}/games/${team.nextGame.id}/lineup`}
+                  to={teamPath(team, `games/${team.nextGame.id}/lineup`)}
                   className="relative z-10 mt-5 flex items-center gap-3 rounded-xl p-3 ring-1 ring-line transition hover:bg-canvas hover:ring-line-strong"
                 >
                   <DateTile iso={team.nextGame.gameDate} />
@@ -160,7 +162,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
                   )}
                 </div>
                 <Link
-                  to={`/dashboard/team/${team.id}/games`}
+                  to={teamPath(team, "games")}
                   className={buttonClass({ variant: "ghost", size: "sm", className: "relative z-10 -mr-2" })}
                 >
                   Games
@@ -201,7 +203,7 @@ export default function TeamsPage({ loaderData }: Route.ComponentProps) {
             {archived.map((team) => (
               <Link
                 key={team.id}
-                to={`/dashboard/team/${team.id}`}
+                to={teamPath(team)}
                 className="flex items-center gap-3 px-4 py-3 transition hover:bg-surface-2"
               >
                 <div className="min-w-0 flex-1">

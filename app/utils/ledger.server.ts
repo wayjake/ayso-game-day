@@ -42,6 +42,7 @@ import {
 import { sumCents, type Cents } from "~/utils/money";
 import { getTeamStaff } from "~/utils/team-access.server";
 import { todayISO } from "~/utils/dates";
+import { parseIds } from "~/utils/ids";
 
 // The schema repeats the enums in ledger.ts; this fails to compile if they drift apart
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -67,7 +68,7 @@ function entryAccount(r: Pick<EntryRow, "accountType" | "playerId" | "userId" | 
   return { type: r.accountType, id: r.playerId ?? r.userId ?? r.itemId ?? r.fundId ?? null };
 }
 
-function entryRow(txnId: number, teamId: number, l: Line) {
+function entryRow(txnId: string, teamId: string, l: Line) {
   const { type, id } = l.account;
   return {
     txnId,
@@ -86,7 +87,7 @@ const ids = (lines: Line[], type: AccountType) => [...new Set(lines.filter((l) =
 // Every account a transaction touches has to belong to this team. Staff
 // accounts: anyone on staff now, or anyone the team already has money with
 // (so someone who left can still be paid back).
-async function checkAccounts(tx: Reader, teamId: number, lines: Line[]) {
+async function checkAccounts(tx: Reader, teamId: string, lines: Line[]) {
   const playerIds = ids(lines, "player");
   if (playerIds.length) {
     const found = await tx.select({ id: players.id }).from(players).where(and(eq(players.teamId, teamId), inArray(players.id, playerIds)));
@@ -117,7 +118,7 @@ async function checkAccounts(tx: Reader, teamId: number, lines: Line[]) {
 }
 
 // Current balances of the cash and fund accounts these lines touch
-async function heldBalances(tx: Reader, teamId: number, lines: Line[]) {
+async function heldBalances(tx: Reader, teamId: string, lines: Line[]) {
   const out = new Map<string, Cents>();
   if (lines.some((l) => l.account.type === "cash")) {
     const [row] = await tx
@@ -142,23 +143,23 @@ async function heldBalances(tx: Reader, teamId: number, lines: Line[]) {
 // Posting
 
 export type PostInput = {
-  teamId: number;
+  teamId: string;
   kind: TxnKind;
   lines: Line[];
-  createdBy: number;
+  createdBy: string;
   clientKey: string; // From the form, so submitting it twice posts once
-  itemId?: number | null;
-  fundId?: number | null;
+  itemId?: string | null;
+  fundId?: string | null;
   memo?: string | null;
   method?: PaymentMethod | null;
-  payerUserId?: number | null;
+  payerUserId?: string | null;
   payerName?: string | null;
   occurredOn?: string | null;
-  reversesId?: number;
-  claimId?: number; // Confirms this "I sent it" in the same transaction
+  reversesId?: string;
+  claimId?: string; // Confirms this "I sent it" in the same transaction
 };
 
-export async function postTxn(input: PostInput): Promise<{ txnId: number; duplicate: boolean }> {
+export async function postTxn(input: PostInput): Promise<{ txnId: string; duplicate: boolean }> {
   const clientKey = input.clientKey.trim();
   const existing = async () => {
     const [row] = await db
@@ -185,7 +186,7 @@ export async function postTxn(input: PostInput): Promise<{ txnId: number; duplic
 
 // The same, inside a transaction the caller already opened (sending invoices
 // posts several at once, all or nothing)
-export async function postTxnIn(tx: Tx, input: PostInput): Promise<{ txnId: number; duplicate: boolean }> {
+export async function postTxnIn(tx: Tx, input: PostInput): Promise<{ txnId: string; duplicate: boolean }> {
   assertBalanced(input.lines);
   const clientKey = input.clientKey.trim();
   if (!clientKey || clientKey.length > 100) throw new LedgerError("Reload the page and try again");
@@ -242,7 +243,7 @@ export async function postTxnIn(tx: Tx, input: PostInput): Promise<{ txnId: numb
 }
 
 // Undoes a transaction exactly. A reversal itself can't be undone: post it again instead.
-export async function reverseTxn(teamId: number, txnId: number, by: number, clientKey: string) {
+export async function reverseTxn(teamId: string, txnId: string, by: string, clientKey: string) {
   const [txn] = await db.select().from(ledgerTxns).where(and(eq(ledgerTxns.id, txnId), eq(ledgerTxns.teamId, teamId))).limit(1);
   if (!txn) throw new LedgerError("That transaction isn't on this team");
   if (txn.kind === "reversal") throw new LedgerError("An undo can't be undone. Record it again instead.");
@@ -268,7 +269,14 @@ export async function reverseTxn(teamId: number, txnId: number, by: number, clie
 // ---------------------------------------------------------------------------
 // Setup
 
-export async function ensureDefaultFund(teamId: number) {
+// The short code that stands for a team in URLs (pushes link to its pages)
+export async function teamCodeFor(teamId: string) {
+  const [row] = await db.select({ code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  if (!row) throw new LedgerError("That team doesn't exist");
+  return row.code;
+}
+
+export async function ensureDefaultFund(teamId: string) {
   const funds = await db.select().from(ledgerFunds).where(eq(ledgerFunds.teamId, teamId)).orderBy(asc(ledgerFunds.id));
   if (funds.length) return funds;
   await db.insert(ledgerFunds).values({ teamId, name: "Team fund" });
@@ -285,7 +293,7 @@ export function cleanVenmoHandle(input: string) {
 // A short code for the Venmo note, so staff can match a payment to a family
 // without kids' names in a feed that may be public. Same family, same team,
 // same code, and nothing to store.
-export function familyRefCode(teamId: number, userId: number) {
+export function familyRefCode(teamId: string, userId: string) {
   const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
   const digest = crypto.createHmac("sha256", secret).update(`ledger-ref:${teamId}:${userId}`).digest();
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -298,16 +306,16 @@ export function familyRefCode(teamId: number, userId: number) {
 
 export type BookTxn = LedgerTxn & { lines: Line[]; reversed: boolean };
 
-export async function loadBook(teamId: number) {
+export async function loadBook(teamId: string) {
   const txns = await db.select().from(ledgerTxns).where(eq(ledgerTxns.teamId, teamId)).orderBy(asc(ledgerTxns.id));
   const rows = await db.select().from(ledgerEntries).where(eq(ledgerEntries.teamId, teamId)).orderBy(asc(ledgerEntries.id));
-  const byTxn = new Map<number, Line[]>();
+  const byTxn = new Map<string, Line[]>();
   for (const r of rows) {
     const list = byTxn.get(r.txnId) ?? [];
     list.push({ account: entryAccount(r), cents: r.cents });
     byTxn.set(r.txnId, list);
   }
-  const reversed = new Set(txns.map((t) => t.reversesId).filter((id): id is number => id !== null));
+  const reversed = new Set(txns.map((t) => t.reversesId).filter((id): id is string => id !== null));
   const book: BookTxn[] = txns.map((t) => ({ ...t, lines: byTxn.get(t.id) ?? [], reversed: reversed.has(t.id) }));
   return book;
 }
@@ -322,11 +330,11 @@ export function memberLinesFromBook(book: BookTxn[], m: Member): MemberLine[] {
 
 export const memberKey = (m: Member) => `${m.type}:${m.id}`;
 
-export async function getItems(teamId: number) {
+export async function getItems(teamId: string) {
   return db.select().from(ledgerItems).where(eq(ledgerItems.teamId, teamId)).orderBy(asc(ledgerItems.dueDate), asc(ledgerItems.id));
 }
 
-export async function getItem(teamId: number, itemId: number) {
+export async function getItem(teamId: string, itemId: string) {
   const [item] = await db.select().from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
   return item ?? null;
 }
@@ -353,7 +361,7 @@ export type ItemSummary = {
 
 // Everyone with an account: every player on the team (their family), every
 // current staff member, and anyone else the team has had money with
-export async function getMembers(teamId: number, book: BookTxn[]): Promise<MemberSummary[]> {
+export async function getMembers(teamId: string, book: BookTxn[]): Promise<MemberSummary[]> {
   const roster = await db
     .select({ id: players.id, name: players.name, jerseyNumber: players.jerseyNumber })
     .from(players)
@@ -424,11 +432,11 @@ export function fundBalances(book: BookTxn[]) {
   const all = balances(book.flatMap((t) => t.lines));
   return {
     cash: all.get(accountKey({ type: "cash", id: null })) ?? 0,
-    fund: (fundId: number) => -(all.get(accountKey({ type: "fund", id: fundId })) ?? 0),
+    fund: (fundId: string) => -(all.get(accountKey({ type: "fund", id: fundId })) ?? 0),
   };
 }
 
-export async function pendingClaims(teamId: number) {
+export async function pendingClaims(teamId: string) {
   const rows = await db
     .select({ claim: ledgerClaims, userName: users.name, userEmail: users.email })
     .from(ledgerClaims)
@@ -438,7 +446,7 @@ export async function pendingClaims(teamId: number) {
   return rows.map((r) => ({ ...r.claim, playerIds: parsePlayerIds(r.claim.playerIds), from: r.userName || r.userEmail.split("@")[0] }));
 }
 
-export async function countPendingClaims(teamId: number) {
+export async function countPendingClaims(teamId: string) {
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(ledgerClaims)
@@ -446,17 +454,17 @@ export async function countPendingClaims(teamId: number) {
   return Number(row?.n ?? 0);
 }
 
-export function parsePlayerIds(json: string): number[] {
+export function parsePlayerIds(json: string): string[] {
   try {
     const value = JSON.parse(json);
-    return Array.isArray(value) ? value.filter((v): v is number => Number.isInteger(v)) : [];
+    return Array.isArray(value) ? parseIds(value) : [];
   } catch {
     return [];
   }
 }
 
 // Parent accounts linked to a player, with their Venmo note codes
-export async function guardianCodes(teamId: number, playerId: number) {
+export async function guardianCodes(teamId: string, playerId: string) {
   const rows = await db
     .select({ userId: users.id, name: users.name, email: users.email })
     .from(guardians)
@@ -465,7 +473,7 @@ export async function guardianCodes(teamId: number, playerId: number) {
   return rows.map((r) => ({ userId: r.userId, name: r.name || r.email.split("@")[0], code: familyRefCode(teamId, r.userId) }));
 }
 
-export async function hasLedgerHistory(playerId: number) {
+export async function hasLedgerHistory(playerId: string) {
   const [row] = await db.select({ id: ledgerEntries.id }).from(ledgerEntries).where(eq(ledgerEntries.playerId, playerId)).limit(1);
   return Boolean(row);
 }
@@ -477,8 +485,8 @@ export async function hasLedgerHistory(playerId: number) {
 // balances of funds the team shows families.
 
 export type FamilyHistoryRow = {
-  txnId: number;
-  playerId: number;
+  txnId: string;
+  playerId: string;
   kind: TxnKind;
   cents: Cents; // + adds to what they owe
   itemName: string | null;
@@ -491,20 +499,20 @@ export type FamilyHistoryRow = {
 };
 
 export type FamilyTeamMoney = {
-  teamId: number;
+  teamId: string;
   teamName: string;
   venmoHandle: string | null;
   refCode: string;
-  kids: { playerId: number; name: string; statement: Statement }[];
+  kids: { playerId: string; name: string; statement: Statement }[];
   items: Pick<LedgerItem, "id" | "name" | "details" | "dueDate" | "refundable" | "category">[];
   history: FamilyHistoryRow[];
-  funds: { id: number; name: string; balance: Cents }[];
+  funds: { id: string; name: string; balance: Cents }[];
   pending: Pick<LedgerClaim, "id" | "cents" | "method" | "createdAt">[];
   owed: Cents; // what to pay: all their kids' balances together (one invoice, one number)
   dueBack: Cents;
 };
 
-export async function getFamilyMoney(userId: number, kids: { playerId: number; name: string; teamId: number; teamName: string }[]): Promise<FamilyTeamMoney[]> {
+export async function getFamilyMoney(userId: string, kids: { playerId: string; name: string; teamId: string; teamName: string }[]): Promise<FamilyTeamMoney[]> {
   if (kids.length === 0) return [];
   const playerIds = kids.map((k) => k.playerId);
   const rows = await db
@@ -532,7 +540,7 @@ export async function getFamilyMoney(userId: number, kids: { playerId: number; n
       ? (await db.select({ id: ledgerTxns.reversesId }).from(ledgerTxns).where(inArray(ledgerTxns.reversesId, txnIds))).map((r) => r.id!)
       : []
   );
-  const itemIds = [...new Set(rows.map((r) => r.itemId).filter((id): id is number => id !== null))];
+  const itemIds = [...new Set(rows.map((r) => r.itemId).filter((id): id is string => id !== null))];
   const items = itemIds.length ? await db.select().from(ledgerItems).where(inArray(ledgerItems.id, itemIds)) : [];
   const itemById = new Map(items.map((i) => [i.id, i]));
 
@@ -564,7 +572,7 @@ export async function getFamilyMoney(userId: number, kids: { playerId: number; n
   return teamIds.map((teamId) => {
     const teamKids = kids.filter((k) => k.teamId === teamId);
     const teamRowsForTeam = rows.filter((r) => r.teamId === teamId);
-    const teamItems = [...new Set(teamRowsForTeam.map((r) => r.itemId).filter((id): id is number => id !== null))]
+    const teamItems = [...new Set(teamRowsForTeam.map((r) => r.itemId).filter((id): id is string => id !== null))]
       .map((id) => itemById.get(id)!)
       .filter(Boolean);
     const kidMoney = teamKids.map((k) => {
@@ -607,9 +615,9 @@ export async function getFamilyMoney(userId: number, kids: { playerId: number; n
 
 // A family says they sent money. Only for their own kids on that team.
 export async function createClaim(input: {
-  teamId: number;
-  userId: number;
-  playerIds: number[];
+  teamId: string;
+  userId: string;
+  playerIds: string[];
   cents: Cents;
   method: PaymentMethod;
   note: string | null;
@@ -648,7 +656,7 @@ export async function createClaim(input: {
   }
 }
 
-export async function withdrawClaim(userId: number, claimId: number) {
+export async function withdrawClaim(userId: string, claimId: string) {
   await db
     .update(ledgerClaims)
     .set({ status: "dismissed", resolvedBy: userId, resolvedAt: new Date().toISOString() })
@@ -658,7 +666,7 @@ export async function withdrawClaim(userId: number, claimId: number) {
 // ---------------------------------------------------------------------------
 // Common writes
 
-export async function memberBalances(teamId: number): Promise<Map<string, Cents>> {
+export async function memberBalances(teamId: string): Promise<Map<string, Cents>> {
   const rows = await db
     .select({
       accountType: ledgerEntries.accountType,
@@ -676,7 +684,7 @@ export async function memberBalances(teamId: number): Promise<Map<string, Cents>
 // in proportion when it's short; anything over stays as credit on the first
 // member unless the payer chose to donate it to a fund.
 export async function recordPayment(
-  input: Omit<PostInput, "kind" | "lines" | "fundId"> & { members: Member[]; cents: Cents; donateExtraTo?: number | null }
+  input: Omit<PostInput, "kind" | "lines" | "fundId"> & { members: Member[]; cents: Cents; donateExtraTo?: string | null }
 ) {
   if (input.members.length === 0) throw new LedgerError("Pick who it's for");
   const owed = await memberBalances(input.teamId);
@@ -692,7 +700,7 @@ export async function recordPayment(
 // Activity, as staff read it
 
 export type ActivityRow = {
-  id: number;
+  id: string;
   kind: TxnKind;
   text: string;
   cents: Cents;
@@ -700,12 +708,12 @@ export type ActivityRow = {
   by: string | null;
   memo: string | null;
   reversed: boolean;
-  itemId: number | null;
+  itemId: string | null;
 };
 
 export function describeBook(
   book: BookTxn[],
-  names: { member: (m: Member) => string; item: (id: number) => string; fund: (id: number) => string; user: (id: number) => string | null }
+  names: { member: (m: Member) => string; item: (id: string) => string; fund: (id: string) => string; user: (id: string) => string | null }
 ): ActivityRow[] {
   const byId = new Map(book.map((t) => [t.id, t]));
   return book.map((t) => {
@@ -739,7 +747,7 @@ export function describeBook(
       case "vendor_refund": text = `${item}: refund received`; break;
       case "reversal": {
         const original = t.reversesId ? byId.get(t.reversesId) : undefined;
-        text = `Undid #${t.reversesId}${original ? ` (${KIND_LABELS[original.kind]})` : ""}`;
+        text = original ? `Undid a ${KIND_LABELS[original.kind]} from ${original.occurredOn}` : "Undid a transaction";
         break;
       }
       default: text = t.kind;
@@ -758,15 +766,15 @@ export function describeBook(
   });
 }
 
-export async function userNames(ids: number[]) {
+export async function userNames(ids: string[]) {
   const unique = [...new Set(ids)];
-  if (unique.length === 0) return new Map<number, string>();
+  if (unique.length === 0) return new Map<string, string>();
   const rows = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, unique));
   return new Map(rows.map((r) => [r.id, r.name || r.email.split("@")[0]]));
 }
 
 // Names for everything a team's activity can mention
-export async function activityNames(teamId: number, book: BookTxn[], members: MemberSummary[], items: LedgerItem[]) {
+export async function activityNames(teamId: string, book: BookTxn[], members: MemberSummary[], items: LedgerItem[]) {
   const funds = await db.select({ id: ledgerFunds.id, name: ledgerFunds.name }).from(ledgerFunds).where(eq(ledgerFunds.teamId, teamId));
   const users = await userNames(book.map((t) => t.createdBy));
   const memberName = new Map(members.map((m) => [memberKey(m.member), m.name]));
@@ -774,8 +782,8 @@ export async function activityNames(teamId: number, book: BookTxn[], members: Me
   const fundName = new Map(funds.map((f) => [f.id, f.name]));
   return {
     member: (m: Member) => memberName.get(memberKey(m)) ?? (m.type === "player" ? "a player" : "a staff member"),
-    item: (id: number) => itemName.get(id) ?? "an item",
-    fund: (id: number) => fundName.get(id) ?? "a fund",
-    user: (id: number) => users.get(id) ?? null,
+    item: (id: string) => itemName.get(id) ?? "an item",
+    fund: (id: string) => fundName.get(id) ?? "a fund",
+    user: (id: string) => users.get(id) ?? null,
   };
 }

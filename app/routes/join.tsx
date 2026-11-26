@@ -46,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const session = await getSession(request.headers.get("Cookie"));
-  let userId: number;
+  let userId: string;
 
   if (formData.get("_action") === "signup") {
     const name = ((formData.get("name") as string) ?? "").trim();

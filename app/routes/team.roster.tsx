@@ -9,10 +9,12 @@ import { useState } from "react";
 import { RosterImportModal } from "~/components/RosterImportModal";
 import { Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, PlayerAvatar, buttonClass, cx } from "~/components/ui";
 import { CaretRight, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { teamPath } from "~/utils/team-path";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   
   // Get team details
   const [team] = await db
@@ -52,7 +54,7 @@ export function meta({ params }: Route.MetaArgs) {
   ];
 }
 
-function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
+function PlayerRow({ player, teamCode }: { player: any; teamCode: string }) {
   const fetcher = useFetcher();
   const [showConfirm, setShowConfirm] = useState(false);
   const busy = fetcher.state !== "idle";
@@ -63,7 +65,7 @@ function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
         { playerId: player.id.toString() },
         { 
           method: "post", 
-          action: `/dashboard/team/${teamId}/player/remove` 
+          action: `${teamPath(teamCode)}/player/remove` 
         }
       );
       // Keep the confirm row up so "Removing..." shows until the row disappears
@@ -82,7 +84,7 @@ function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
     <li className={cx("flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 sm:px-3", busy && "opacity-50")}>
       {/* Whole row opens the edit page */}
       <Link
-        to={`/dashboard/team/${teamId}/roster/player/${player.id}/edit`}
+        to={`${teamPath(teamCode)}/roster/player/${player.id}/edit`}
         className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-surface-2"
       >
         {/* Jersey number sits beside the name, so the avatar falls back to the initial */}
@@ -155,7 +157,7 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
     </Button>
   );
   const addPlayerLink = (
-    <Link to={`/dashboard/team/${team.id}/roster/new-player`} className={buttonClass()}>
+    <Link to={`${teamPath(team)}/roster/new-player`} className={buttonClass()}>
       <Plus size={18} weight="bold" />
       Add player
     </Link>
@@ -182,7 +184,7 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
             <CardHeader title="Players" count={players.length} className="px-5 pt-5 pb-2 sm:px-6" />
             <ul className="divide-y divide-line pb-2">
               {players.map((player) => (
-                <PlayerRow key={player.id} player={player} teamId={team.id} />
+                <PlayerRow key={player.id} player={player} teamCode={team.code} />
               ))}
             </ul>
           </>

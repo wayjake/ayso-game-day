@@ -3,6 +3,7 @@ import { db, users, teams } from "~/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "~/sessions.server";
 import { redirect } from "react-router";
+import { parseId } from "~/utils/ids";
 
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
@@ -80,9 +81,15 @@ export function safeRedirect(to: FormDataEntryValue | string | null | undefined,
   return to;
 }
 
-export async function requireUserId(request: Request) {
+// The signed-in user's id, or null. A session that doesn't hold a UUID (one
+// from before ids were UUIDs, under the old cookie name) counts as signed out.
+async function sessionUserId(request: Request) {
   const session = await getSession(request.headers.get("Cookie"));
-  const userId = session.get("userId");
+  return parseId(session.get("userId"));
+}
+
+export async function requireUserId(request: Request) {
+  const userId = await sessionUserId(request);
   
   if (!userId) {
     throw redirect("/user/login");
@@ -99,8 +106,7 @@ export async function getUser(request: Request, shouldRedirect?: true): Promise<
 export async function getUser(request: Request, shouldRedirect: false): Promise<User | null>;
 // Implementation
 export async function getUser(request: Request, shouldRedirect = true): Promise<User | null> {
-  const session = await getSession(request.headers.get("Cookie"));
-  const userId = session.get("userId");
+  const userId = await sessionUserId(request);
 
   if (!userId) {
     if (shouldRedirect) {

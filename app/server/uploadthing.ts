@@ -5,6 +5,7 @@ import { db, postUploads, teams } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
 import { feedRole } from "~/utils/feed.server";
+import { isId } from "~/utils/ids";
 
 // The Remix adapter hands middleware `{ event }`, so the request is event.request
 const f = createUploadthing({
@@ -62,7 +63,7 @@ export const uploadRouter = {
     image: { maxFileSize: "32MB", maxFileCount: 10 },
     video: { maxFileSize: "1GB", maxFileCount: 3 },
   })
-    .input(z.object({ teamId: z.number().int().positive() }))
+    .input(z.object({ teamId: z.string().refine(isId, "Not a team id") }))
     .middleware(async ({ event, input }) => {
       const user = await getUser(event.request, false);
       if (!user || !(await feedRole(user.id, input.teamId))) throw forbidden();

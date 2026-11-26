@@ -24,13 +24,13 @@ export function TaskForm({
 }: {
   values?: TaskFormValues;
   /** Who it goes to; only when creating */
-  players?: { id: number; name: string }[];
+  players?: { id: string; name: string }[];
   submitLabel: string;
   busy: boolean;
   error?: string;
 }) {
   const [everyone, setEveryone] = useState(true);
-  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   return (
     <Form method="post" className="space-y-6">
@@ -153,9 +153,9 @@ export function PlayerPicker({
   picked,
   onChange,
 }: {
-  players: { id: number; name: string }[];
-  picked: Set<number>;
-  onChange: (next: Set<number>) => void;
+  players: { id: string; name: string }[];
+  picked: Set<string>;
+  onChange: (next: Set<string>) => void;
 }) {
   return (
     <ul className="mt-4 max-h-72 divide-y divide-line overflow-y-auto rounded-xl ring-1 ring-line">

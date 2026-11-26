@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.families.edit";
 import { useState } from "react";
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { getUser } from "~/utils/auth.server";
-import { requireTeamAccess } from "~/utils/team-access.server";
+import { requireTeamAccess, teamIdFromCode } from "~/utils/team-access.server";
 import { db, players } from "~/db";
 import { eq } from "drizzle-orm";
 import {
@@ -20,13 +20,15 @@ import { familyStatusBadge } from "~/components/FamilyContext";
 import { StaffBadge } from "~/components/StaffBadge";
 import { Alert, Badge, Button, Card, Page, PageHeader, buttonClass, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ArrowCounterClockwise, PaperPlaneTilt, Plus, Trash, X } from "@phosphor-icons/react";
+import { parseId, parseIds } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
 // One page for adding a family (no ?email) and editing one (?email=...). A
 // family here is every parent or guardian of the same kids; each keeps their
 // own email, invite and private thread.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team, role } = await requireTeamAccess(teamId, user.id);
   const search = new URL(request.url).searchParams;
   const email = search.get("email");
@@ -40,22 +42,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const isOwner = role === "owner";
   if (!email) {
     // Coming from a player with no family yet: start with them checked
-    const preselect = parseInt(search.get("playerId") ?? "");
-    return data({ team, roster, isOwner, household: null, preselect: Number.isInteger(preselect) ? [preselect] : [] });
+    const preselect = parseId(search.get("playerId"));
+    return data({ team, roster, isOwner, household: null, preselect: preselect ? [preselect] : [] });
   }
 
   const household = await getHousehold(teamId, email, team.coachId);
-  if (!household) throw redirect(`/dashboard/team/${teamId}/families`);
-  return data({ team, roster, isOwner, household, preselect: [] as number[] });
+  if (!household) throw redirect(teamPath(team, "families"));
+  return data({ team, roster, isOwner, household, preselect: [] as string[] });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = await teamIdFromCode(params.teamCode);
   const { team, role: myRole } = await requireTeamAccess(teamId, user.id);
   const formData = await request.formData();
   const text = (key: string) => String(formData.get(key) ?? "");
-  const back = `/dashboard/team/${teamId}/families`;
+  const back = teamPath(team, "families");
 
   if (text("_action") === "delete") {
     for (const email of formData.getAll("householdEmail")) await deleteFamily(teamId, String(email));
@@ -82,7 +84,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const result = await saveHousehold({
     teamId,
     guardians: input,
-    playerIds: formData.getAll("playerId").map((v) => parseInt(String(v))).filter(Number.isInteger),
+    playerIds: parseIds(formData.getAll("playerId")),
   });
   if (!result.ok) return data({ error: result.error }, { status: 400 });
 
@@ -175,7 +177,7 @@ export default function EditFamily(props: Route.ComponentProps) {
 
 function EditFamilyForm({ loaderData, actionData }: Route.ComponentProps) {
   const { team, roster, isOwner, household, preselect } = loaderData;
-  const back = `/dashboard/team/${team.id}/families`;
+  const back = teamPath(team, "families");
   const navigation = useNavigation();
   const busy = navigation.state === "submitting";
   const [confirmingDelete, setConfirmingDelete] = useState(false);

@@ -4,11 +4,13 @@ import { requireParent } from "~/utils/family.server";
 import { getComments, getLikers, getPost } from "~/utils/feed.server";
 import { feedChannel, isRealtimeConfigured } from "~/utils/realtime.server";
 import { PostDetail } from "~/components/feed/PostDetail";
+import { parseId } from "~/utils/ids";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { user, teamIds } = await requireParent(request);
   const me = { id: user.id, name: user.name || user.email.split("@")[0] };
-  const found = await getPost(Number(params.postId), user.id);
+  const postId = parseId(params.postId);
+  const found = postId ? await getPost(postId, user.id) : null;
   // Deleted, or not on one of this parent's teams: the same answer either way
   if (!found) return data({ post: null, comments: [], likers: [], me, multiTeam: false, channels: [] }, { status: 404 });
   const { post } = found;

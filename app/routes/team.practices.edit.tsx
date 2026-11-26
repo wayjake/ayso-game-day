@@ -16,15 +16,18 @@ import { usersWithPush } from "~/utils/messages.server";
 import { Alert, Badge, Button, Card, Page, PageHeader, buttonClass, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { Sheet, SheetTitle } from "~/components/Sheet";
 import { ArrowCounterClockwise, Bell, BellSlash, Check, Prohibit, Trash, UsersThree } from "@phosphor-icons/react";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
+import { teamPath } from "~/utils/team-path";
 
-async function loadPractice(request: Request, params: { teamId: string; practiceId: string }) {
+async function loadPractice(request: Request, params: { teamCode: string; practiceId: string }) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
+  const teamId = (await teamIdFromCode(params.teamCode));
   const { team } = await requireTeamAccess(teamId, user.id);
   const [practice] = await db
     .select()
     .from(practices)
-    .where(and(eq(practices.id, Number(params.practiceId)), eq(practices.teamId, teamId)))
+    .where(and(eq(practices.id, parseId(params.practiceId) ?? ""), eq(practices.teamId, teamId)))
     .limit(1);
   if (!practice) throw new Response("Practice not found", { status: 404 });
   return { user, team, practice };
@@ -57,7 +60,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const { team, practice } = await loadPractice(request, params);
   const formData = await request.formData();
   const intent = formData.get("_action");
-  const scheduleUrl = `/dashboard/team/${team.id}/games`;
+  const scheduleUrl = `${teamPath(team)}/games`;
 
   if (intent === "update") {
     const details = readPracticeDetails(formData);
@@ -126,7 +129,7 @@ export function meta({}: Route.MetaArgs) {
 export default function EditPractice({ loaderData, actionData }: Route.ComponentProps) {
   const { team, practice, following, reach } = loaderData;
   const [statusSheet, setStatusSheet] = useState(false);
-  const base = `/dashboard/team/${team.id}`;
+  const base = `${teamPath(team)}`;
   const navigation = useNavigation();
   const busy = navigation.state === "submitting";
   const cancelled = practice.status === "cancelled";

@@ -1,9 +1,10 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+import { newId, newTeamCode } from '../utils/ids';
 
 // Users table
 export const users = sqliteTable('users', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
   name: text('name'), // Printed on game cards
@@ -23,8 +24,8 @@ export const users = sqliteTable('users', {
 // Password reset links. Only a SHA-256 hash of the token is stored; the
 // token itself goes out in the email. Single use, short-lived.
 export const passwordResets = sqliteTable('password_resets', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  userId: text('user_id').notNull().references(() => users.id),
   tokenHash: text('token_hash').notNull().unique(),
   expiresAt: text('expires_at').notNull(),
   usedAt: text('used_at'),
@@ -33,9 +34,12 @@ export const passwordResets = sqliteTable('password_resets', {
 
 // Teams table
 export const teams = sqliteTable('teams', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  // Short random code that stands for the team in URLs (/dashboard/team/<code>).
+  // The id is still what every foreign key uses. See utils/ids.ts.
+  code: text('code').notNull().unique().$defaultFn(() => newTeamCode()),
   name: text('name').notNull(),
-  coachId: integer('coach_id').notNull().references(() => users.id),
+  coachId: text('coach_id').notNull().references(() => users.id),
   format: text('format', { enum: ['7v7', '9v9', '11v11'] }).notNull(),
   ageGroup: text('age_group'), // e.g., U12, U14
   season: text('season'), // e.g., Fall 2024
@@ -47,16 +51,16 @@ export const teams = sqliteTable('teams', {
   // redirect and the main teams list, for everyone on staff. Still opens and
   // works as before; All teams lists it under Archived. Only the owner sets it.
   archivedAt: text('archived_at'),
-  archivedBy: integer('archived_by').references(() => users.id),
+  archivedBy: text('archived_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Players table
 export const players = sqliteTable('players', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  coachId: integer('coach_id').references(() => users.id), // Historical record
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  coachId: text('coach_id').references(() => users.id), // Historical record
   name: text('name').notNull(),
   jerseyNumber: integer('jersey_number'), // Player's jersey number
   description: text('description'), // Notes about player (e.g., "Fast, good at defense")
@@ -81,8 +85,8 @@ export const templateFormations = sqliteTable('template_formations', {
 
 // Games table
 export const games = sqliteTable('games', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   formationId: integer('formation_id').references(() => templateFormations.id),
   opponent: text('opponent'),
   gameDate: text('game_date').notNull(),
@@ -97,9 +101,9 @@ export const games = sqliteTable('games', {
 
 // Assignments table (Player assignments for each game)
 export const assignments = sqliteTable('assignments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  gameId: integer('game_id').notNull().references(() => games.id),
-  playerId: integer('player_id').notNull().references(() => players.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  gameId: text('game_id').notNull().references(() => games.id),
+  playerId: text('player_id').notNull().references(() => players.id),
   positionNumber: integer('position_number').notNull(), // Soccer position number (1-11)
   positionName: text('position_name'), // e.g., "GK", "CB", "LW"
   quarter: integer('quarter'), // Which quarter/half they play this position
@@ -120,9 +124,9 @@ export const positions = sqliteTable('positions', {
 
 // Sit-out tracking for AYSO fair play
 export const sitOuts = sqliteTable('sit_outs', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  gameId: integer('game_id').notNull().references(() => games.id),
-  playerId: integer('player_id').notNull().references(() => players.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  gameId: text('game_id').notNull().references(() => games.id),
+  playerId: text('player_id').notNull().references(() => players.id),
   quarter: integer('quarter').notNull(),
   reason: text('reason'), // e.g., "rotation", "injury", "late arrival"
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -130,20 +134,20 @@ export const sitOuts = sqliteTable('sit_outs', {
 
 // Share links for public game viewing
 export const shareLinks = sqliteTable('share_links', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  gameId: integer('game_id').notNull().references(() => games.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  gameId: text('game_id').notNull().references(() => games.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
   shareId: text('share_id').notNull().unique(), // unique ID for the share link
   expiresAt: text('expires_at').notNull(), // timestamp when link expires
-  createdBy: integer('created_by').notNull().references(() => users.id),
+  createdBy: text('created_by').notNull().references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Contacts table for player family communications
 export const contacts = sqliteTable('contacts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  playerId: integer('player_id').references(() => players.id), // Optional link to player
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  playerId: text('player_id').references(() => players.id), // Optional link to player
   name: text('name').notNull(),
   email: text('email').notNull(),
   phone: text('phone'),
@@ -156,8 +160,8 @@ export const contacts = sqliteTable('contacts', {
 
 // OAuth tokens for Gmail integration
 export const oauthTokens = sqliteTable('oauth_tokens', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  userId: text('user_id').notNull().references(() => users.id),
   provider: text('provider', { enum: ['gmail'] }).notNull(),
   accessToken: text('access_token').notNull(), // Should be encrypted in production
   refreshToken: text('refresh_token').notNull(), // Should be encrypted in production
@@ -170,10 +174,10 @@ export const oauthTokens = sqliteTable('oauth_tokens', {
 
 // Email logs for sent messages
 export const emailLogs = sqliteTable('email_logs', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  gameId: integer('game_id').references(() => games.id), // Optional association
-  sentBy: integer('sent_by').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  gameId: text('game_id').references(() => games.id), // Optional association
+  sentBy: text('sent_by').notNull().references(() => users.id),
   provider: text('provider', { enum: ['brevo', 'gmail'] }).notNull(),
   providerMessageId: text('provider_message_id'), // External ID from Brevo/Gmail
   subject: text('subject').notNull(),
@@ -187,9 +191,9 @@ export const emailLogs = sqliteTable('email_logs', {
 
 // Inbox threads for team communications
 export const inboxThreads = sqliteTable('inbox_threads', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  gameId: integer('game_id').references(() => games.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  gameId: text('game_id').references(() => games.id),
   subject: text('subject').notNull(),
   participants: text('participants').notNull(), // JSON array of email addresses
   lastMessageAt: text('last_message_at').notNull(),
@@ -202,8 +206,8 @@ export const inboxThreads = sqliteTable('inbox_threads', {
 
 // Inbox messages within threads
 export const inboxMessages = sqliteTable('inbox_messages', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: integer('thread_id').notNull().references(() => inboxThreads.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  threadId: text('thread_id').notNull().references(() => inboxThreads.id),
   provider: text('provider', { enum: ['brevo', 'gmail'] }).notNull(),
   providerMessageId: text('provider_message_id').unique(),
   gmailMessageId: text('gmail_message_id'), // Gmail specific
@@ -220,9 +224,9 @@ export const inboxMessages = sqliteTable('inbox_messages', {
 
 // Thread notes for internal coach collaboration
 export const threadNotes = sqliteTable('thread_notes', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: integer('thread_id').notNull().references(() => inboxThreads.id),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  threadId: text('thread_id').notNull().references(() => inboxThreads.id),
+  userId: text('user_id').notNull().references(() => users.id),
   note: text('note').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -230,14 +234,14 @@ export const threadNotes = sqliteTable('thread_notes', {
 
 // Team members for multi-coach teams
 export const teamMembers = sqliteTable('team_members', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  userId: text('user_id').notNull().references(() => users.id),
   // Staff role (utils/team-roles.ts); all give the same coach access. 'owner' rows
   // are a legacy backfill of each team's creator and read as 'coach'. The owner
   // may have no row at all, in which case they're a coach.
   role: text('role', { enum: ['owner', 'coach', 'assistant-coach', 'team-manager'] }).notNull(),
-  invitedBy: integer('invited_by').references(() => users.id),
+  invitedBy: text('invited_by').references(() => users.id),
   invitedAt: text('invited_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   joinedAt: text('joined_at'),
   status: text('status', { enum: ['active', 'removed'] }).notNull().default('active'),
@@ -247,12 +251,12 @@ export const teamMembers = sqliteTable('team_members', {
 
 // Team invites for sharing team access
 export const teamInvites = sqliteTable('team_invites', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   email: text('email'),
   shareCode: text('share_code').unique(),
   role: text('role', { enum: ['coach', 'assistant-coach', 'team-manager'] }).notNull(), // Staff role given on accept
-  invitedBy: integer('invited_by').notNull().references(() => users.id),
+  invitedBy: text('invited_by').notNull().references(() => users.id),
   expiresAt: text('expires_at').notNull(),
   status: text('status', { enum: ['pending', 'accepted', 'revoked'] }).notNull().default('pending'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -265,10 +269,10 @@ export const teamInvites = sqliteTable('team_invites', {
 // here, never from users.role or team_members (which would grant coach access).
 // One user can coach some teams and be a parent on others.
 export const guardians = sqliteTable('guardians', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').notNull().references(() => users.id),
-  playerId: integer('player_id').notNull().references(() => players.id),
-  teamId: integer('team_id').notNull().references(() => teams.id), // Denormalized from players for team-wide queries
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  userId: text('user_id').notNull().references(() => users.id),
+  playerId: text('player_id').notNull().references(() => players.id),
+  teamId: text('team_id').notNull().references(() => teams.id), // Denormalized from players for team-wide queries
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('guardians_user_player_idx').on(t.userId, t.playerId),
@@ -278,14 +282,14 @@ export const guardians = sqliteTable('guardians', {
 // One invite per family email per team. Accepting links the account to every
 // player on the team that has a contact with this email (siblings included).
 export const parentInvites = sqliteTable('parent_invites', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   email: text('email').notNull(), // Lowercased
   shareCode: text('share_code').notNull().unique(),
-  invitedBy: integer('invited_by').notNull().references(() => users.id),
+  invitedBy: text('invited_by').notNull().references(() => users.id),
   expiresAt: text('expires_at').notNull(),
   status: text('status', { enum: ['pending', 'accepted', 'revoked'] }).notNull().default('pending'),
-  acceptedBy: integer('accepted_by').references(() => users.id),
+  acceptedBy: text('accepted_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -293,7 +297,7 @@ export const parentInvites = sqliteTable('parent_invites', {
 // using the link creates the parent's account if there isn't one yet. Only a
 // SHA-256 hash of the token is stored. Single use, short-lived.
 export const loginLinks = sqliteTable('login_links', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
   email: text('email').notNull(), // Lowercased
   tokenHash: text('token_hash').notNull().unique(),
   // The 6-digit code in the same email, for typing into the installed app (links open in Safari instead)
@@ -309,8 +313,8 @@ export const loginLinks = sqliteTable('login_links', {
 // is stored as is, not hashed, because Settings shows the link again whenever
 // they want to add it on another device. Resetting replaces it.
 export const calendarFeeds = sqliteTable('calendar_feeds', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').notNull().unique().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  userId: text('user_id').notNull().unique().references(() => users.id),
   token: text('token').notNull().unique(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -318,8 +322,8 @@ export const calendarFeeds = sqliteTable('calendar_feeds', {
 // Practices. A weekly series is just rows sharing a seriesId, so any single
 // date can be moved or cancelled without touching the rest.
 export const practices = sqliteTable('practices', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   seriesId: text('series_id'),
   practiceDate: text('practice_date').notNull(), // YYYY-MM-DD, like games.gameDate
   startTime: text('start_time'), // HH:MM, 24h
@@ -327,7 +331,7 @@ export const practices = sqliteTable('practices', {
   location: text('location'),
   notes: text('notes'),
   status: text('status', { enum: ['scheduled', 'cancelled'] }).notNull().default('scheduled'),
-  createdBy: integer('created_by').references(() => users.id),
+  createdBy: text('created_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -337,14 +341,14 @@ export const practices = sqliteTable('practices', {
 // Whether a player is coming to a game or practice. Set by a parent, or by a
 // coach on their behalf. One row per player per event.
 export const rsvps = sqliteTable('rsvps', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  playerId: integer('player_id').notNull().references(() => players.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  playerId: text('player_id').notNull().references(() => players.id),
   eventType: text('event_type', { enum: ['game', 'practice'] }).notNull(),
-  eventId: integer('event_id').notNull(),
+  eventId: text('event_id').notNull(),
   status: text('status', { enum: ['yes', 'no', 'maybe'] }).notNull(),
   note: text('note'),
-  respondedBy: integer('responded_by').notNull().references(() => users.id),
+  respondedBy: text('responded_by').notNull().references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -355,20 +359,20 @@ export const rsvps = sqliteTable('rsvps', {
 // A team chat (every coach and parent on the team), a private thread between
 // one family and one staff member, or a group chat (only its members).
 export const conversations = sqliteTable('conversations', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   kind: text('kind', { enum: ['team', 'direct', 'group'] }).notNull(),
   // Groups: an optional name (otherwise titled by its members) and who started
   // it. Anyone on the team can start one; members are in conversationMembers.
   name: text('name'),
-  createdBy: integer('created_by').references(() => users.id),
+  createdBy: text('created_by').references(() => users.id),
   // A 'direct' thread is one-to-one: one staff member (staffUserId) and one
   // family. Only those two can read it; other staff can't. The family side is a
   // parent account, a family email, or both. A family that isn't on the app yet
   // has only familyEmail; the thread moves to their account when they join with
   // a proven email (invite or magic link).
-  staffUserId: integer('staff_user_id').references(() => users.id),
-  parentUserId: integer('parent_user_id').references(() => users.id),
+  staffUserId: text('staff_user_id').references(() => users.id),
+  parentUserId: text('parent_user_id').references(() => users.id),
   familyEmail: text('family_email'), // Lowercased
   // The family wrote last and the staff member hasn't replied or marked it done
   needsReply: integer('needs_reply', { mode: 'boolean' }).notNull().default(false),
@@ -382,23 +386,23 @@ export const conversations = sqliteTable('conversations', {
 ]);
 
 export const messages = sqliteTable('messages', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
   // Null for a reply that came in by email from a family with no account
-  senderId: integer('sender_id').references(() => users.id),
+  senderId: text('sender_id').references(() => users.id),
   senderEmail: text('sender_email'), // Email replies: who it came from
   senderName: text('sender_name'),
   source: text('source', { enum: ['app', 'email'] }).notNull().default('app'),
   body: text('body').notNull(), // For email replies, the new text with quoted history trimmed
-  announcementId: integer('announcement_id'), // Set on the copy of an announcement in a family's thread
-  inboundEmailId: integer('inbound_email_id'), // Email replies: the full message
+  announcementId: text('announcement_id'), // Set on the copy of an announcement in a family's thread
+  inboundEmailId: text('inbound_email_id'), // Email replies: the full message
   // A coach's message that was also emailed to the family
   emailedTo: text('emailed_to'),
   resendEmailId: text('resend_email_id'),
   emailMessageId: text('email_message_id'), // RFC Message-ID, so replies to it can be matched
   // Set on a reply: the thread's root message. Threads are one level deep, so
   // a reply to a reply points at the same root.
-  parentId: integer('parent_id'),
+  parentId: text('parent_id'),
   // The sender deleted it (direct threads only). The row stays, with an empty
   // body, so replies under it, reactions' and announcements' references and
   // email reply matching (emailMessageId) still work.
@@ -417,11 +421,11 @@ export const messages = sqliteTable('messages', {
 // fills in userId). Being a member counts only while that person is still on
 // the team (staff, or a guardian there).
 export const conversationMembers = sqliteTable('conversation_members', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
-  userId: integer('user_id').references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  userId: text('user_id').references(() => users.id),
   familyEmail: text('family_email'), // Lowercased. Set for families, picked by email or not
-  addedBy: integer('added_by').references(() => users.id),
+  addedBy: text('added_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('conversation_members_user_idx').on(t.conversationId, t.userId).where(sql`user_id is not null`),
@@ -432,22 +436,22 @@ export const conversationMembers = sqliteTable('conversation_members', {
 
 // One emoji reaction per person per message per emoji, from a fixed set (utils/reactions.ts).
 export const messageReactions = sqliteTable('message_reactions', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  messageId: integer('message_id').notNull().references(() => messages.id),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  messageId: text('message_id').notNull().references(() => messages.id),
+  userId: text('user_id').notNull().references(() => users.id),
   emoji: text('emoji').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('message_reactions_unique_idx').on(t.messageId, t.userId, t.emoji),
 ]);
 
-// Read position per person per conversation. Message ids only go up, so
-// "unread" is any message with a higher id than lastReadMessageId.
+// Read position per person per conversation. Message ids (UUIDv7) sort by time,
+// so "unread" is any message with a higher id than lastReadMessageId.
 export const conversationReads = sqliteTable('conversation_reads', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
-  userId: integer('user_id').notNull().references(() => users.id),
-  lastReadMessageId: integer('last_read_message_id').notNull().default(0),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  lastReadMessageId: text('last_read_message_id'), // Null: nothing read yet,
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('conversation_reads_idx').on(t.conversationId, t.userId),
@@ -457,10 +461,10 @@ export const conversationReads = sqliteTable('conversation_reads', {
 // to upToMessageId at readAt. The first mark at or past a message is when they
 // read it (read receipts). conversationReads keeps only the latest marker.
 export const conversationReadMarks = sqliteTable('conversation_read_marks', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  conversationId: integer('conversation_id').notNull().references(() => conversations.id),
-  userId: integer('user_id').notNull().references(() => users.id),
-  upToMessageId: integer('up_to_message_id').notNull(),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  upToMessageId: text('up_to_message_id').notNull(),
   readAt: text('read_at').notNull(), // ISO
 }, (t) => [
   index('conversation_read_marks_idx').on(t.conversationId, t.userId, t.upToMessageId),
@@ -470,9 +474,9 @@ export const conversationReadMarks = sqliteTable('conversation_read_marks', {
 // (so replies and opens can be tracked per family) and a copy in their
 // private thread with the coaches.
 export const announcements = sqliteTable('announcements', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  sentBy: integer('sent_by').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  sentBy: text('sent_by').notNull().references(() => users.id),
   subject: text('subject').notNull(),
   body: text('body').notNull(),
   ask: text('ask', { enum: ['none', 'ack', 'reply'] }).notNull().default('none'),
@@ -482,15 +486,15 @@ export const announcements = sqliteTable('announcements', {
 
 // One row per family per announcement, tracking what happened to their email.
 export const announcementRecipients = sqliteTable('announcement_recipients', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  announcementId: integer('announcement_id').notNull().references(() => announcements.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  announcementId: text('announcement_id').notNull().references(() => announcements.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
   familyEmail: text('family_email').notNull(), // Lowercased
   familyLabel: text('family_label').notNull(), // "Garcia (Mia, Leo)" when sent
   sentToEmail: text('sent_to_email').notNull(), // Differs from familyEmail only when dev redirect is on
-  parentUserId: integer('parent_user_id').references(() => users.id), // On the app when sent
-  conversationId: integer('conversation_id').references(() => conversations.id),
-  messageId: integer('message_id').references(() => messages.id), // The copy in their thread
+  parentUserId: text('parent_user_id').references(() => users.id), // On the app when sent
+  conversationId: text('conversation_id').references(() => conversations.id),
+  messageId: text('message_id').references(() => messages.id), // The copy in their thread
   ackToken: text('ack_token').notNull().unique(),
   status: text('status', { enum: ['pending', 'sent', 'failed'] }).notNull().default('pending'),
   error: text('error'),
@@ -506,7 +510,7 @@ export const announcementRecipients = sqliteTable('announcement_recipients', {
   acknowledgedAt: text('acknowledged_at'),
   // Who tapped "Got it" first, and where: in the app (a parent account) or the
   // email's link (an account only when they were signed in as one of the family)
-  acknowledgedBy: integer('acknowledged_by').references(() => users.id),
+  acknowledgedBy: text('acknowledged_by').references(() => users.id),
   acknowledgedVia: text('acknowledged_via', { enum: ['app', 'email'] }),
   remindedAt: text('reminded_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -519,17 +523,17 @@ export const announcementRecipients = sqliteTable('announcement_recipients', {
 
 // Coach-only notes about a family. Never loaded by anything a parent can reach.
 export const familyNotes = sqliteTable('family_notes', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   familyEmail: text('family_email').notNull(), // Lowercased
-  authorId: integer('author_id').notNull().references(() => users.id),
+  authorId: text('author_id').notNull().references(() => users.id),
   body: text('body').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('family_notes_family_idx').on(t.teamId, t.familyEmail)]);
 
 // Every email received on the app's domain, kept whole so it can be re-matched.
 export const inboundEmails = sqliteTable('inbound_emails', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
   resendEmailId: text('resend_email_id').notNull().unique(),
   fromEmail: text('from_email').notNull(), // Lowercased
   fromName: text('from_name'),
@@ -544,10 +548,10 @@ export const inboundEmails = sqliteTable('inbound_emails', {
   // matched: in a family thread. unmatched: needs a coach to assign it. dismissed: ignored.
   status: text('status', { enum: ['matched', 'unmatched', 'dismissed'] }).notNull().default('unmatched'),
   matchedBy: text('matched_by'), // headers | sender | coach
-  teamId: integer('team_id').references(() => teams.id),
-  ownerUserId: integer('owner_user_id').references(() => users.id), // Coach whose address it was sent to
-  conversationId: integer('conversation_id').references(() => conversations.id),
-  recipientId: integer('recipient_id').references(() => announcementRecipients.id),
+  teamId: text('team_id').references(() => teams.id),
+  ownerUserId: text('owner_user_id').references(() => users.id), // Coach whose address it was sent to
+  conversationId: text('conversation_id').references(() => conversations.id),
+  recipientId: text('recipient_id').references(() => announcementRecipients.id),
   receivedAt: text('received_at').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -557,8 +561,8 @@ export const inboundEmails = sqliteTable('inbound_emails', {
 
 // Web Push subscriptions, one per browser/device a person turned notifications on in.
 export const pushSubscriptions = sqliteTable('push_subscriptions', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  userId: text('user_id').notNull().references(() => users.id),
   endpoint: text('endpoint').notNull().unique(),
   p256dh: text('p256dh').notNull(),
   auth: text('auth').notNull(),
@@ -576,10 +580,10 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
 // A file uploaded from the composer before "Post" is tapped. Publishing moves
 // it into post_media; drafts older than a day are swept, files and all.
 export const postUploads = sqliteTable('post_uploads', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
   fileKey: text('file_key').notNull().unique(),
-  userId: integer('user_id').notNull().references(() => users.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
   type: text('type', { enum: ['image', 'video'] }).notNull(),
   url: text('url').notNull(),
   name: text('name'),
@@ -590,9 +594,9 @@ export const postUploads = sqliteTable('post_uploads', {
 ]);
 
 export const posts = sqliteTable('posts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  authorId: integer('author_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  authorId: text('author_id').notNull().references(() => users.id),
   caption: text('caption'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -602,8 +606,8 @@ export const posts = sqliteTable('posts', {
 // One row per file in a post, in carousel order. display/thumb are the smaller
 // JPEG copies the browser made (1280px and 400px); null when that failed.
 export const postMedia = sqliteTable('post_media', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  postId: integer('post_id').notNull().references(() => posts.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  postId: text('post_id').notNull().references(() => posts.id),
   position: integer('position').notNull().default(0),
   type: text('type', { enum: ['image', 'video'] }).notNull(),
   url: text('url').notNull(),
@@ -619,9 +623,9 @@ export const postMedia = sqliteTable('post_media', {
 ]);
 
 export const postLikes = sqliteTable('post_likes', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  postId: integer('post_id').notNull().references(() => posts.id),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  postId: text('post_id').notNull().references(() => posts.id),
+  userId: text('user_id').notNull().references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   uniqueIndex('post_likes_unique_idx').on(t.postId, t.userId),
@@ -630,9 +634,9 @@ export const postLikes = sqliteTable('post_likes', {
 // Flat comments. clientId comes from the browser, so a retried send can't
 // post the same comment twice and the optimistic copy can be matched up.
 export const postComments = sqliteTable('post_comments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  postId: integer('post_id').notNull().references(() => posts.id),
-  userId: integer('user_id').notNull().references(() => users.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  postId: text('post_id').notNull().references(() => posts.id),
+  userId: text('user_id').notNull().references(() => users.id),
   clientId: text('client_id').notNull().unique(),
   body: text('body').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -645,8 +649,8 @@ export const postComments = sqliteTable('post_comments', {
 // conduct"). Rules live in utils/tasks.core.ts, shared with the MCP server.
 
 export const tasks = sqliteTable('tasks', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   title: text('title').notNull(),
   details: text('details'),
   link: text('link'), // e.g. a payment page or the form to sign
@@ -657,7 +661,7 @@ export const tasks = sqliteTable('tasks', {
   perFamily: integer('per_family', { mode: 'boolean' }).notNull().default(false),
   // Counts as done only once a coach confirms it, not when the family checks it
   coachConfirms: integer('coach_confirms', { mode: 'boolean' }).notNull().default(false),
-  createdBy: integer('created_by').references(() => users.id), // Null when imported
+  createdBy: text('created_by').references(() => users.id), // Null when imported
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('tasks_team_idx').on(t.teamId)]);
@@ -665,15 +669,15 @@ export const tasks = sqliteTable('tasks', {
 // One per task per player. A coach confirming also fills in the family side
 // (familyDoneVia = 'coach'), so parents see it as done.
 export const taskAssignments = sqliteTable('task_assignments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  playerId: integer('player_id').notNull().references(() => players.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  taskId: text('task_id').notNull().references(() => tasks.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  playerId: text('player_id').notNull().references(() => players.id),
   familyDoneAt: text('family_done_at'),
-  familyDoneBy: integer('family_done_by').references(() => users.id), // Null from a no-login link, a coach, or an import
+  familyDoneBy: text('family_done_by').references(() => users.id), // Null from a no-login link, a coach, or an import
   familyDoneVia: text('family_done_via', { enum: ['app', 'link', 'coach', 'import'] }),
   confirmedAt: text('confirmed_at'),
-  confirmedBy: integer('confirmed_by').references(() => users.id),
+  confirmedBy: text('confirmed_by').references(() => users.id),
   note: text('note'), // Coach-only, e.g. "Paid cash"
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
@@ -743,8 +747,8 @@ export type TaskAssignment = typeof taskAssignments.$inferSelect;
 
 // What money is collected for: ref fees, a tournament, the hotel
 export const ledgerItems = sqliteTable('ledger_items', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   name: text('name').notNull(),
   category: text('category', { enum: ['ref_fees', 'tournament', 'lodging_travel', 'uniform', 'other'] }).notNull().default('other'),
   details: text('details'), // Shown to families
@@ -760,8 +764,8 @@ export const ledgerItems = sqliteTable('ledger_items', {
   // Price of a full share, fixed on the first invoice so later joiners pay the same
   unitCents: integer('unit_cents'),
   settledAt: text('settled_at'), // Closed and settled: shares re-split on what was really paid out
-  settledBy: integer('settled_by').references(() => users.id),
-  createdBy: integer('created_by').references(() => users.id),
+  settledBy: text('settled_by').references(() => users.id),
+  createdBy: text('created_by').references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('ledger_items_team_idx').on(t.teamId)]);
@@ -770,11 +774,11 @@ export const ledgerItems = sqliteTable('ledger_items', {
 // splits stay exact); fixedCents is the person's own amount on a 'fixed'
 // expense. Editable: nothing reaches anyone's account until it's invoiced.
 export const ledgerShares = sqliteTable('ledger_shares', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  itemId: integer('item_id').notNull().references(() => ledgerItems.id),
-  playerId: integer('player_id').references(() => players.id),
-  userId: integer('user_id').references(() => users.id), // A staff member's own share
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  itemId: text('item_id').notNull().references(() => ledgerItems.id),
+  playerId: text('player_id').references(() => players.id),
+  userId: text('user_id').references(() => users.id), // A staff member's own share
   weight: integer('weight').notNull().default(2),
   fixedCents: integer('fixed_cents'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -787,13 +791,13 @@ export const ledgerShares = sqliteTable('ledger_shares', {
 // One family's bill: every share, change and cover not yet on an invoice, for
 // all their kids. Never edited; anything later goes on the next one.
 export const ledgerInvoices = sqliteTable('ledger_invoices', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   number: integer('number').notNull(), // Per team: 1, 2, 3...
   familyKey: text('family_key').notNull(), // "players:3,7" or "staff:12", as sent
   familyName: text('family_name').notNull(), // Snapshot, e.g. "Jacob & Benjamin McCutcheon"
   totalCents: integer('total_cents').notNull(),
-  issuedBy: integer('issued_by').notNull().references(() => users.id),
+  issuedBy: text('issued_by').notNull().references(() => users.id),
   issuedAt: text('issued_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   clientKey: text('client_key').notNull(),
 }, (t) => [
@@ -805,12 +809,12 @@ export const ledgerInvoices = sqliteTable('ledger_invoices', {
 // What an invoice says, line by line, as it was when sent. Each ledger entry
 // goes on one invoice at most.
 export const ledgerInvoiceLines = sqliteTable('ledger_invoice_lines', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  invoiceId: integer('invoice_id').notNull().references(() => ledgerInvoices.id),
-  entryId: integer('entry_id').notNull().references(() => ledgerEntries.id),
-  playerId: integer('player_id').references(() => players.id),
-  userId: integer('user_id').references(() => users.id),
-  itemId: integer('item_id').references(() => ledgerItems.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  invoiceId: text('invoice_id').notNull().references(() => ledgerInvoices.id),
+  entryId: text('entry_id').notNull().references(() => ledgerEntries.id),
+  playerId: text('player_id').references(() => players.id),
+  userId: text('user_id').references(() => users.id),
+  itemId: text('item_id').references(() => ledgerItems.id),
   label: text('label').notNull(), // "Your share of Quartz Hill Kickmas (Jacob)"
   cents: integer('cents').notNull(),
 }, (t) => [
@@ -821,11 +825,11 @@ export const ledgerInvoiceLines = sqliteTable('ledger_invoice_lines', {
 
 // Games and practices an expense is for (a tournament is several games). Optional.
 export const ledgerItemEvents = sqliteTable('ledger_item_events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  itemId: integer('item_id').notNull().references(() => ledgerItems.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  itemId: text('item_id').notNull().references(() => ledgerItems.id),
   eventType: text('event_type', { enum: ['game', 'practice'] }).notNull(),
-  eventId: integer('event_id').notNull(),
+  eventId: text('event_id').notNull(),
 }, (t) => [
   uniqueIndex('ledger_item_events_idx').on(t.itemId, t.eventType, t.eventId),
   index('ledger_item_events_event_idx').on(t.teamId, t.eventType, t.eventId),
@@ -834,31 +838,31 @@ export const ledgerItemEvents = sqliteTable('ledger_item_events', {
 // The team fund, and any others (savings). Families see a fund's balance
 // unless the team hides it.
 export const ledgerFunds = sqliteTable('ledger_funds', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   name: text('name').notNull(),
   visibleToFamilies: integer('visible_to_families', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index('ledger_funds_team_idx').on(t.teamId)]);
 
 export const ledgerTxns = sqliteTable('ledger_txns', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
   kind: text('kind', {
     enum: ['charge', 'payment', 'cover', 'donation', 'transfer', 'expense', 'reimburse', 'credit', 'refund', 'vendor_refund', 'reversal', 'adjust', 'settle'],
   }).notNull(),
-  itemId: integer('item_id').references(() => ledgerItems.id), // What it was for
-  fundId: integer('fund_id').references(() => ledgerFunds.id),
+  itemId: text('item_id').references(() => ledgerItems.id), // What it was for
+  fundId: text('fund_id').references(() => ledgerFunds.id),
   memo: text('memo'), // Shown to the families on it
   method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }), // Money that moved outside the app
   // Who the money came from. A payer's name is shown only to that payer and staff,
   // since two households can share a kid.
-  payerUserId: integer('payer_user_id').references(() => users.id),
+  payerUserId: text('payer_user_id').references(() => users.id),
   payerName: text('payer_name'),
   occurredOn: text('occurred_on').notNull(), // YYYY-MM-DD
-  reversesId: integer('reverses_id'), // Unique: a transaction is reversed at most once
+  reversesId: text('reverses_id'), // Unique: a transaction is reversed at most once
   clientKey: text('client_key').notNull(), // One per form, so a double submit posts once
-  createdBy: integer('created_by').notNull().references(() => users.id),
+  createdBy: text('created_by').notNull().references(() => users.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [
   index('ledger_txns_team_idx').on(t.teamId, t.id),
@@ -871,14 +875,14 @@ export const ledgerTxns = sqliteTable('ledger_txns', {
 // matching accountType; cash has none. Positive is a debit (see ledger.ts).
 // The foreign keys keep a player with money history from being deleted.
 export const ledgerEntries = sqliteTable('ledger_entries', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  txnId: integer('txn_id').notNull().references(() => ledgerTxns.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  txnId: text('txn_id').notNull().references(() => ledgerTxns.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
   accountType: text('account_type', { enum: ['player', 'staff', 'item', 'fund', 'cash'] }).notNull(),
-  playerId: integer('player_id').references(() => players.id),
-  userId: integer('user_id').references(() => users.id), // Staff accounts
-  itemId: integer('item_id').references(() => ledgerItems.id),
-  fundId: integer('fund_id').references(() => ledgerFunds.id),
+  playerId: text('player_id').references(() => players.id),
+  userId: text('user_id').references(() => users.id), // Staff accounts
+  itemId: text('item_id').references(() => ledgerItems.id),
+  fundId: text('fund_id').references(() => ledgerFunds.id),
   cents: integer('cents').notNull(),
 }, (t) => [
   index('ledger_entries_txn_idx').on(t.txnId),
@@ -889,17 +893,17 @@ export const ledgerEntries = sqliteTable('ledger_entries', {
 // "I sent it": a family says they paid. Nothing is posted until staff confirm
 // it, with the amount that actually arrived.
 export const ledgerClaims = sqliteTable('ledger_claims', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  teamId: integer('team_id').notNull().references(() => teams.id),
-  userId: integer('user_id').notNull().references(() => users.id), // The parent
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  userId: text('user_id').notNull().references(() => users.id), // The parent
   playerIds: text('player_ids').notNull(), // JSON array: the kids it's for
   cents: integer('cents').notNull(),
   method: text('method', { enum: ['venmo', 'cash', 'check', 'other'] }).notNull(),
   note: text('note'),
   status: text('status', { enum: ['pending', 'confirmed', 'dismissed'] }).notNull().default('pending'),
-  txnId: integer('txn_id').references(() => ledgerTxns.id),
+  txnId: text('txn_id').references(() => ledgerTxns.id),
   clientKey: text('client_key').notNull(),
-  resolvedBy: integer('resolved_by').references(() => users.id),
+  resolvedBy: text('resolved_by').references(() => users.id),
   resolvedAt: text('resolved_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [

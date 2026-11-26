@@ -4,12 +4,14 @@ import { getTeamStaff, requireTeamAccess } from "~/utils/team-access.server";
 import { buildGameCard } from "~/utils/game-card.server";
 import { db, games, players } from "~/db";
 import { eq, and } from "drizzle-orm";
+import { teamIdFromCode } from "~/utils/team-access.server";
+import { parseId } from "~/utils/ids";
 
 // Resource route: the official AYSO lineup card for one game, filled in as a PDF
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
-  const teamId = parseInt(params.teamId);
-  const gameId = parseInt(params.gameId);
+  const teamId = (await teamIdFromCode(params.teamCode));
+  const gameId = parseId(params.gameId) ?? ""; // Not an id: matches nothing, so 404s below
   const { team } = await requireTeamAccess(teamId, user.id);
 
   const [game] = await db

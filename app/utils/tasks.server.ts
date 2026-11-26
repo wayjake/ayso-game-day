@@ -6,6 +6,7 @@ import { MAX_MESSAGE_LENGTH } from "~/utils/messages.server";
 import { ensureAssignments } from "~/utils/tasks.core";
 import { dueLabel, taskState, type TaskState } from "~/utils/tasks";
 import { todayISO } from "~/utils/dates";
+import { isTeamCode } from "~/utils/ids";
 
 // Tasks as the app shows them. The rules for changing them are in
 // tasks.core.ts, shared with the MCP server.
@@ -25,7 +26,7 @@ export type Cell = {
   confirmedAt: string | null;
 };
 
-export type BoardPlayer = { id: number; name: string; jerseyNumber: number | null; cells: Record<number, Cell> };
+export type BoardPlayer = { id: string; name: string; jerseyNumber: number | null; cells: Record<string, Cell> };
 
 // Players grouped by the emails they share, so siblings sit together and the
 // coach can message each parent address
@@ -63,7 +64,7 @@ const cellFor = (task: Task, a: typeof taskAssignments.$inferSelect): Cell => ({
   confirmedAt: a.confirmedAt,
 });
 
-async function teamTasks(teamId: number) {
+async function teamTasks(teamId: string) {
   await ensureAssignments(db, teamId);
   const list = await db.select().from(tasks).where(eq(tasks.teamId, teamId)).orderBy(sql`${tasks.dueDate} is null`, asc(tasks.dueDate), asc(tasks.id));
   const rows = list.length
@@ -73,7 +74,7 @@ async function teamTasks(teamId: number) {
 }
 
 // Tasks in a state for a set of players, counting a per-family task once
-function countIn(list: Task[], rows: (typeof taskAssignments.$inferSelect)[], playerIds: Set<number>, state: TaskState = "open") {
+function countIn(list: Task[], rows: (typeof taskAssignments.$inferSelect)[], playerIds: Set<string>, state: TaskState = "open") {
   let count = 0;
   for (const task of list) {
     const mine = rows.filter((r) => r.taskId === task.id && playerIds.has(r.playerId) && taskState(task, r) === state);
@@ -82,7 +83,7 @@ function countIn(list: Task[], rows: (typeof taskAssignments.$inferSelect)[], pl
   return count;
 }
 
-export async function getTaskBoard(teamId: number) {
+export async function getTaskBoard(teamId: string) {
   const { list, rows } = await teamTasks(teamId);
   const roster = await db
     .select({ id: players.id, name: players.name, jerseyNumber: players.jerseyNumber })
@@ -92,8 +93,8 @@ export async function getTaskBoard(teamId: number) {
   const families = await listFamilies(null, teamId);
 
   const byTask = new Map(list.map((t) => [t.id, t]));
-  const boardPlayers = new Map<number, BoardPlayer>(
-    roster.map((p) => [p.id, { ...p, cells: {} as Record<number, Cell> }])
+  const boardPlayers = new Map<string, BoardPlayer>(
+    roster.map((p) => [p.id, { ...p, cells: {} as Record<string, Cell> }])
   );
   for (const r of rows) {
     const task = byTask.get(r.taskId);
@@ -102,13 +103,13 @@ export async function getTaskBoard(teamId: number) {
   }
 
   // Players who share any parent email end up in one group
-  const parent = new Map<number, number>(roster.map((p) => [p.id, p.id]));
-  const find = (id: number): number => (parent.get(id) === id ? id : find(parent.get(id)!));
+  const parent = new Map<string, string>(roster.map((p) => [p.id, p.id]));
+  const find = (id: string): string => (parent.get(id) === id ? id : find(parent.get(id)!));
   for (const f of families) {
     const ids = f.kids.map((k) => k.id).filter((id) => parent.has(id));
     for (const id of ids.slice(1)) parent.set(find(id), find(ids[0]));
   }
-  const groups = new Map<number, BoardPlayer[]>();
+  const groups = new Map<string, BoardPlayer[]>();
   for (const p of roster) {
     const root = find(p.id);
     groups.set(root, [...(groups.get(root) ?? []), boardPlayers.get(p.id)!]);
@@ -138,7 +139,7 @@ export async function getTaskBoard(teamId: number) {
 }
 
 // Waiting on a coach, across the team: the badge on the Tasks button
-export async function countTasksToConfirm(teamId: number) {
+export async function countTasksToConfirm(teamId: string) {
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(taskAssignments)
@@ -152,7 +153,7 @@ export async function countTasksToConfirm(teamId: number) {
 }
 
 export type TaskDetailRow = {
-  playerId: number;
+  playerId: string;
   name: string;
   jerseyNumber: number | null;
   family: string; // "Garcia (Mia)" for the parents listed on this player
@@ -162,7 +163,7 @@ export type TaskDetailRow = {
   note: string | null;
 };
 
-export async function getTaskDetail(teamId: number, taskId: number) {
+export async function getTaskDetail(teamId: string, taskId: string) {
   await ensureAssignments(db, teamId);
   const [task] = await db.select().from(tasks).where(and(eq(tasks.id, taskId), eq(tasks.teamId, teamId))).limit(1);
   if (!task) return null;
@@ -174,7 +175,7 @@ export async function getTaskDetail(teamId: number, taskId: number) {
     .where(and(eq(taskAssignments.taskId, task.id), eq(players.teamId, teamId)))
     .orderBy(players.name);
 
-  const userIds = [...new Set(rows.flatMap((r) => [r.a.familyDoneBy, r.a.confirmedBy]).filter((id): id is number => id != null))];
+  const userIds = [...new Set(rows.flatMap((r) => [r.a.familyDoneBy, r.a.confirmedBy]).filter((id): id is string => id != null))];
   const names = userIds.length
     ? new Map(
         (await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))).map((u) => [
@@ -182,10 +183,10 @@ export async function getTaskDetail(teamId: number, taskId: number) {
           u.name?.trim() || u.email.split("@")[0],
         ])
       )
-    : new Map<number, string>();
+    : new Map<string, string>();
 
   const families = await listFamilies(null, teamId);
-  const familyFor = (playerId: number) =>
+  const familyFor = (playerId: string) =>
     families.filter((f) => f.kids.some((k) => k.id === playerId)).map((f) => f.parentNames[0] ?? f.email).join(", ");
 
   const detail: TaskDetailRow[] = rows.map((r) => ({
@@ -214,8 +215,8 @@ export async function getTaskDetail(teamId: number, taskId: number) {
 // Families
 
 export type FamilyTask = {
-  taskId: number;
-  teamId: number;
+  taskId: string;
+  teamId: string;
   teamName: string;
   title: string;
   details: string | null;
@@ -224,13 +225,13 @@ export type FamilyTask = {
   coachConfirms: boolean;
   state: TaskState;
   confirmed: boolean;
-  playerIds: number[];
+  playerIds: string[];
   kidNames: string[]; // First names; empty when it covers every kid shown
 };
 
 // What a family has been asked to do, for these players. A per-family task
 // shows once for all of them. Never includes coach notes.
-export async function familyTasks(kids: { playerId: number; name: string; teamId: number }[]): Promise<FamilyTask[]> {
+export async function familyTasks(kids: { playerId: string; name: string; teamId: string }[]): Promise<FamilyTask[]> {
   if (kids.length === 0) return [];
   const teamIds = [...new Set(kids.map((k) => k.teamId))];
   for (const teamId of teamIds) await ensureAssignments(db, teamId);
@@ -258,7 +259,7 @@ export async function familyTasks(kids: { playerId: number; name: string; teamId
     .orderBy(sql`${tasks.dueDate} is null`, asc(tasks.dueDate), asc(tasks.id));
 
   const firstName = new Map(kids.map((k) => [k.playerId, k.name.split(" ")[0]]));
-  const kidsOnTeam = (teamId: number) => kids.filter((k) => k.teamId === teamId).length;
+  const kidsOnTeam = (teamId: string) => kids.filter((k) => k.teamId === teamId).length;
   const order: TaskState[] = ["open", "waiting", "done"];
 
   const items: FamilyTask[] = [];
@@ -296,7 +297,7 @@ export async function familyTasks(kids: { playerId: number; name: string; teamId
 }
 
 // Players on the team listed under this email
-async function kidsForEmail(teamId: number, email: string) {
+async function kidsForEmail(teamId: string, email: string) {
   return db
     .selectDistinct({ playerId: players.id, name: players.name, teamId: players.teamId })
     .from(contacts)
@@ -307,27 +308,28 @@ async function kidsForEmail(teamId: number, email: string) {
 
 // ---------------------------------------------------------------------------
 // Link for families who aren't on the app: one per family email per team,
-// signed rather than stored. Holds no email, only the team and a signature
-// the server matches against the team's families.
+// signed rather than stored. Holds no email, only the team's URL code and a
+// signature (over the team's id and the email) the server matches against the
+// team's families.
 
 function secret() {
   return process.env.SESSION_SECRET || "dev-secret-change-in-production";
 }
 
-function signature(teamId: number, email: string) {
+function signature(teamId: string, email: string) {
   return crypto.createHmac("sha256", secret()).update(`tasks:${teamId}:${email.trim().toLowerCase()}`).digest("base64url").slice(0, 24);
 }
 
-export function familyTaskToken(teamId: number, email: string) {
-  return `${teamId}-${signature(teamId, email)}`;
+export function familyTaskToken(team: { id: string; code: string }, email: string) {
+  return `${team.code}-${signature(team.id, email)}`;
 }
 
-export async function findFamilyByTaskToken(token: string): Promise<{ teamId: number; teamName: string; family: Family } | null> {
-  const match = /^(\d+)-([A-Za-z0-9_-]{24})$/.exec(token);
-  if (!match) return null;
-  const teamId = Number(match[1]);
-  const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+export async function findFamilyByTaskToken(token: string): Promise<{ teamId: string; teamName: string; family: Family } | null> {
+  const match = /^([a-z0-9]+)-([A-Za-z0-9_-]{24})$/.exec(token);
+  if (!match || !isTeamCode(match[1])) return null;
+  const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.code, match[1])).limit(1);
   if (!team) return null;
+  const teamId = team.id;
   const given = Buffer.from(match[2]);
   for (const family of await listFamilies(null, teamId)) {
     const expected = Buffer.from(signature(teamId, family.email));
@@ -338,7 +340,7 @@ export async function findFamilyByTaskToken(token: string): Promise<{ teamId: nu
   return null;
 }
 
-export async function tasksForTokenFamily(teamId: number, family: Family) {
+export async function tasksForTokenFamily(teamId: string, family: Family) {
   return familyTasks(family.kids.map((k) => ({ playerId: k.id, name: k.name, teamId })));
 }
 
@@ -350,7 +352,7 @@ function appOrigin(request: Request) {
   return process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
 }
 
-export async function taskDraftFor(request: Request, teamId: number, email: string, onApp: boolean) {
+export async function taskDraftFor(request: Request, teamId: string, email: string, onApp: boolean) {
   const kids = await kidsForEmail(teamId, email);
   if (kids.length === 0) return null;
   const open = (await familyTasks(kids)).filter((t) => t.state === "open");
@@ -361,7 +363,8 @@ export async function taskDraftFor(request: Request, teamId: number, email: stri
   const parentFirst = family?.parentNames[0]?.trim().split(/\s+/)[0];
   const kidNames = kids.map((k) => k.name.split(" ")[0]);
   const today = todayISO();
-  const link = onApp ? `${appOrigin(request)}/family` : `${appOrigin(request)}/todo/${familyTaskToken(teamId, email)}`;
+  const [team] = onApp ? [] : await db.select({ id: teams.id, code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  const link = team ? `${appOrigin(request)}/todo/${familyTaskToken(team, email)}` : `${appOrigin(request)}/family`;
 
   const line = (t: FamilyTask) => {
     const who = kids.length > 1 && t.kidNames.length > 0 && t.kidNames.length < kids.length ? ` (${t.kidNames.join(", ")})` : "";

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { feedScopeKey, feedScopeQuery, type FeedPage, type FeedPost, type FeedScope, type FeedUpdates, type PostStats } from "~/utils/feed";
 import { useRealtimeEvents } from "~/hooks/useConversationRealtime";
+import { compareIds, maxId } from "~/utils/ids";
 
 // The feed's list: starts from the loader's first page, pages older posts in
 // as you scroll, and polls for what changed (right away when a realtime event
 // says so). New posts that arrive while you're scrolled down are held back so
 // nothing jumps, until you tap the "new posts" pill or scroll to the top.
-// Ported from disney-social's use-timeline-feed, keyed by post id instead of
-// time.
+// Ported from disney-social's use-timeline-feed, keyed by post id (a UUIDv7,
+// which sorts by time as text) instead of time.
 
-const byNewest = (a: FeedPost, b: FeedPost) => b.id - a.id;
+const byNewest = (a: FeedPost, b: FeedPost) => compareIds(b.id, a.id);
 
 /** Upsert by id and keep newest first */
 function merge(list: FeedPost[], incoming: FeedPost[]) {
@@ -22,7 +23,7 @@ function merge(list: FeedPost[], incoming: FeedPost[]) {
 const sameStats = (a: PostStats, b: PostStats) => a.likes === b.likes && a.liked === b.liked && a.comments === b.comments;
 
 /** Swap in fresh counts, keeping object identity where nothing changed */
-function withStats(list: FeedPost[], stats: Record<number, PostStats>) {
+function withStats(list: FeedPost[], stats: Record<string, PostStats>) {
   let changed = false;
   const next = list.map((p) => {
     const s = stats[p.id];
@@ -59,7 +60,7 @@ export function useTeamFeed({
 }: {
   initial: FeedPage;
   scope: FeedScope;
-  viewerId: number;
+  viewerId: string;
   /** Realtime channels to listen on; empty when realtime isn't set up */
   channels: string[];
 }) {
@@ -71,10 +72,10 @@ export function useTeamFeed({
   const [restored] = useState(() => restore(cacheKey, initial));
   const [posts, setPosts] = useState(restored?.posts ?? initial.posts);
   const [hasMore, setHasMore] = useState(restored?.hasMore ?? initial.hasMore);
-  const [held, setHeld] = useState<ReadonlySet<number>>(restored?.held ?? new Set());
+  const [held, setHeld] = useState<ReadonlySet<string>>(restored?.held ?? new Set());
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const removed = useRef(new Set<number>());
+  const removed = useRef(new Set<string>());
   // Bumped on reset so responses for the old list are dropped
   const generation = useRef(0);
 
@@ -108,12 +109,13 @@ export function useTeamFeed({
     const gen = generation.current;
     try {
       const { posts: now, hasMore } = latest.current;
-      const since = now.reduce((max, p) => Math.max(max, p.id), 0);
+      // Empty when nothing is loaded yet: every id sorts after ""
+      const since = maxId(now.map((p) => p.id)) ?? "";
       const params = new URLSearchParams(scopeQuery);
-      params.set("since", String(since));
+      params.set("since", since);
       // Older than the last loaded post comes in through paging instead
       const oldest = hasMore ? now.at(-1)?.id : undefined;
-      if (oldest) params.set("oldest", String(oldest));
+      if (oldest) params.set("oldest", oldest);
 
       const res = await fetch(`/api/feed?${params}`);
       if (!res.ok || gen !== generation.current) return;
@@ -180,7 +182,7 @@ export function useTeamFeed({
     const gen = generation.current;
     try {
       const params = new URLSearchParams(scopeQuery);
-      params.set("before", String(last.id));
+      params.set("before", last.id);
       const res = await fetch(`/api/feed?${params}`);
       if (!res.ok) throw new Error(res.statusText);
       const page: FeedPage = await res.json();
@@ -200,13 +202,13 @@ export function useTeamFeed({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const remove = useCallback((id: number) => {
+  const remove = useCallback((id: string) => {
     removed.current.add(id);
     setPosts((list) => list.filter((p) => p.id !== id));
   }, []);
 
   // A like or comment made here: no need to wait for the next update
-  const patchStats = useCallback((id: number, stats: PostStats) => {
+  const patchStats = useCallback((id: string, stats: PostStats) => {
     setPosts((list) => withStats(list, { [id]: stats }));
   }, []);
 

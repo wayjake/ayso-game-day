@@ -8,6 +8,7 @@ import { todayISO } from "~/utils/dates";
 import { FamilyTodo } from "~/components/FamilyTodo";
 import { Card, EmptyState } from "~/components/ui";
 import { ListChecks } from "@phosphor-icons/react";
+import { parseId } from "~/utils/ids";
 
 // The family's To do tab: everything the coaches asked for, open first
 
@@ -26,15 +27,17 @@ export async function action({ request }: Route.ActionArgs) {
   if (formData.get("_action") !== "task") return data({ error: "Unknown action" }, { status: 400 });
 
   // Checking a task off (or taking it back), only for your own kids on that task's team
-  const playerIds = formData.getAll("playerId").map(Number);
+  const given = formData.getAll("playerId").map((v) => parseId(v));
+  const playerIds = given.filter((id): id is string => id !== null);
   const mine = kids.filter((k) => playerIds.includes(k.playerId));
   const teamId = mine[0]?.teamId;
-  if (mine.length === 0 || mine.length !== playerIds.length || mine.some((k) => k.teamId !== teamId)) {
+  const taskId = parseId(formData.get("taskId"));
+  if (!taskId || mine.length === 0 || mine.length !== given.length || mine.some((k) => k.teamId !== teamId)) {
     return data({ error: "Can't update that task" }, { status: 400 });
   }
   const result = await setFamilyDone(db, {
     teamId,
-    taskId: Number(formData.get("taskId")),
+    taskId,
     playerIds,
     done: formData.get("done") === "1",
     by: user.id,

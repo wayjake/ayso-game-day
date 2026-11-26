@@ -23,11 +23,11 @@ export function FeedTimeline({
 }: {
   feed: FeedPage;
   scope: FeedScope;
-  me: { id: number; name: string };
+  me: { id: string; name: string };
   /** Teams the composer can post to */
-  teams: { id: number; name: string }[];
+  teams: { id: string; name: string }[];
   channels: string[];
-  postHref: (postId: number) => string;
+  postHref: (postId: string) => string;
   /** Label each post with its team (a parent with kids on several teams) */
   showTeamName: boolean;
 }) {
@@ -105,8 +105,8 @@ function PostCard({
   post: FeedPost;
   href: string;
   showTeamName: boolean;
-  onDeleted: (id: number) => void;
-  onStats: (id: number, stats: PostStats) => void;
+  onDeleted: (id: string) => void;
+  onStats: (id: string, stats: PostStats) => void;
 }) {
   return (
     <Card className="overflow-hidden">
