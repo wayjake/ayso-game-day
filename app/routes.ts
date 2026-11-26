@@ -21,6 +21,7 @@ export default [
   route("join/:code", "routes/join.tsx"),
   route("ack/:token", "routes/ack.tsx"),
   route("todo/:token", "routes/todo.tsx"),
+  route("pay/:token", "routes/pay.tsx"),
   route("cal/:file", "routes/cal.ts"),
   // Family app: parents' schedule, RSVPs and messages
   route("family", "routes/family.tsx", [

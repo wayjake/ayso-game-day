@@ -8,7 +8,7 @@ import { FormError, newFormKey, runLedgerAction } from "~/utils/ledger-forms.ser
 import { formatCents } from "~/utils/money";
 import { Amount } from "~/components/money";
 import { Alert, Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, cx } from "~/components/ui";
-import { CaretDown, Invoice, PaperPlaneTilt } from "@phosphor-icons/react";
+import { CaretDown, CheckCircle, Invoice, LinkSimple, PaperPlaneTilt } from "@phosphor-icons/react";
 
 export function meta() {
   return [{ title: "Invoices - Finances - BenchTalk" }];
@@ -29,7 +29,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   return runLedgerAction(async () => {
     const key = String(formData.get("sendKey") ?? "");
     if (!key) throw new FormError("Reload the page and try again");
-    await sendInvoices(team.id, user.id, key);
+    const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
+    await sendInvoices(team.id, user.id, key, origin);
   });
 }
 
@@ -42,7 +43,7 @@ export default function Invoices({ loaderData }: Route.ComponentProps) {
       <PageHeader
         back={{ to: base, label: "Finances" }}
         title="Invoices"
-        description="One bill per family, with every share not yet invoiced, for all their kids. Once sent, an invoice never changes: anything later goes on the next one."
+        description="One bill per family, with every share not yet invoiced, for all their kids. Each family gets it by email with a link to pay on Venmo, no sign-in needed. Once sent, an invoice never changes: anything later goes on the next one."
       />
 
       <section>
@@ -121,7 +122,7 @@ function SendBar({ formKey, families, totalCents }: { formKey: string; families:
           <span className="font-semibold">
             {families} {families === 1 ? "invoice" : "invoices"} · {formatCents(totalCents)}
           </span>
-          <span className="block text-muted">Parents on the app get a notification and see it under Finances.</span>
+          <span className="block text-muted">Each family gets an email with a link to pay, no sign-in needed. Parents on the app get a notification too.</span>
         </p>
         <Button
           type="submit"
@@ -144,6 +145,26 @@ function SendBar({ formKey, families, totalCents }: { formKey: string; families:
 
 type Sent = Route.ComponentProps["loaderData"]["sent"][number];
 
+// The family's no-sign-in page, to text them; it's also in their invoice email
+function CopyPayLink({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(`${window.location.origin}${path}`).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="tap mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+    >
+      {copied ? <CheckCircle size={16} weight="fill" /> : <LinkSimple size={16} />}
+      {copied ? "Copied" : "Copy pay link"}
+    </button>
+  );
+}
+
 function SentRow({ inv }: { inv: Sent }) {
   const status =
     inv.totalCents <= 0 ? <Badge tone="success">Money back</Badge>
@@ -163,14 +184,17 @@ function SentRow({ inv }: { inv: Sent }) {
           <Amount cents={inv.totalCents} className="w-20 text-right font-semibold" />
           <CaretDown size={16} className="shrink-0 text-muted transition group-open:rotate-180" aria-hidden />
         </summary>
-        <ul className={cx("space-y-1 border-t border-line bg-surface-2 px-4 py-3 text-sm")}>
-          {inv.lines.map((l, i) => (
-            <li key={i} className="flex justify-between gap-3">
-              <span className="min-w-0 text-muted">{l.label}</span>
-              <Amount cents={l.cents} />
-            </li>
-          ))}
-        </ul>
+        <div className="border-t border-line bg-surface-2 px-4 py-3 text-sm">
+          <ul className="space-y-1">
+            {inv.lines.map((l, i) => (
+              <li key={i} className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">{l.label}</span>
+                <Amount cents={l.cents} />
+              </li>
+            ))}
+          </ul>
+          {inv.payPath && <CopyPayLink path={inv.payPath} />}
+        </div>
       </details>
     </li>
   );

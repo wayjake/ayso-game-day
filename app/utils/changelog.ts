@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Pay without signing in",
+    summary: "Families get their invoice by email, with a link to pay on Venmo. No account needed.",
+    changes: [
+      { kind: "new", text: "Sending invoices emails each family theirs, from your address, with a link to see what they owe and pay on Venmo, no sign-in needed. Replies come back to you." },
+      { kind: "new", text: "Coaches: copy any family's pay link from a sent invoice to text it to them." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Expenses, shares and invoices",
     summary: "Add an expense once, pick who shares it, and send each family one invoice for everything they owe.",
     changes: [

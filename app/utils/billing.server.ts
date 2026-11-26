@@ -8,6 +8,7 @@
 // they've been billed), and puts it, with anything else not yet invoiced, on
 // one locked invoice per family.
 
+import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
@@ -22,6 +23,7 @@ import {
   ledgerTxns,
   players,
   teams,
+  users,
   type LedgerInvoice,
   type LedgerItem,
 } from "~/db";
@@ -43,6 +45,7 @@ import { sumCents, type Cents } from "~/utils/money";
 import { memberKey, postTxnIn, type Tx } from "~/utils/ledger.server";
 import { getTeamStaff } from "~/utils/team-access.server";
 import { sendPush } from "~/utils/push.server";
+import { coachFromAddress, familyDeliveryAddress, sendEmail } from "~/utils/email.server";
 import { formatCents } from "~/utils/money";
 
 type Reader = typeof db | Tx;
@@ -426,7 +429,7 @@ export async function invoicePreview(teamId: number): Promise<{ drafts: DraftInv
 
 // Bills every share change, then puts everything not yet invoiced on one
 // invoice per family. All or nothing; sending the same form twice sends once.
-export async function sendInvoices(teamId: number, by: number, formKey: string) {
+export async function sendInvoices(teamId: number, by: number, formKey: string, origin: string) {
   const key = formKey.trim();
   if (!key || key.length > 60) throw new LedgerError("Reload the page and try again");
 
@@ -513,7 +516,8 @@ export async function sendInvoices(teamId: number, by: number, formKey: string) 
 
   // Tell each family's parents (and staff members their own), after it's saved
   if (sent.length) {
-    const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    if (team) await emailInvoices(team, by, sent.map((s) => s.id), origin);
     for (const inv of sent) {
       const playerIds = inv.members.filter((m) => m.type === "player").map((m) => m.id);
       const parentIds = playerIds.length
@@ -532,10 +536,127 @@ export async function sendInvoices(teamId: number, by: number, formKey: string) 
 }
 
 // ---------------------------------------------------------------------------
+// Paying without signing in. A link per family, signed for that family's kids:
+// /pay/<team>-<player ids>-<signature>. Nothing is stored, so a link keeps
+// working as long as the kids are on the team. It only shows what they owe;
+// paying happens on Venmo.
+
+function paySignature(teamId: number, ids: string) {
+  const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+  return crypto.createHmac("sha256", secret).update(`pay:${teamId}:${ids}`).digest("base64url").slice(0, 22);
+}
+
+export function payToken(teamId: number, playerIds: number[]) {
+  const ids = [...new Set(playerIds)].sort((a, b) => a - b).join(".");
+  return `${teamId}-${ids}-${paySignature(teamId, ids)}`;
+}
+
+export function payPath(teamId: number, familyKey: string) {
+  const playerIds = familyMembersFromKey(familyKey).filter((m) => m.type === "player").map((m) => m.id);
+  return playerIds.length ? `/pay/${payToken(teamId, playerIds)}` : null;
+}
+
+export async function findPayFamily(token: string) {
+  const match = /^(\d+)-(\d+(?:\.\d+)*)-([A-Za-z0-9_-]{22})$/.exec(token);
+  if (!match) return null;
+  const teamId = Number(match[1]);
+  const given = Buffer.from(match[3]);
+  const expected = Buffer.from(paySignature(teamId, match[2]));
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  const ids = match[2].split(".").map(Number);
+  const [team] = await db.select({ id: teams.id, name: teams.name, venmoHandle: teams.venmoHandle }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  if (!team) return null;
+  const kids = await db
+    .select({ id: players.id, name: players.name })
+    .from(players)
+    .where(and(eq(players.teamId, teamId), inArray(players.id, ids)))
+    .orderBy(asc(players.name));
+  if (kids.length === 0) return null;
+  return { team, kids };
+}
+
+// What a family owes, for the pay page: their invoices, and one amount for all their kids
+export async function payView(teamId: number, playerIds: number[]) {
+  const invoices = await familyInvoices(teamId, playerIds);
+  const { balance } = await paidInFor(db, teamId, playerIds.map((id) => ({ type: "player" as const, id })), []);
+  return { invoices, owed: Math.max(0, balance), dueBack: Math.max(0, -balance) };
+}
+
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+// Each family's invoice by email, to every contact email on their kids, with
+// their pay link. Outside production it goes to the sender instead (see
+// familyDeliveryAddress). A failed email doesn't undo the send.
+export async function emailInvoices(team: { id: number; name: string }, by: number, invoiceIds: number[], origin: string) {
+  const [sender] = await db.select({ id: users.id, name: users.name, email: users.email, sendingEmail: users.sendingEmail }).from(users).where(eq(users.id, by)).limit(1);
+  if (!sender) return;
+  const from = coachFromAddress(sender, team);
+  const invoices = await db.select().from(ledgerInvoices).where(inArray(ledgerInvoices.id, invoiceIds));
+  const lines = await db.select().from(ledgerInvoiceLines).where(inArray(ledgerInvoiceLines.invoiceId, invoiceIds)).orderBy(asc(ledgerInvoiceLines.id));
+  for (const inv of invoices) {
+    const path = payPath(team.id, inv.familyKey);
+    if (!path) continue; // A staff member's own share: they see it in the app
+    const playerIds = familyMembersFromKey(inv.familyKey).map((m) => m.id);
+    const emails = await db
+      .selectDistinct({ email: sql<string>`lower(trim(${contacts.email}))` })
+      .from(contacts)
+      // Parents and guardians, not emergency contacts
+      .where(and(eq(contacts.teamId, team.id), inArray(contacts.playerId, playerIds), sql`coalesce(${contacts.relationship}, '') != 'emergency'`));
+    if (emails.length === 0) continue;
+    const { owed } = await payView(team.id, playerIds);
+    const url = `${origin}${path}`;
+    const mine = lines.filter((l) => l.invoiceId === inv.id);
+    const amount = (cents: number) => `${cents < 0 ? "−" : ""}${formatCents(Math.abs(cents))}`;
+    const subject = `${team.name}: invoice #${inv.number} for ${amount(inv.totalCents)}`;
+    const text = [
+      "Hi,",
+      "",
+      `Here's invoice #${inv.number} from ${team.name}, for ${inv.familyName}:`,
+      "",
+      ...mine.map((l) => `  ${l.label}: ${amount(l.cents)}`),
+      `  Total: ${amount(inv.totalCents)}`,
+      "",
+      owed > 0 ? `You owe ${formatCents(owed)} in all. See your invoices and pay on Venmo here, no sign-in needed:` : "You're all paid up. Your invoices are here:",
+      url,
+      "",
+      `Questions? Just reply to this email.`,
+      "",
+      sender.name || sender.email.split("@")[0],
+    ].join("\n");
+    const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a;max-width:520px">
+<p>Hi,</p>
+<p>Here's invoice #${inv.number} from ${escapeHtml(team.name)}, for ${escapeHtml(inv.familyName)}:</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+${mine.map((l) => `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;color:#475569">${escapeHtml(l.label)}</td><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap">${amount(l.cents)}</td></tr>`).join("\n")}
+<tr><td style="padding:8px 0;font-weight:600">Total</td><td style="padding:8px 0;text-align:right;font-weight:600">${amount(inv.totalCents)}</td></tr>
+</table>
+<p>${owed > 0 ? `You owe <strong>${formatCents(owed)}</strong> in all.` : "You're all paid up."}</p>
+<p><a href="${escapeHtml(url)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">${owed > 0 ? `See it and pay ${formatCents(owed)}` : "See your invoices"}</a></p>
+<p style="color:#64748b;font-size:13px">No sign-in needed. Questions? Just reply to this email.</p>
+<p>${escapeHtml(sender.name || sender.email.split("@")[0])}</p>
+</div>`;
+    for (const { email } of emails) {
+      if (!email) continue;
+      await sendEmail({
+        to: familyDeliveryAddress(email, sender.email),
+        from: from.header,
+        replyTo: from.address,
+        subject,
+        text,
+        html,
+        tags: [{ name: "kind", value: "invoice" }],
+        idempotencyKey: `invoice-${inv.id}-${email}`.slice(0, 250),
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Reading invoices
 
 export type InvoiceView = {
   id: number;
+  payPath?: string | null; // Staff only: the family's no-sign-in link
   number: number;
   familyKey: string;
   familyName: string;
@@ -589,6 +710,7 @@ export async function teamInvoices(teamId: number): Promise<InvoiceView[]> {
   return invoices
     .map((inv) => ({
       id: inv.id,
+      payPath: payPath(teamId, inv.familyKey),
       number: inv.number,
       familyKey: inv.familyKey,
       familyName: inv.familyName,
