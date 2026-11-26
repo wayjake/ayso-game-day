@@ -267,15 +267,22 @@ export async function settlePreview(teamId: number, item: LedgerItem) {
   const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
   const cost = (await expenseCosts(db, teamId)).get(item.id) ?? { paidOut: 0, returned: 0, cost: 0 };
   const net = (await billedByItem(db, teamId, [...SHARE_KINDS, "credit"])).get(item.id) ?? [];
-  if (shares.length === 0) return { ...cost, rows: [] as { member: Member; billed: Cents; final: Cents; change: Cents }[] };
+  type Row = { member: Member; billed: Cents; final: Cents; change: Cents };
+  // More came back than went out (a refund recorded before the payout): nothing to split yet
+  if (shares.length === 0 || cost.cost < 0) return { ...cost, rows: [] as Row[] };
   const targets = settleTargets(cost.cost, shares);
   const billedOf = new Map(net.map((b) => [memberKey(b.member), b.cents]));
+  const sharing = new Set(targets.map((t) => memberKey(t.member)));
   return {
     ...cost,
-    rows: targets.map((t) => {
-      const billed = billedOf.get(memberKey(t.member)) ?? 0;
-      return { member: t.member, billed, final: t.cents, change: t.cents - billed };
-    }),
+    rows: [
+      ...targets.map((t) => {
+        const billed = billedOf.get(memberKey(t.member)) ?? 0;
+        return { member: t.member, billed, final: t.cents, change: t.cents - billed };
+      }),
+      // Taken off the expense after being billed: all of it comes back
+      ...net.filter((b) => !sharing.has(memberKey(b.member)) && b.cents !== 0).map((b) => ({ member: b.member, billed: b.cents, final: 0, change: -b.cents })),
+    ] as Row[],
   };
 }
 
@@ -683,7 +690,7 @@ export async function emailInvoices(team: { id: number; name: string }, by: numb
       // Parents and guardians, not emergency contacts
       .where(and(eq(contacts.teamId, team.id), inArray(contacts.playerId, playerIds), sql`coalesce(${contacts.relationship}, '') != 'emergency'`));
     if (emails.length === 0) continue;
-    const { owed } = await payView(team.id, playerIds);
+    const { owed, dueBack } = await payView(team.id, playerIds);
     const url = `${origin}${path}`;
     const mine = lines.filter((l) => l.invoiceId === inv.id);
     const amount = (cents: number) => `${cents < 0 ? "−" : ""}${formatCents(Math.abs(cents))}`;
@@ -696,7 +703,11 @@ export async function emailInvoices(team: { id: number; name: string }, by: numb
       ...mine.map((l) => `  ${l.label}: ${amount(l.cents)}`),
       `  Total: ${amount(inv.totalCents)}`,
       "",
-      owed > 0 ? `You owe ${formatCents(owed)} in all. See your invoices and pay on Venmo here, no sign-in needed:` : "You're all paid up. Your invoices are here:",
+      owed > 0
+        ? `You owe ${formatCents(owed)} in all. See your invoices and pay on Venmo here, no sign-in needed:`
+        : dueBack > 0
+          ? `The team owes you ${formatCents(dueBack)}. The coach will pay it back. Your invoices are here:`
+          : "You're all paid up. Your invoices are here:",
       url,
       "",
       `Questions? Just reply to this email.`,
@@ -710,7 +721,7 @@ export async function emailInvoices(team: { id: number; name: string }, by: numb
 ${mine.map((l) => `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;color:#475569">${escapeHtml(l.label)}</td><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap">${amount(l.cents)}</td></tr>`).join("\n")}
 <tr><td style="padding:8px 0;font-weight:600">Total</td><td style="padding:8px 0;text-align:right;font-weight:600">${amount(inv.totalCents)}</td></tr>
 </table>
-<p>${owed > 0 ? `You owe <strong>${formatCents(owed)}</strong> in all.` : "You're all paid up."}</p>
+<p>${owed > 0 ? `You owe <strong>${formatCents(owed)}</strong> in all.` : dueBack > 0 ? `The team owes you <strong>${formatCents(dueBack)}</strong>. The coach will pay it back.` : "You're all paid up."}</p>
 <p><a href="${escapeHtml(url)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">${owed > 0 ? `See it and pay ${formatCents(owed)}` : "See your invoices"}</a></p>
 <p style="color:#64748b;font-size:13px">No sign-in needed. Questions? Just reply to this email.</p>
 <p>${escapeHtml(sender.name || sender.email.split("@")[0])}</p>

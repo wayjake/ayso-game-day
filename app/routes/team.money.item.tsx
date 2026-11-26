@@ -258,11 +258,20 @@ export async function action({ request, params }: Route.ActionArgs) {
         return;
       }
       case "vendorRefund": {
+        const cents = readCents(formData, "cents");
+        const { paidOut, returned } = await settlePreview(team.id, item);
+        if (cents > paidOut - returned) {
+          throw new FormError(
+            paidOut === 0
+              ? "Record what the team paid out first, then the refund that came back."
+              : `Only ${formatCents(paidOut - returned)} more could come back: that's what's been paid out, less refunds already in.`
+          );
+        }
         await postTxn({
           teamId: team.id,
           kind: "vendor_refund",
           itemId: item.id,
-          lines: vendorRefundLines(item.id, readCents(formData, "cents")),
+          lines: vendorRefundLines(item.id, cents),
           method: readMethod(formData),
           occurredOn: readDate(formData),
           memo: readText(formData, "memo"),
@@ -562,6 +571,9 @@ function SettlePanel({ settle, totalCents, formKey }: { settle: SettleData; tota
   const more = settle.rows.filter((r) => r.change > 0).reduce((a, r) => a + r.change, 0);
   if (settle.paidOut === 0) {
     return <p className="text-sm text-muted">Record what the team paid out first (Pay out). Settling splits what it really cost.</p>;
+  }
+  if (settle.cost < 0) {
+    return <p className="text-sm text-muted">More has come back than was paid out. Check the payouts and refunds in History first.</p>;
   }
   return (
     <LedgerForm intent="settle" formKey={formKey} submitLabel="Settle up">
