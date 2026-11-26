@@ -11,6 +11,7 @@ import {
   shareChanges,
   shareLines,
   shareTargets,
+  settleTargets,
   statement,
   unitPrice,
   type ExpenseSpec,
@@ -18,6 +19,7 @@ import {
   type ShareSpec,
 } from "./ledger.ts";
 import { sumCents } from "./money.ts";
+import { creditLines, expenseLines, vendorRefundLines } from "./ledger.ts";
 
 const player = (id: number) => ({ type: "player" as const, id });
 const full = (id: number): ShareSpec => ({ member: player(id), weight: FULL_SHARE, fixedCents: null });
@@ -173,6 +175,49 @@ test("a credit invoice counts toward the ones still due", () => {
       { id: 2, paid: 0, remaining: 0 },
     ]
   );
+});
+
+test("settling Palmdale: $1,102 billed, $1,100 paid out, then $400 of deposit back", () => {
+  const shares = [...Array.from({ length: 9 }, (_, i) => full(i + 1)), half(10)];
+  const billed = shareTargets(split(110000, "dollar"), shares);
+  const lines = [
+    ...shareLines(1, shareChanges(billed, [])),
+    ...expenseLines({ type: "item", itemId: 1 }, 110000, { type: "cash" }),
+    ...vendorRefundLines(1, 40000),
+  ];
+  const cost = 110000 - 40000;
+  const settle = shareChanges(settleTargets(cost, shares), billed);
+  // A full share really cost $73.68 (the 4 odd cents go to the first four), Holden's half $36.84
+  assert.equal(settle[0].cents, 7369 - 11600);
+  assert.equal(settle[8].cents, 7368 - 11600);
+  assert.equal(settle[9].cents, 3684 - 5800);
+  lines.push(...shareLines(1, settle));
+  assert.equal(balances(lines).get("item:1") ?? 0, 0);
+  assert.equal(sumCents(settleTargets(cost, shares).map((t) => t.cents)), cost);
+});
+
+test("settling counts refunds already given, and leaves the expense at zero", () => {
+  const shares = [full(1), full(2), full(3)];
+  const billed = shareTargets(split(30000), shares); // $100 each
+  const lines = [
+    ...shareLines(1, shareChanges(billed, [])),
+    ...expenseLines({ type: "item", itemId: 1 }, 30000, { type: "cash" }),
+    ...vendorRefundLines(1, 6000),
+    // $10 each already given back by hand
+    ...creditLines(1, shares.map((s) => ({ member: s.member, cents: 1000 }))),
+  ];
+  // Billed less refunds given: what settling compares against
+  const net = billed.map((b) => ({ member: b.member, cents: b.cents - 1000 }));
+  const settle = shareChanges(settleTargets(24000, shares), net);
+  assert.deepEqual(settle.map((c) => c.cents), [-1000, -1000, -1000]);
+  lines.push(...shareLines(1, settle));
+  assert.equal(balances(lines).get("item:1") ?? 0, 0);
+});
+
+test("settling with nothing paid out, or nobody on it", () => {
+  assert.deepEqual(amounts(settleTargets(0, [full(1), half(2)])), [0, 0]);
+  assert.throws(() => settleTargets(100, []), LedgerError);
+  assert.throws(() => settleTargets(-1, [full(1)]), LedgerError);
 });
 
 // Randomized: whatever order people join, leave or change share, billing the

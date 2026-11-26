@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Settle up",
+    summary: "When a tournament or trip is done, settle up and everyone pays exactly their share of what it really cost.",
+    changes: [
+      { kind: "new", text: "Coaches: Settle up on an expense splits what the team really paid, less any deposit or refund that came back, by share. You see what each family gets back (or owes) before you confirm, and it goes on their next invoice." },
+      { kind: "new", text: "A refund that arrives after you've settled up is shared the same way on the next invoice, so there's nothing to redo." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Pay without signing in",
     summary: "Families get their invoice by email, with a link to pay on Venmo. No account needed.",
     changes: [

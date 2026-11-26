@@ -277,6 +277,17 @@ export function shareChanges(targets: MemberCents[], billed: MemberCents[]): Mem
   return [...out.values()].filter((c) => c.cents !== 0);
 }
 
+// Settling up: what the expense really cost the team (paid out, less what
+// came back) split by weight, exactly to the cent. Compared against what each
+// person has been billed less refunds they've had, the difference evens
+// everyone out and leaves the expense account at zero.
+export function settleTargets(costCents: Cents, shares: ShareSpec[]): MemberCents[] {
+  if (!isCents(costCents) || costCents < 0) throw new LedgerError("The team can't have paid out less than nothing for it");
+  if (shares.length === 0) throw new LedgerError("Nobody shares this expense");
+  const split = allocate(costCents, shares.map((s) => s.weight));
+  return shares.map((s, i) => ({ member: s.member, cents: split[i] }));
+}
+
 // Posts share changes: up adds to what someone owes, down takes it off
 export function shareLines(itemId: number, changes: MemberCents[]): Line[] {
   const lines = tidy([

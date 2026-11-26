@@ -32,6 +32,7 @@ import {
   groupFamilies,
   invoiceStatuses,
   shareChanges,
+  settleTargets,
   shareLines,
   shareTargets,
   unitPrice,
@@ -126,7 +127,7 @@ async function checkMembers(teamId: number, members: Member[]) {
 
 // What each person has been billed so far, per expense (shares, changes and
 // settle-ups; covers and refunds are separate). Reversed ones don't count.
-async function billedByItem(reader: Reader, teamId: number) {
+async function billedByItem(reader: Reader, teamId: number, kinds: TxnKind[] = SHARE_KINDS) {
   const reversed = reader
     .select({ id: ledgerTxns.reversesId })
     .from(ledgerTxns)
@@ -144,7 +145,7 @@ async function billedByItem(reader: Reader, teamId: number) {
       and(
         eq(ledgerEntries.teamId, teamId),
         inArray(ledgerEntries.accountType, ["player", "staff"]),
-        inArray(ledgerTxns.kind, SHARE_KINDS),
+        inArray(ledgerTxns.kind, kinds),
         isNotNull(ledgerTxns.itemId),
         sql`${ledgerTxns.id} not in ${reversed}`
       )
@@ -155,6 +156,36 @@ async function billedByItem(reader: Reader, teamId: number) {
     const list = out.get(r.itemId!) ?? [];
     list.push({ member: shareMember(r), cents: Number(r.cents) });
     out.set(r.itemId!, list);
+  }
+  return out;
+}
+
+// What each expense has cost the team so far: paid out, less refunds received
+export async function expenseCosts(reader: Reader, teamId: number) {
+  const reversed = reader
+    .select({ id: ledgerTxns.reversesId })
+    .from(ledgerTxns)
+    .where(and(eq(ledgerTxns.teamId, teamId), isNotNull(ledgerTxns.reversesId)));
+  const rows = await reader
+    .select({ itemId: ledgerEntries.itemId, kind: ledgerTxns.kind, cents: sql<number>`sum(${ledgerEntries.cents})` })
+    .from(ledgerEntries)
+    .innerJoin(ledgerTxns, eq(ledgerEntries.txnId, ledgerTxns.id))
+    .where(
+      and(
+        eq(ledgerEntries.teamId, teamId),
+        eq(ledgerEntries.accountType, "item"),
+        inArray(ledgerTxns.kind, ["expense", "vendor_refund"]),
+        sql`${ledgerTxns.id} not in ${reversed}`
+      )
+    )
+    .groupBy(ledgerEntries.itemId, ledgerTxns.kind);
+  const out = new Map<number, { paidOut: Cents; returned: Cents; cost: Cents }>();
+  for (const r of rows) {
+    const c = out.get(r.itemId!) ?? { paidOut: 0, returned: 0, cost: 0 };
+    if (r.kind === "expense") c.paidOut += Number(r.cents);
+    else c.returned -= Number(r.cents);
+    c.cost = c.paidOut - c.returned;
+    out.set(r.itemId!, c);
   }
   return out;
 }
@@ -171,14 +202,18 @@ export async function pendingShareChanges(reader: Reader, teamId: number): Promi
   if (items.length === 0) return [];
   const shares = await getShares(reader, teamId, items.map((i) => i.id));
   const billed = await billedByItem(reader, teamId);
+  const settled = items.some((i) => i.settledAt);
+  // A settled expense is compared against what people were billed less refunds they've had
+  const billedNet = settled ? await billedByItem(reader, teamId, [...SHARE_KINDS, "credit"]) : billed;
+  const costs = settled ? await expenseCosts(reader, teamId) : new Map();
   const out: PendingItem[] = [];
   for (const item of items) {
     const spec = expenseSpec(item)!;
     const mine = shares.filter((s) => s.itemId === item.id).map((s) => s.spec);
-    const already = billed.get(item.id) ?? [];
+    const already = (item.settledAt ? billedNet : billed).get(item.id) ?? [];
     let targets: MemberCents[];
     try {
-      targets = shareTargets(spec, mine);
+      targets = item.settledAt ? settleTargets(costs.get(item.id)?.cost ?? 0, mine) : shareTargets(spec, mine);
     } catch {
       continue; // A split with no total yet: nothing to bill
     }
@@ -197,7 +232,8 @@ export async function expenseTargets(teamId: number, item: LedgerItem) {
   const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
   let targets: MemberCents[] = [];
   try {
-    targets = shareTargets(spec, shares);
+    // Settled: what each person's part of the real cost comes to
+    targets = item.settledAt ? settleTargets((await expenseCosts(db, teamId)).get(item.id)?.cost ?? 0, shares) : shareTargets(spec, shares);
   } catch {
     targets = [];
   }
@@ -220,6 +256,50 @@ export async function shareTotals(teamId: number) {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Settling up: when an expense is done (everything paid out, any deposit back),
+// its real cost is re-split by share. Each person's difference goes on their
+// next invoice, mostly as money back. Until those are invoiced it can be reopened.
+
+export async function settlePreview(teamId: number, item: LedgerItem) {
+  const shares = (await getShares(db, teamId, [item.id])).map((s) => s.spec);
+  const cost = (await expenseCosts(db, teamId)).get(item.id) ?? { paidOut: 0, returned: 0, cost: 0 };
+  const net = (await billedByItem(db, teamId, [...SHARE_KINDS, "credit"])).get(item.id) ?? [];
+  if (shares.length === 0) return { ...cost, rows: [] as { member: Member; billed: Cents; final: Cents; change: Cents }[] };
+  const targets = settleTargets(cost.cost, shares);
+  const billedOf = new Map(net.map((b) => [memberKey(b.member), b.cents]));
+  return {
+    ...cost,
+    rows: targets.map((t) => {
+      const billed = billedOf.get(memberKey(t.member)) ?? 0;
+      return { member: t.member, billed, final: t.cents, change: t.cents - billed };
+    }),
+  };
+}
+
+export async function settleExpense(teamId: number, itemId: number, by: number) {
+  const [item] = await db.select().from(ledgerItems).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId))).limit(1);
+  if (!item) throw new LedgerError("That expense isn't on this team");
+  if (item.shareMode !== "split") throw new LedgerError("Only an expense split between people can be settled up");
+  if (item.settledAt) return;
+  const shares = await getShares(db, teamId, [itemId]);
+  if (shares.length === 0) throw new LedgerError("Nobody shares this expense");
+  const cost = (await expenseCosts(db, teamId)).get(itemId);
+  if (!cost || cost.paidOut === 0) throw new LedgerError("Record what the team paid out for it first. Settling splits what it really cost.");
+  await db.update(ledgerItems).set({ settledAt: new Date().toISOString(), settledBy: by, updatedAt: new Date().toISOString() }).where(eq(ledgerItems.id, itemId));
+}
+
+// Undo a settle-up nobody has been invoiced for yet
+export async function reopenExpense(teamId: number, itemId: number) {
+  const [posted] = await db
+    .select({ id: ledgerTxns.id })
+    .from(ledgerTxns)
+    .where(and(eq(ledgerTxns.teamId, teamId), eq(ledgerTxns.itemId, itemId), eq(ledgerTxns.kind, "settle")))
+    .limit(1);
+  if (posted) throw new LedgerError("The settle-up is already on invoices, so it can't be reopened");
+  await db.update(ledgerItems).set({ settledAt: null, settledBy: null, updatedAt: new Date().toISOString() }).where(and(eq(ledgerItems.id, itemId), eq(ledgerItems.teamId, teamId)));
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +495,7 @@ export async function invoicePreview(teamId: number): Promise<{ drafts: DraftInv
         member: c.member,
         who: n.who(c.member),
         label: lineLabel(
-          { kind: p.firstBilling || p.newMembers.has(memberKey(c.member)) ? "charge" : p.item.settledAt ? "settle" : "adjust", correction: false },
+          { kind: p.item.settledAt && !p.firstBilling ? "settle" : p.firstBilling || p.newMembers.has(memberKey(c.member)) ? "charge" : "adjust", correction: false },
           p.item.name,
           ""
         ),

@@ -49,9 +49,9 @@ import {
 import { allocate, formatCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton } from "~/components/money";
-import { expenseTargets, saveShares } from "~/utils/billing.server";
+import { expenseTargets, reopenExpense, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowBendUpLeft, ArrowRight, HandCoins, PencilSimple, PiggyBank, UsersThree } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowRight, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, UsersThree } from "@phosphor-icons/react";
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.item.name ?? "Expense"} - Finances - BenchTalk` }];
@@ -98,9 +98,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       half: shareOf.get(key)?.weight === 1,
       target: targetOf.get(key) ?? 0,
       // Their share less what's been invoiced: goes on the next invoice
-      notInvoiced: (targetOf.get(key) ?? 0) - (s?.charged ?? 0),
+      notInvoiced: item.shareMode ? (targetOf.get(key) ?? 0) - (s?.charged ?? 0) + (item.settledAt ? s?.credited ?? 0 : 0) : 0,
     }));
   const onTeam = members.filter((m) => m.onTeam);
+  const nameOf = new Map(members.map((m) => [memberKey(m.member), m.name]));
+  const settle =
+    item.shareMode === "split"
+      ? await settlePreview(team.id, item).then((p) => ({
+          ...p,
+          rows: p.rows.map((r) => ({ ...r, key: memberKey(r.member), name: nameOf.get(memberKey(r.member)) ?? "Someone" })),
+        }))
+      : null;
 
   return data({
     teamId: team.id,
@@ -118,6 +126,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       return { key, label: m.name, detail: m.detail ?? undefined, checked: Boolean(share), weight: share?.weight ?? FULL_SHARE, fixedCents: share?.fixedCents ?? null };
     }),
     shareTotal: targets.reduce((a, t) => a + t.cents, 0),
+    settle,
     notInvoiced: rows.reduce((a, r) => a + r.notInvoiced, 0),
     activity: describeBook(book.filter((t) => t.itemId === item.id), names).reverse(),
   });
@@ -211,7 +220,20 @@ export async function action({ request, params }: Route.ActionArgs) {
         await postTxn({ teamId: team.id, kind: "cover", itemId: item.id, fundId, lines: coverLines(fundId, shares), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
         return;
       }
+      case "settle": {
+        const cost = await settlePreview(team.id, item);
+        if (cost.paidOut === 0) throw new FormError("Record what the team paid out first (Pay out). Settling splits what it really cost.");
+        if (item.totalCents !== null && cost.paidOut < item.totalCents && formData.get("confirmPaidOut") !== "1") {
+          throw new FormError(`Only ${formatCents(cost.paidOut)} of the ${formatCents(item.totalCents)} total has been paid out. Record the rest first, or tick the box if that's really all it cost.`);
+        }
+        await settleExpense(team.id, item.id, user.id);
+        return;
+      }
+      case "reopen":
+        await reopenExpense(team.id, item.id);
+        return;
       case "credit": {
+        if (item.settledAt) throw new LedgerError("This expense is settled, so refunds are worked out for you. Record the refund received instead.");
         if (!item.refundable) throw new LedgerError("This expense isn't refundable. To pay for someone, cover it from a fund instead.");
         const shares = sharesFromForm(formData, readMembers(formData), perMember);
         capCheck(shares, "back");
@@ -259,7 +281,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity } = loaderData;
+  const { teamId, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle } = loaderData;
   const base = `/dashboard/team/${teamId}/finances`;
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -274,15 +296,29 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
             {item.refundable && <Badge tone="primary">Refundable</Badge>}
             {item.shareMode === "split" && item.totalCents !== null && <Badge>{formatCents(item.totalCents)} split{item.rounding === "dollar" ? ", rounded up" : ""}</Badge>}
             {item.shareMode === "fixed" && <Badge>Each person's own amount</Badge>}
+            {item.settledAt && <Badge tone="success">Settled</Badge>}
             {item.dueDate && <span className="text-sm">Due {item.dueDate}</span>}
           </span>
         }
       />
       {item.details && <p className="-mt-3 mb-6 max-w-prose text-muted">{item.details}</p>}
+      {item.settledAt && settle && (
+        <Card className="mb-6 flex flex-wrap items-center gap-3 p-4 text-sm">
+          <CheckCircle size={22} weight="fill" className="shrink-0 text-success" />
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">Settled up.</span> It cost the team {formatCents(settle.cost)}
+            {settle.returned ? ` (${formatCents(settle.paidOut)} paid out, ${formatCents(settle.returned)} refunded)` : ""}, shared by everyone on it.
+            <span className="block text-muted">Anything paid out or refunded from now on is shared the same way on the next invoice.</span>
+          </p>
+          {!activity.some((a) => a.kind === "settle") && (
+            <LedgerForm intent="reopen" formKey={formKey} submitLabel="Reopen" variant="secondary" className="space-y-0" />
+          )}
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Fig
-          label="Shares"
+          label={item.settledAt ? "Real cost" : "Shares"}
           cents={item.shareMode ? shareTotal : summary.charged}
           sub={`${rows.filter((r) => r.target || r.charged).length} ${rows.length === 1 ? "person" : "people"}${notInvoiced ? ` · ${formatCents(notInvoiced)} not invoiced yet` : ""}`}
         />
@@ -364,7 +400,13 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         </div>
 
         <aside className="space-y-3">
-          {item.shareMode && (
+          {settle && !item.settledAt && (
+            <ActionPanel title="Settle up" hint="Once it's all paid out and any deposit is back." icon={<Scales size={18} />}>
+              <SettlePanel settle={settle} totalCents={item.totalCents} formKey={formKey} />
+            </ActionPanel>
+          )}
+
+          {item.shareMode && !item.settledAt && (
             <ActionPanel title="Who shares it" hint="Changes go on each family's next invoice." icon={<UsersThree size={18} />}>
               <LedgerForm intent="shares" formKey={formKey} submitLabel="Save">
                 <ShareEditor
@@ -440,9 +482,10 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                     <DateField today={today} />
                   </div>
                   <TextField name="memo" label="Note for staff" />
-                  <p className={hintClass}>Then refund families below.</p>
+                  <p className={hintClass}>{item.shareMode === "split" ? "Then settle up, and each family's part comes back to them." : "Then refund families below."}</p>
                 </LedgerForm>
               </ActionPanel>
+              {!item.settledAt && (
               <ActionPanel title="Refund families" hint="Goes on their next invoice as money back." icon={<HandCoins size={18} />}>
                 <LedgerForm intent="credit" formKey={formKey} submitLabel="Refund them">
                   <MemberChecklist options={reducible.map((r) => ({ key: r.key, label: r.name, detail: <Amount cents={r.charged} /> }))} defaultChecked={() => true} />
@@ -458,6 +501,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                   <TextField name="memo" label="Note the family sees" placeholder="Referee deposit returned" />
                 </LedgerForm>
               </ActionPanel>
+              )}
             </>
           )}
 
@@ -506,6 +550,55 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         </aside>
       </div>
     </Page>
+  );
+}
+
+type SettleData = NonNullable<Route.ComponentProps["loaderData"]["settle"]>;
+
+// What settling would do, person by person, before it's done
+function SettlePanel({ settle, totalCents, formKey }: { settle: SettleData; totalCents: number | null; formKey: string }) {
+  const short = totalCents !== null && settle.paidOut < totalCents;
+  const back = settle.rows.filter((r) => r.change < 0).reduce((a, r) => a - r.change, 0);
+  const more = settle.rows.filter((r) => r.change > 0).reduce((a, r) => a + r.change, 0);
+  if (settle.paidOut === 0) {
+    return <p className="text-sm text-muted">Record what the team paid out first (Pay out). Settling splits what it really cost.</p>;
+  }
+  return (
+    <LedgerForm intent="settle" formKey={formKey} submitLabel="Settle up">
+      <p className="text-sm">
+        It cost the team <span className="font-semibold">{formatCents(settle.cost)}</span>
+        {settle.returned ? ` (${formatCents(settle.paidOut)} paid out, ${formatCents(settle.returned)} refunded)` : ""}. Split by share:
+      </p>
+      <ul className="divide-y divide-line rounded-xl text-sm ring-1 ring-line">
+        {settle.rows.map((r) => (
+          <li key={r.key} className="flex items-baseline justify-between gap-3 px-3 py-2">
+            <span className="min-w-0 truncate">{r.name}</span>
+            <span className="shrink-0 text-right tabular">
+              {formatCents(r.final)}
+              {r.change !== 0 && (
+                <span className={cx("block text-xs", r.change < 0 ? "text-success" : "text-danger")}>
+                  {r.change < 0 ? `${formatCents(-r.change)} back` : `${formatCents(r.change)} more`}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className={hintClass}>
+        {back > 0 && `${formatCents(back)} goes back to families`}
+        {back > 0 && more > 0 && ", and "}
+        {more > 0 && `${formatCents(more)} more is owed`}
+        {back === 0 && more === 0 ? "Everyone already paid exactly their share." : ". It goes on each family's next invoice; then send invoices."}
+      </p>
+      {short && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-warning-soft p-3 text-sm">
+          <input type="checkbox" name="confirmPaidOut" value="1" className="mt-0.5" />
+          <span>
+            Only {formatCents(settle.paidOut)} of the {formatCents(totalCents!)} total has been paid out. Tick this if that's really everything it cost.
+          </span>
+        </label>
+      )}
+    </LedgerForm>
   );
 }
 
