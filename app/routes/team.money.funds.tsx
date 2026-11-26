@@ -174,7 +174,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
                 <MethodField />
                 <DateField today={today} />
               </div>
-              <TextField name="memo" label="Note" />
+              <TextField name="memo" label="Note for staff" />
             </LedgerForm>
           </ActionPanel>
 
@@ -216,7 +216,7 @@ export default function Funds({ loaderData }: Route.ComponentProps) {
                   </div>
                 </div>
                 <MoneyField name="cents" label="Amount" />
-                <TextField name="memo" label="Note" />
+                <TextField name="memo" label="Note for staff" />
               </LedgerForm>
             </ActionPanel>
           )}

@@ -303,7 +303,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                   ]}
                 />
               </div>
-              <TextField name="memo" label="Note" />
+              <TextField name="memo" label="Note for staff" />
             </LedgerForm>
           </ActionPanel>
 
@@ -316,7 +316,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                     <MethodField />
                     <DateField today={today} />
                   </div>
-                  <TextField name="memo" label="Note" />
+                  <TextField name="memo" label="Note the family sees" />
                 </LedgerForm>
               </ActionPanel>
               <ActionPanel title="They're donating it" hint="Their credit goes into a fund instead." icon={<PiggyBank size={18} />}>
@@ -330,7 +330,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                     </select>
                   </div>
                   <MoneyField name="cents" label="Amount" defaultCents={statement.dueBack} />
-                  <TextField name="memo" label="Note" />
+                  <TextField name="memo" label="Note the family sees" />
                 </LedgerForm>
               </ActionPanel>
             </>
@@ -348,7 +348,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                   </select>
                 </div>
                 <MoneyField name="cents" label="Amount" />
-                <TextField name="memo" label="Note" />
+                <TextField name="memo" label="Note the family sees" />
               </LedgerForm>
             </ActionPanel>
           )}

@@ -326,7 +326,7 @@ function ClaimCard({
           <span className="font-semibold">{claim.from}</span> says they sent <Amount cents={claim.cents} className="font-semibold" /> on {METHOD_LABELS[claim.method]} for {claim.forNames.join(" and ")}.
         </p>
         {claim.note && <p className="mt-1 text-sm text-muted">“{claim.note}”</p>}
-        <LedgerForm intent="confirmClaim" formKey={formKey} submitLabel="Confirm it arrived" className="mt-3">
+        <LedgerForm intent="confirmClaim" formKey={`${formKey}-${claim.id}`} submitLabel="Confirm it arrived" className="mt-3">
           <input type="hidden" name="claimId" value={claim.id} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <MoneyField name="cents" id={`claim-${claim.id}-cents`} label="What arrived" defaultCents={claim.cents} />

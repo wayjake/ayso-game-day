@@ -341,7 +341,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 <MethodField />
                 <DateField today={today} />
               </div>
-              <TextField name="memo" label="Note" placeholder="Deposit to the Hilton" />
+              <TextField name="memo" label="Note for staff" placeholder="Deposit to the Hilton" />
             </LedgerForm>
           </ActionPanel>
 
@@ -366,7 +366,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 ]}
               />
               <MoneyField name="cents" label="Amount" required={false} hint="Not needed for “whatever each still owes”." />
-              <TextField name="memo" label="Note" placeholder="Thanks to Acme Plumbing" />
+              <TextField name="memo" label="Note the family sees" placeholder="Thanks to Acme Plumbing" />
               <p className={hintClass}>Covering someone who already paid gives them that much credit.</p>
             </LedgerForm>
           </ActionPanel>
@@ -380,8 +380,8 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                     <MethodField />
                     <DateField today={today} />
                   </div>
-                  <TextField name="memo" label="Note" />
-                  <p className={hintClass}>Then give it back to families below, or keep it in a fund.</p>
+                  <TextField name="memo" label="Note for staff" />
+                  <p className={hintClass}>Then give it back to families below.</p>
                 </LedgerForm>
               </ActionPanel>
               <ActionPanel title="Give money back" hint="Families are owed it until you pay them." icon={<HandCoins size={18} />}>
@@ -396,7 +396,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                     ]}
                   />
                   <MoneyField name="cents" label="Amount" />
-                  <TextField name="memo" label="Note" placeholder="Hotel refunded one night" />
+                  <TextField name="memo" label="Note the family sees" placeholder="Hotel refunded one night" />
                 </LedgerForm>
               </ActionPanel>
             </>
