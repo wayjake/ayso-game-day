@@ -13,6 +13,14 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-25",
+    title: "Messages loads in its own shape",
+    summary: "On a computer, the outline you see while Messages loads now looks like Messages.",
+    changes: [
+      { kind: "fixed", text: "Opening the Messages tab on a computer shows the conversation list on the left and the new message panel beside it while it loads, instead of a single list that then jumped into place." },
+    ],
+  },
+  {
+    date: "2026-11-25",
     title: "Snappier tabs",
     summary: "Tapping a tab answers straight away, and the help button has moved up next to the bell.",
     changes: [
