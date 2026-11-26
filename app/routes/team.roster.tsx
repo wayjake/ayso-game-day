@@ -8,9 +8,7 @@ import { eq, and } from "drizzle-orm";
 import { useState } from "react";
 import { RosterImportModal } from "~/components/RosterImportModal";
 import { Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, PlayerAvatar, buttonClass, cx } from "~/components/ui";
-import { AddressBook, CaretRight, CurrencyDollar, ListChecks, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
-import { countTasksToConfirm } from "~/utils/tasks.server";
-import { countPendingClaims } from "~/utils/ledger.server";
+import { CaretRight, Plus, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -44,8 +42,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data({
     team,
     players: teamPlayers,
-    tasksToConfirm: await countTasksToConfirm(team.id),
-    paymentsToConfirm: await countPendingClaims(team.id),
   });
 }
 
@@ -143,7 +139,7 @@ function PlayerRow({ player, teamId }: { player: any; teamId: number }) {
 }
 
 export default function TeamRoster({ loaderData }: Route.ComponentProps) {
-  const { team, players, tasksToConfirm, paymentsToConfirm } = loaderData;
+  const { team, players } = loaderData;
   const [showImportModal, setShowImportModal] = useState(false);
   const revalidator = useRevalidator();
 
@@ -173,24 +169,6 @@ export default function TeamRoster({ loaderData }: Route.ComponentProps) {
         actions={
           players.length > 0 && (
             <>
-              <Link to={`/dashboard/team/${team.id}/families`} className={buttonClass({ variant: "secondary" })}>
-                <AddressBook size={18} />
-                Families
-              </Link>
-              <Link to={`/dashboard/team/${team.id}/tasks`} className={buttonClass({ variant: "secondary" })}>
-                <ListChecks size={18} />
-                Tasks
-                {tasksToConfirm > 0 && (
-                  <Badge tone="warning" title={`${tasksToConfirm} waiting for a coach to confirm`}>{tasksToConfirm}</Badge>
-                )}
-              </Link>
-              <Link to={`/dashboard/team/${team.id}/money`} className={buttonClass({ variant: "secondary" })}>
-                <CurrencyDollar size={18} />
-                Money
-                {paymentsToConfirm > 0 && (
-                  <Badge tone="warning" title={`${paymentsToConfirm} payments to confirm`}>{paymentsToConfirm}</Badge>
-                )}
-              </Link>
               {importButton}
               {addPlayerLink}
             </>

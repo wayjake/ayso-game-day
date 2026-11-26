@@ -30,7 +30,7 @@ import { Bank, CurrencyDollar, HandCoins, PiggyBank, Plus, Receipt } from "@phos
 import { useState } from "react";
 
 export function meta() {
-  return [{ title: "Money - BenchTalk" }];
+  return [{ title: "Finances - BenchTalk" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -120,7 +120,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function Money({ loaderData }: Route.ComponentProps) {
   const { teamId, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity } = loaderData;
-  const base = `/dashboard/team/${teamId}/money`;
+  const base = `/dashboard/team/${teamId}/finances`;
   const newItem = (
     <Link to={`${base}/items/new`} className={buttonClass()}>
       <Plus size={18} weight="bold" />
@@ -131,8 +131,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
   return (
     <Page>
       <PageHeader
-        back={{ to: `/dashboard/team/${teamId}/roster`, label: "Roster" }}
-        title="Money"
+        title="Finances"
         description="What families and staff owe, what's been paid, and what's been passed on."
         actions={
           <>

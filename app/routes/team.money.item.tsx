@@ -52,7 +52,7 @@ import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } 
 import { ArrowBendUpLeft, ArrowRight, HandCoins, PencilSimple, PiggyBank, Plus } from "@phosphor-icons/react";
 
 export function meta({ data }: Route.MetaArgs) {
-  return [{ title: `${data?.item.name ?? "Charge"} - Money - BenchTalk` }];
+  return [{ title: `${data?.item.name ?? "Charge"} - Finances - BenchTalk` }];
 }
 
 async function load(teamId: number, itemId: number) {
@@ -236,13 +236,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
   const { teamId, item, summary, formKey, today, cash, rows, funds, staff, everyone, activity } = loaderData;
-  const base = `/dashboard/team/${teamId}/money`;
+  const base = `/dashboard/team/${teamId}/finances`;
   const reducible = rows.filter((r) => r.reducible > 0);
 
   return (
     <Page>
       <PageHeader
-        back={{ to: base, label: "Money" }}
+        back={{ to: base, label: "Finances" }}
         title={item.name}
         description={
           <span className="flex flex-wrap items-center gap-1.5">

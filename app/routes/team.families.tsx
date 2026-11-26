@@ -181,7 +181,6 @@ export default function Families({ loaderData, actionData }: Route.ComponentProp
   return (
     <Page>
       <PageHeader
-        back={{ to: `${base}/roster`, label: "Roster" }}
         title="Families"
         description={`${joined} of ${households.length} families are on the app. Parents RSVP their kids to games and practices and get team messages.`}
         actions={

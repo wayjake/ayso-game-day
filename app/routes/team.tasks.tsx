@@ -67,7 +67,6 @@ export default function Tasks({ loaderData }: Route.ComponentProps) {
   return (
     <Page>
       <PageHeader
-        back={{ to: `${base}/roster`, label: "Roster" }}
         title="Tasks"
         description="Fees, forms and anything else families need to do, and who has done it."
         actions={tasks.length > 0 && newTask}
