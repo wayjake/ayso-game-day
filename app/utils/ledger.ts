@@ -313,9 +313,11 @@ export function groupFamilies(playerIds: number[], links: { playerId: number; ke
   return [...groups.values()].map((g) => g.sort((a, b) => a - b)).sort((a, b) => a[0] - b[0]);
 }
 
-// Money a family has paid in, applied to their invoices oldest first
+// Money a family has paid in, applied to their invoices oldest first. An
+// invoice that comes to less than zero (a fund covered a share, a refund) pays
+// toward the others the same way.
 export function invoiceStatuses(invoices: { id: number; totalCents: Cents }[], paidIn: Cents) {
-  let pool = paidIn;
+  let pool = paidIn + sumCents(invoices.map((i) => Math.max(0, -i.totalCents)));
   return invoices.map((inv) => {
     const due = Math.max(0, inv.totalCents);
     const paid = Math.max(0, Math.min(due, pool));

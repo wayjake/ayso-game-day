@@ -430,6 +430,9 @@ export async function sendInvoices(teamId: number, by: number, formKey: string) 
   const key = formKey.trim();
   if (!key || key.length > 60) throw new LedgerError("Reload the page and try again");
 
+  // Reads that don't need to be in the transaction (Turso keeps those short)
+  const families = await teamFamilies(db, teamId);
+
   const sent = await db.transaction(async (tx) => {
     const pending = await pendingShareChanges(tx, teamId);
     for (const p of pending) {
@@ -466,7 +469,7 @@ export async function sendInvoices(teamId: number, by: number, formKey: string) 
     const firstShare = (e: OpenEntry) =>
       e.kind === "adjust" && e.cents > 0 && e.itemId !== null && !invoicedShares.has(`${e.itemId}|${memberKey(e.member)}`);
     const drafts = groupDrafts(
-      await teamFamilies(tx, teamId),
+      families,
       open.map((e) => ({
         member: e.member,
         who: n.who(e.member),
@@ -479,28 +482,33 @@ export async function sendInvoices(teamId: number, by: number, formKey: string) 
 
     const [last] = await tx.select({ n: sql<number>`coalesce(max(${ledgerInvoices.number}), 0)` }).from(ledgerInvoices).where(eq(ledgerInvoices.teamId, teamId));
     let number = Number(last?.n ?? 0);
-    const made: { id: number; familyKey: string; familyName: string; totalCents: Cents; members: Member[] }[] = [];
-    for (const d of drafts) {
-      const [inv] = await tx
-        .insert(ledgerInvoices)
-        .values({ teamId, number: ++number, familyKey: d.familyKey, familyName: d.familyName, totalCents: d.totalCents, issuedBy: by, clientKey: `${key}:${d.familyKey}`.slice(0, 200) })
-        .returning({ id: ledgerInvoices.id });
-      // Name the kid on each line when the invoice covers more than one
-      const several = new Set(d.raw.map((l) => memberKey(l.member))).size > 1;
-      await tx.insert(ledgerInvoiceLines).values(
-        d.raw.map((l) => ({
-          invoiceId: inv.id,
+    const invoices = await tx
+      .insert(ledgerInvoices)
+      .values(drafts.map((d) => ({ teamId, number: ++number, familyKey: d.familyKey, familyName: d.familyName, totalCents: d.totalCents, issuedBy: by, clientKey: `${key}:${d.familyKey}`.slice(0, 200) })))
+      .returning({ id: ledgerInvoices.id, familyKey: ledgerInvoices.familyKey });
+    const idOf = new Map(invoices.map((i) => [i.familyKey, i.id]));
+    // Every line in one statement; name the kid when an invoice covers more than one
+    await tx.insert(ledgerInvoiceLines).values(
+      drafts.flatMap((d) => {
+        const several = new Set(d.raw.map((l) => memberKey(l.member))).size > 1;
+        return d.raw.map((l) => ({
+          invoiceId: idOf.get(d.familyKey)!,
           entryId: l.entryId!,
           playerId: l.member.type === "player" ? l.member.id : null,
           userId: l.member.type === "staff" ? l.member.id : null,
           itemId: l.itemId ?? null,
           label: several ? `${l.label} (${firstName(l.who)})` : l.label,
           cents: l.cents,
-        }))
-      );
-      made.push({ id: inv.id, familyKey: d.familyKey, familyName: d.familyName, totalCents: d.totalCents, members: [...new Map(d.raw.map((l) => [memberKey(l.member), l.member])).values()] });
-    }
-    return made;
+        }));
+      })
+    );
+    return drafts.map((d) => ({
+      id: idOf.get(d.familyKey)!,
+      familyKey: d.familyKey,
+      familyName: d.familyName,
+      totalCents: d.totalCents,
+      members: [...new Map(d.raw.map((l) => [memberKey(l.member), l.member])).values()],
+    }));
   });
 
   // Tell each family's parents (and staff members their own), after it's saved
@@ -539,7 +547,7 @@ export type InvoiceView = {
 };
 
 // Balance and money paid in for a set of accounts: paid in is what's been billed less what's still owed
-async function paidInFor(reader: Reader, teamId: number, members: Member[]) {
+async function paidInFor(reader: Reader, teamId: number, members: Member[], openEntries: OpenEntry[]) {
   if (members.length === 0) return { balance: 0, open: 0 };
   const playerIds = members.filter((m) => m.type === "player").map((m) => m.id);
   const userIds = members.filter((m) => m.type === "staff").map((m) => m.id);
@@ -555,7 +563,8 @@ async function paidInFor(reader: Reader, teamId: number, members: Member[]) {
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.teamId, teamId), sql`(${who})`));
   const balance = Number(row?.total ?? 0);
-  const open = (await uninvoicedEntries(reader, teamId)).filter((e) => members.some((m) => memberKey(m) === memberKey(e.member)));
+  const keys = new Set(members.map(memberKey));
+  const open = openEntries.filter((e) => keys.has(memberKey(e.member)));
   return { balance, open: sumCents(open.map((e) => e.cents)) };
 }
 
@@ -571,8 +580,9 @@ export async function teamInvoices(teamId: number): Promise<InvoiceView[]> {
   const byFamily = new Map<string, LedgerInvoice[]>();
   for (const inv of invoices) byFamily.set(inv.familyKey, [...(byFamily.get(inv.familyKey) ?? []), inv]);
   const status = new Map<number, { paid: Cents; remaining: Cents }>();
+  const openEntries = await uninvoicedEntries(db, teamId);
   for (const [familyKey, list] of byFamily) {
-    const { balance, open } = await paidInFor(db, teamId, familyMembersFromKey(familyKey));
+    const { balance, open } = await paidInFor(db, teamId, familyMembersFromKey(familyKey), openEntries);
     const paidIn = sumCents(list.map((i) => i.totalCents)) + open - balance;
     for (const s of invoiceStatuses(list, paidIn)) status.set(s.id, s);
   }
@@ -620,7 +630,7 @@ export async function familyInvoices(teamId: number, playerIds: number[]): Promi
     invoices.set(invoice.id, view);
   }
   const list = [...invoices.values()];
-  const { balance, open } = await paidInFor(db, teamId, playerIds.map((id) => ({ type: "player" as const, id })));
+  const { balance, open } = await paidInFor(db, teamId, playerIds.map((id) => ({ type: "player" as const, id })), await uninvoicedEntries(db, teamId));
   const paidIn = sumCents(list.map((i) => i.totalCents)) + open - balance;
   const statuses = invoiceStatuses(list, paidIn);
   return list.map((inv, i) => ({ ...inv, paid: statuses[i].paid, remaining: statuses[i].remaining })).reverse();

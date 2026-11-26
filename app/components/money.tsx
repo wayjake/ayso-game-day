@@ -238,11 +238,11 @@ export function ShareEditor({
         {options.map((o) => {
           const row = rows[o.key];
           return (
-            <li key={o.key} className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+            <li key={o.key} className="flex min-h-12 items-center gap-2 px-3 py-1.5">
               <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-1">
                 <input type="checkbox" name="share" value={o.key} checked={row.checked} onChange={(e) => set(o.key, { checked: e.target.checked })} />
                 <span className="min-w-0 truncate text-sm">{o.label}</span>
-                {o.detail && <span className="shrink-0 text-xs text-muted">{o.detail}</span>}
+                {o.detail && <span className="hidden shrink-0 text-xs text-muted sm:inline">{o.detail}</span>}
               </label>
               {row.checked && mode === "split" && (
                 <select
@@ -250,14 +250,14 @@ export function ShareEditor({
                   aria-label={`${o.label}'s share`}
                   value={row.weight}
                   onChange={(e) => set(o.key, { weight: Number(e.target.value) })}
-                  className={cx(inputClass, "h-9 w-auto py-0 text-sm")}
+                  className={cx(inputClass, "h-9 w-auto! shrink-0 py-0 pr-8 text-sm pointer-coarse:h-11")}
                 >
-                  <option value={FULL_SHARE}>Full share</option>
-                  <option value={1}>Half share</option>
+                  <option value={FULL_SHARE}>Full</option>
+                  <option value={1}>Half</option>
                 </select>
               )}
               {row.checked && mode === "fixed" && (
-                <span className="relative w-28">
+                <span className="relative w-24 shrink-0">
                   <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-sm text-muted" aria-hidden>$</span>
                   <input
                     name={`amount:${o.key}`}
@@ -268,12 +268,12 @@ export function ShareEditor({
                     value={row.amount}
                     onChange={(e) => set(o.key, { amount: e.target.value })}
                     placeholder="0.00"
-                    className={cx(inputClass, "h-9 pl-6 text-sm tabular")}
+                    className={cx(inputClass, "h-9 pl-6 text-sm tabular pointer-coarse:h-11")}
                   />
                 </span>
               )}
               {row.checked && mode === "split" && (
-                <span className="w-20 shrink-0 text-right text-sm font-semibold tabular">{amounts.has(o.key) ? formatCents(amounts.get(o.key)!) : "–"}</span>
+                <span className="w-16 shrink-0 text-right text-sm font-semibold tabular">{amounts.has(o.key) ? formatCents(amounts.get(o.key)!) : "–"}</span>
               )}
             </li>
           );

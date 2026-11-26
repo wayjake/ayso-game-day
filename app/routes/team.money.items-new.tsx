@@ -1,7 +1,7 @@
 import type { Route } from "./+types/team.money.items-new";
 import { useState } from "react";
 import { data, redirect, useFetcher } from "react-router";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, ledgerItems } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
@@ -43,6 +43,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     const totalCents = mode === "split" ? readCents(formData, "total", "the total") : null;
     const shares = readShares(formData, mode);
     if (shares.length === 0) throw new FormError("Pick who shares it");
+
+    // A double submit: the same person made the same expense a moment ago
+    const [recent] = await db
+      .select({ id: ledgerItems.id })
+      .from(ledgerItems)
+      .where(and(eq(ledgerItems.teamId, team.id), eq(ledgerItems.name, name), eq(ledgerItems.createdBy, user.id), sql`${ledgerItems.createdAt} > datetime('now', '-30 seconds')`))
+      .limit(1);
+    if (recent) return redirect(`/dashboard/team/${team.id}/finances/items/${recent.id}`);
 
     const [item] = await db
       .insert(ledgerItems)

@@ -153,9 +153,26 @@ test("invoices are paid oldest first", () => {
   );
   assert.deepEqual(s, [
     { id: 1, paid: 19300, remaining: 0 },
-    { id: 2, paid: 700, remaining: 4200 },
+    { id: 2, paid: 2800, remaining: 2100 }, // $7 paid in plus the $21 credit note
     { id: 3, paid: 0, remaining: 0 },
   ]);
+});
+
+test("a credit invoice counts toward the ones still due", () => {
+  // $116 share, then a fund covers $50 of it on the next invoice: $66 left, nothing paid in yet
+  assert.deepEqual(
+    invoiceStatuses(
+      [
+        { id: 1, totalCents: 11600 },
+        { id: 2, totalCents: -5000 },
+      ],
+      0
+    ),
+    [
+      { id: 1, paid: 5000, remaining: 6600 },
+      { id: 2, paid: 0, remaining: 0 },
+    ]
+  );
 });
 
 // Randomized: whatever order people join, leave or change share, billing the
