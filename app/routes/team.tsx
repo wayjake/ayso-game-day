@@ -60,11 +60,13 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   // What each tab's page looks like while it loads (see TabTransition)
   const wide = "mx-auto w-full max-w-7xl px-safe pt-6 pb-16 sm:pt-8";
   const narrow = "mx-auto w-full max-w-2xl px-safe pt-6 pb-16 sm:pt-8";
+  // Messages: the list pane on phones, the whole two-pane workspace from lg (team.messages.tsx)
+  const inbox = "mx-auto w-full max-w-2xl px-safe pt-6 sm:pt-8 lg:h-full lg:max-w-none lg:p-0";
   const turns: TransitionTab[] = [
     { to: base, end: true, skeleton: "overview", frame: wide },
     { to: `${base}/games`, skeleton: "events", frame: wide },
     { to: `${base}/roster`, also: [`${base}/families`, `${base}/tasks`], skeleton: "people", frame: wide },
-    { to: `${base}/messages`, also: [`${base}/announcements`], skeleton: "chats", frame: wide },
+    { to: `${base}/messages`, also: [`${base}/announcements`], skeleton: "inbox", frame: inbox },
     { to: `${base}/feed`, skeleton: "feed", frame: narrow },
     { to: `${base}/settings`, skeleton: "form", frame: narrow },
   ];
