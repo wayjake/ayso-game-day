@@ -8,7 +8,7 @@ import { FormError, newFormKey, readCents, readClientKey, readId, readMethod, re
 import { sendPush } from "~/utils/push.server";
 import { METHOD_LABELS } from "~/utils/ledger";
 import { formatCents, plainAmount } from "~/utils/money";
-import { Amount, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
+import { Amount, InvoiceCard, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
 import { Badge, Card, buttonClass, cx } from "~/components/ui";
 import { CheckCircle, Copy, HourglassMedium } from "@phosphor-icons/react";
 
@@ -234,45 +234,6 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
         </details>
       )}
     </section>
-  );
-}
-
-function InvoiceCard({ inv }: { inv: InvoiceView }) {
-  const open = inv.remaining > 0;
-  const status =
-    inv.totalCents <= 0 ? <Badge tone="success">Money back</Badge>
-    : inv.remaining === 0 ? <Badge tone="success">Paid</Badge>
-    : inv.paid > 0 ? <Badge tone="warning">{formatCents(inv.remaining)} left</Badge>
-    : <Badge tone="danger">Due</Badge>;
-  return (
-    <li>
-      <Card className="overflow-hidden">
-        <details className="group" open={open}>
-          <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
-            <span className="min-w-0 flex-1">
-              <span className="block font-semibold">Invoice #{inv.number}</span>
-              <span className="block text-xs text-muted">{inv.issuedAt.slice(0, 10)}</span>
-            </span>
-            {status}
-            <span className={cx("font-semibold tabular", inv.totalCents < 0 && "text-success")}>
-              {inv.totalCents < 0 ? "−" : ""}
-              {formatCents(Math.abs(inv.totalCents))}
-            </span>
-          </summary>
-          <ul className="space-y-1.5 border-t border-line px-5 py-3 text-sm">
-            {inv.lines.map((l, i) => (
-              <li key={i} className="flex justify-between gap-3">
-                <span className="min-w-0 text-muted">{l.label}</span>
-                <span className={cx("shrink-0 tabular", l.cents < 0 && "text-success")}>
-                  {l.cents < 0 ? "−" : ""}
-                  {formatCents(Math.abs(l.cents))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      </Card>
-    </li>
   );
 }
 

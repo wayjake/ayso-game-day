@@ -6,7 +6,7 @@ import { CaretDown, CaretRight, Wallet } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 import { formatCents, parseCents, plainAmount, sumCents, type Cents } from "~/utils/money";
 import { FULL_SHARE, METHOD_LABELS, PAYMENT_METHODS, shareTargets, type PaymentMethod, type Rounding, type TxnKind } from "~/utils/ledger";
-import { Alert, Button, Card, cx, hintClass, inputClass, labelClass } from "~/components/ui";
+import { Alert, Badge, Button, Card, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 
 export function Amount({ cents, className, tone }: { cents: Cents; className?: string; tone?: "owed" | "credit" | "plain" }) {
   const color = tone === "owed" ? "text-danger" : tone === "credit" ? "text-success" : "";
@@ -414,3 +414,54 @@ export function MoneyCard({ owed, dueBack, pending, className }: { owed: Cents; 
     </Link>
   );
 }
+
+type InvoiceView = {
+  id: number;
+  number: number;
+  issuedAt: string;
+  totalCents: Cents;
+  paid: Cents;
+  remaining: Cents;
+  lines: { label: string; cents: Cents }[];
+};
+
+// One invoice for a family: open ones start expanded
+export function InvoiceCard({ inv }: { inv: Pick<InvoiceView, "id" | "number" | "issuedAt" | "totalCents" | "paid" | "remaining" | "lines"> }) {
+  const open = inv.remaining > 0;
+  const status =
+    inv.totalCents <= 0 ? <Badge tone="success">Money back</Badge>
+    : inv.remaining === 0 ? <Badge tone="success">Paid</Badge>
+    : inv.paid > 0 ? <Badge tone="warning">{formatCents(inv.remaining)} left</Badge>
+    : <Badge tone="danger">Due</Badge>;
+  return (
+    <li>
+      <Card className="overflow-hidden">
+        <details className="group" open={open}>
+          <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Invoice #{inv.number}</span>
+              <span className="block text-xs text-muted">{inv.issuedAt.slice(0, 10)}</span>
+            </span>
+            {status}
+            <span className={cx("font-semibold tabular", inv.totalCents < 0 && "text-success")}>
+              {inv.totalCents < 0 ? "−" : ""}
+              {formatCents(Math.abs(inv.totalCents))}
+            </span>
+          </summary>
+          <ul className="space-y-1.5 border-t border-line px-5 py-3 text-sm">
+            {inv.lines.map((l, i) => (
+              <li key={i} className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">{l.label}</span>
+                <span className={cx("shrink-0 tabular", l.cents < 0 && "text-success")}>
+                  {l.cents < 0 ? "−" : ""}
+                  {formatCents(Math.abs(l.cents))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      </Card>
+    </li>
+  );
+}
+
