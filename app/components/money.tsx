@@ -1,8 +1,9 @@
 // Shared pieces for the Money pages (staff) and the family Money page.
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { useFetcher } from "react-router";
-import { CaretDown, Check } from "@phosphor-icons/react";
+import { Link, useFetcher } from "react-router";
+import { CaretDown, CaretRight, Wallet } from "@phosphor-icons/react";
+import { navMotion } from "~/utils/nav-motion";
 import { formatCents, plainAmount, type Cents } from "~/utils/money";
 import { METHOD_LABELS, PAYMENT_METHODS, type PaymentMethod, type TxnKind } from "~/utils/ledger";
 import { Alert, Button, Card, cx, hintClass, inputClass, labelClass } from "~/components/ui";
@@ -249,15 +250,6 @@ export function memberLineText(row: { kind: TxnKind; cents: Cents; itemName: str
   }
 }
 
-export function SavedNote({ show, children }: { show: boolean; children: ReactNode }) {
-  if (!show) return null;
-  return (
-    <p className="flex items-center gap-1.5 text-sm font-medium text-success" role="status">
-      <Check size={16} weight="bold" />
-      {children}
-    </p>
-  );
-}
 
 // > 0 owes, < 0 is owed
 export function Balance({ cents }: { cents: number }) {
@@ -273,3 +265,30 @@ export function Balance({ cents }: { cents: number }) {
   );
 }
 
+
+// The family Schedule page's link to Money
+export function MoneyCard({ owed, dueBack, pending, className }: { owed: Cents; dueBack: Cents; pending: number; className?: string }) {
+  const line =
+    owed > 0 ? (
+      <>You owe <Amount cents={owed} className="font-semibold text-danger" /></>
+    ) : dueBack > 0 ? (
+      <>The team owes you <Amount cents={dueBack} className="font-semibold text-success" /></>
+    ) : (
+      <>You're all paid up</>
+    );
+  return (
+    <Link to="/family/money" {...navMotion("push")} className={cx("flex items-center gap-4 rounded-2xl bg-surface p-4 shadow-card ring-1 ring-line transition hover:ring-line-strong", className)}>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+        <Wallet size={22} weight="fill" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">Money</span>
+        <span className="block text-sm text-muted">
+          {line}
+          {pending > 0 && " · waiting for the coach to confirm a payment"}
+        </span>
+      </span>
+      <CaretRight size={18} className="shrink-0 text-muted" />
+    </Link>
+  );
+}

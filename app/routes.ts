@@ -32,6 +32,7 @@ export default [
     route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
+    route("money", "routes/family.money.tsx"),
   ]),
   // Sideline view: full screen, outside the dashboard chrome
   route("dashboard/team/:teamId/games/:gameId/game-day", "routes/game-day.tsx"),

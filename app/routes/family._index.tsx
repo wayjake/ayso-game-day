@@ -9,6 +9,8 @@ import { sendPush, isPushConfigured } from "~/utils/push.server";
 import { formatGameDate, formatGameTime, formatTimeRange, relativeGameDay, todayISO } from "~/utils/dates";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { FamilyTodo } from "~/components/FamilyTodo";
+import { getFamilyMoney, type FamilyTeamMoney } from "~/utils/ledger.server";
+import { MoneyCard } from "~/components/money";
 import { familyTasks } from "~/utils/tasks.server";
 import { setFamilyDone } from "~/utils/tasks.core";
 import { Alert, Badge, Card, DateTile, EmptyState, HomeAwayBadge, PlayerAvatar, buttonClass, cx } from "~/components/ui";
@@ -33,6 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     firstName: (user.name || "").split(" ")[0],
     suggestPush: isPushConfigured() && !sub,
     tasks: await familyTasks(kids),
+    money: summarizeMoney(await getFamilyMoney(user.id, kids)),
   });
 }
 
@@ -94,8 +97,19 @@ export async function action({ request }: Route.ActionArgs) {
 
 type LoaderData = Route.ComponentProps["loaderData"];
 
+// One line for the Schedule page: shown once the team has money on the app
+function summarizeMoney(teams: FamilyTeamMoney[]) {
+  const active = teams.filter((t) => t.history.length > 0 || t.pending.length > 0);
+  if (active.length === 0) return null;
+  return {
+    owed: active.reduce((a, t) => a + t.owed, 0),
+    dueBack: active.reduce((a, t) => a + t.dueBack, 0),
+    pending: active.reduce((a, t) => a + t.pending.length, 0),
+  };
+}
+
 export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
-  const { kids, events, answers, today, firstName, suggestPush, tasks } = loaderData;
+  const { kids, events, answers, today, firstName, suggestPush, tasks, money } = loaderData;
   const [params] = useSearchParams();
   const multipleTeams = new Set(kids.map((k) => k.teamId)).size > 1;
 
@@ -114,6 +128,8 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
           Add to your calendar
         </Link>
       </p>
+
+      {money && <MoneyCard {...money} className="mt-5" />}
 
       <FamilyTodo items={tasks} today={today} showTeam={multipleTeams} className="mt-5" />
 

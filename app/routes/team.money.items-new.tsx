@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db, ledgerItems, ledgerTxns } from "~/db";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
-import { getItems, getMembers, loadBook, memberKey, postTxn } from "~/utils/ledger.server";
+import { getMembers, loadBook, memberKey, postTxn } from "~/utils/ledger.server";
 import { FormError, newFormKey, readCents, readClientKey, readMembers, readText } from "~/utils/ledger-forms.server";
 import { CATEGORY_LABELS, ITEM_CATEGORIES, LedgerError, chargeLines, type ItemCategory } from "~/utils/ledger";
 import { allocate } from "~/utils/money";
