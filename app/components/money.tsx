@@ -8,6 +8,37 @@ import { formatCents, parseCents, plainAmount, sumCents, type Cents } from "~/ut
 import { FULL_SHARE, METHOD_LABELS, PAYMENT_METHODS, shareTargets, type PaymentMethod, type Rounding, type TxnKind } from "~/utils/ledger";
 import { Alert, Badge, Button, Card, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 
+// "Refundable", or "$400 refundable" when only part of it can come back
+export function RefundableBadge({ item }: { item: { refundable: boolean; refundableCents: Cents | null } }) {
+  if (!item.refundable) return null;
+  return <Badge tone="primary">{item.refundableCents ? `${formatCents(item.refundableCents)} refundable` : "Refundable"}</Badge>;
+}
+
+// The refundable checkbox and how much, for the New expense and Edit details forms
+export function RefundableField({ defaultChecked = false, defaultCents = null }: { defaultChecked?: boolean; defaultCents?: Cents | null }) {
+  const [on, setOn] = useState(defaultChecked);
+  return (
+    <div className="space-y-3 rounded-xl p-3 ring-1 ring-line has-[:checked]:bg-primary-soft has-[:checked]:ring-primary">
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" name="refundable" value="1" checked={on} onChange={(e) => setOn(e.target.checked)} className="mt-0.5" />
+        <span>
+          <span className="block text-sm font-semibold">Refundable</span>
+          <span className="block text-sm text-muted">Some or all of it can come back, like a referee deposit or a cancelled tournament.</span>
+        </span>
+      </label>
+      {on && (
+        <MoneyField
+          name="refundableCents"
+          label="How much can come back"
+          defaultCents={defaultCents}
+          required={false}
+          hint="Like the $400 referee deposit. Leave empty if all of it can."
+        />
+      )}
+    </div>
+  );
+}
+
 export function Amount({ cents, className, tone }: { cents: Cents; className?: string; tone?: "owed" | "credit" | "plain" }) {
   const color = tone === "owed" ? "text-danger" : tone === "credit" ? "text-success" : "";
   return <span className={cx("tabular", color, className)}>{formatCents(cents)}</span>;

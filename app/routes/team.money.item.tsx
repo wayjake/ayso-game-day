@@ -18,20 +18,7 @@ import {
   reverseTxn,
   summarizeItems,
 } from "~/utils/ledger.server";
-import {
-  FormError,
-  newFormKey,
-  parseMember,
-  readCents,
-  readClientKey,
-  readDate,
-  readId,
-  readMembers,
-  readMethod,
-  readShares,
-  readText,
-  runLedgerAction,
-} from "~/utils/ledger-forms.server";
+import { FormError, newFormKey, parseMember, readCents, readClientKey, readDate, readId, readMembers, readMethod, readShares, readText, runLedgerAction, readRefundable } from "~/utils/ledger-forms.server";
 import {
   CATEGORY_LABELS,
   FULL_SHARE,
@@ -48,7 +35,7 @@ import {
 } from "~/utils/ledger";
 import { allocate, formatCents, type Cents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
-import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton } from "~/components/money";
+import { ActionPanel, Amount, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ShareEditor, TextField, UndoButton, RefundableBadge, RefundableField } from "~/components/money";
 import { cantGoToExpense, expenseTargets, getExpenseGames, reopenExpense, saveExpenseGames, saveShares, settleExpense, settlePreview } from "~/utils/billing.server";
 import { games as gamesTable } from "~/db";
 import { formatGameDate } from "~/utils/dates";
@@ -214,7 +201,7 @@ export async function action({ request, params }: Route.ActionArgs) {
             category,
             details: readText(formData, "details", 1000),
             dueDate: /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null,
-            refundable: formData.get("refundable") === "1",
+            ...readRefundable(formData, "totalCents" in pricing ? pricing.totalCents! : item.totalCents),
             ...pricing,
             updatedAt: new Date().toISOString(),
           })
@@ -318,7 +305,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
         description={
           <span className="flex flex-wrap items-center gap-1.5">
             <Badge>{CATEGORY_LABELS[item.category]}</Badge>
-            {item.refundable && <Badge tone="primary">Refundable</Badge>}
+            <RefundableBadge item={item} />
             {item.shareMode === "split" && item.totalCents !== null && <Badge>{formatCents(item.totalCents)} split{item.rounding === "dollar" ? ", rounded up" : ""}</Badge>}
             {item.shareMode === "fixed" && <Badge>Each person's own amount</Badge>}
             {item.settledAt && <Badge tone="success">Settled</Badge>}
@@ -587,10 +574,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
                 <label htmlFor="details" className={labelClass}>Details for families</label>
                 <textarea id="details" name="details" rows={2} maxLength={1000} defaultValue={item.details ?? ""} className={cx(inputClass, "h-auto min-h-16 py-2.5")} />
               </div>
-              <label className="flex cursor-pointer items-center gap-3">
-                <input type="checkbox" name="refundable" value="1" defaultChecked={item.refundable} />
-                <span className="text-sm font-medium">Refundable</span>
-              </label>
+              <RefundableField defaultChecked={item.refundable} defaultCents={item.refundableCents} />
               {item.shareMode === "split" && item.unitCents === null && (
                 <>
                   <MoneyField name="total" label="Total" defaultCents={item.totalCents} />

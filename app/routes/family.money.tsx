@@ -182,6 +182,16 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
                       <Amount cents={s.charged} className="shrink-0 font-semibold" />
                     </div>
                     {item?.details && <p className="mt-0.5 text-sm text-muted">{item.details}</p>}
+                    {item?.refundable && (
+                      <p className="mt-0.5 text-sm text-muted">
+                        {item.refundableCents && item.totalCents
+                          ? `${formatCents(item.refundableCents)} of the ${formatCents(item.totalCents)} total can come back.`
+                          : item.refundableCents
+                            ? `${formatCents(item.refundableCents)} of it can come back.`
+                            : "Some or all of it can come back."}{" "}
+                        Whatever does is shared out when the coach settles up.
+                      </p>
+                    )}
                     <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-sm">
                       {s.remaining === 0 ? (
                         <Badge tone="success">{s.covered >= s.charged ? "Covered by the team" : "Paid"}</Badge>

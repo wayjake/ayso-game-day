@@ -25,7 +25,7 @@ import { newFormKey, readCents, readClientKey, readDate, readId, readMethod, run
 import { CATEGORY_LABELS, METHOD_LABELS } from "~/utils/ledger";
 import { sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
-import { Amount, Balance, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
+import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx, inputClass, labelClass, hintClass } from "~/components/ui";
 import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -218,7 +218,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         </div>
                         <p className="mt-1 flex flex-wrap gap-1.5 text-sm text-muted">
                           <Badge>{CATEGORY_LABELS[s.item.category]}</Badge>
-                          {s.item.refundable && <Badge tone="primary">Refundable</Badge>}
+                          <RefundableBadge item={s.item} />
                           {s.item.settledAt && <Badge tone="success">Settled</Badge>}
                           {s.item.dueDate && <span>Due {s.item.dueDate}</span>}
                         </p>

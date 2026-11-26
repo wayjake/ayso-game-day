@@ -504,7 +504,7 @@ export type FamilyTeamMoney = {
   venmoHandle: string | null;
   refCode: string;
   kids: { playerId: string; name: string; statement: Statement }[];
-  items: Pick<LedgerItem, "id" | "name" | "details" | "dueDate" | "refundable" | "category">[];
+  items: Pick<LedgerItem, "id" | "name" | "details" | "dueDate" | "refundable" | "refundableCents" | "totalCents" | "category">[];
   history: FamilyHistoryRow[];
   funds: { id: string; name: string; balance: Cents }[];
   pending: Pick<LedgerClaim, "id" | "cents" | "method" | "createdAt">[];
@@ -602,7 +602,7 @@ export async function getFamilyMoney(userId: string, kids: { playerId: string; n
       venmoHandle: teamRows.find((t) => t.id === teamId)?.venmoHandle ?? null,
       refCode: familyRefCode(teamId, userId),
       kids: kidMoney,
-      items: teamItems.map((i) => ({ id: i.id, name: i.name, details: i.details, dueDate: i.dueDate, refundable: i.refundable, category: i.category })),
+      items: teamItems.map((i) => ({ id: i.id, name: i.name, details: i.details, dueDate: i.dueDate, refundable: i.refundable, refundableCents: i.refundableCents, totalCents: i.totalCents, category: i.category })),
       history,
       funds: visibleFunds.filter((f) => f.teamId === teamId).map((f) => ({ id: f.id, name: f.name, balance: fundTotal.get(f.id) ?? 0 })),
       pending: pending.filter((p) => p.teamId === teamId),

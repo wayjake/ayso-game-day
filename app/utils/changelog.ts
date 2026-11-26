@@ -13,6 +13,16 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-26",
+    title: "Which part comes back",
+    summary: "A refundable expense now says how much of it can come back, like the referee deposit.",
+    changes: [
+      { kind: "improved", text: "Coaches: when an expense is refundable, say how much of it can come back. Its card reads \"$400 refundable\" instead of marking the whole thing." },
+      { kind: "improved", text: "Families see which part of their share can come back, and that it's shared out when the coach settles up." },
+      { kind: "fixed", text: "Signing in no longer gets stuck going round in circles for people who were signed in before this week's update." },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "Private links",
     summary: "Links to your team, messages and games no longer give anything away, and you'll need to sign in once.",
     changes: [

@@ -754,6 +754,8 @@ export const ledgerItems = sqliteTable('ledger_items', {
   details: text('details'), // Shown to families
   // Money can come back to families from it (a hotel deposit, a cancelled tournament)
   refundable: integer('refundable', { mode: 'boolean' }).notNull().default(false),
+  // How much of it can come back (the $400 referee deposit in a $1,100 entry); null is all of it
+  refundableCents: integer('refundable_cents'),
   dueDate: text('due_date'), // YYYY-MM-DD
   // How shares are worked out (ledgerShares holds who): 'split' divides totalCents
   // by weight, 'fixed' gives each person their own amount. Null on items made
