@@ -14,7 +14,8 @@
     "db:seed": "tsx app/db/seed.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:prod:migrate": "drizzle-kit migrate --config=drizzle.config.prod.ts",
-    "db:prod:studio": "drizzle-kit studio --config=drizzle.config.prod.ts"
+    "db:prod:studio": "drizzle-kit studio --config=drizzle.config.prod.ts",
+    "test": "node --test 'app/**/*.test.ts'"
   },
   "dependencies": {
     "@ably/pubsub-device": "^3.2.0",

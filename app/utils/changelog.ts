@@ -12,6 +12,17 @@ export type Release = {
 
 export const releases: Release[] = [
   {
+    date: "2026-11-26",
+    title: "Team money",
+    summary: "Track what families and staff owe for ref fees, tournaments and travel, and let families pay you on Venmo.",
+    changes: [
+      { kind: "new", text: "Coaches: Money, from the Roster page. Charge ref fees, a tournament or the hotel to everyone or just some people, as an amount each or a total split evenly to the cent. See who's paid, who still owes, and what's been passed on to the hotel or the league." },
+      { kind: "new", text: "Families see what they owe, what they've paid and anything coming back to them. Pay opens Venmo with the amount and a note already filled in, and \"I sent a payment\" tells the coach, who confirms it once it arrives." },
+      { kind: "new", text: "Sponsor gifts and donations go into a team fund that can cover anyone's share. Add a savings fund too, and choose whether families can see each fund's balance." },
+      { kind: "new", text: "Paid for something yourself? Record it as fronted and the team owes you until you're paid back. Refundable charges, like a hotel deposit, can give money back to families." },
+    ],
+  },
+  {
     date: "2026-11-25",
     title: "Messages loads in its own shape",
     summary: "On a computer, the outline you see while Messages loads now looks like Messages.",

@@ -32,6 +32,7 @@ export default [
     route("messages/with/:teamId/:staffId", "routes/family.messages.with.tsx"),
     route("messages/:conversationId", "routes/family.messages.thread.tsx"),
     route("settings", "routes/family.settings.tsx"),
+    route("money", "routes/family.money.tsx"),
   ]),
   // Sideline view: full screen, outside the dashboard chrome
   route("dashboard/team/:teamId/games/:gameId/game-day", "routes/game-day.tsx"),
@@ -86,6 +87,12 @@ export default [
       route("tasks/new", "routes/team.tasks-new.tsx"),
       route("tasks/:taskId", "routes/team.tasks.detail.tsx"),
       route("tasks/:taskId/edit", "routes/team.tasks.edit.tsx"),
+      route("money", "routes/team.money.tsx"),
+      route("money/items/new", "routes/team.money.items-new.tsx"),
+      route("money/items/:itemId", "routes/team.money.item.tsx"),
+      route("money/funds", "routes/team.money.funds.tsx"),
+      // :memberType is "player" or "staff"
+      route("money/:memberType/:memberId", "routes/team.money.member.tsx"),
     ]),
   ])
 ] satisfies RouteConfig;
