@@ -215,6 +215,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         <p className="mt-1 flex flex-wrap gap-1.5 text-sm text-muted">
                           <Badge>{CATEGORY_LABELS[s.item.category]}</Badge>
                           {s.item.refundable && <Badge tone="primary">Refundable</Badge>}
+                          {s.item.settledAt && <Badge tone="success">Settled</Badge>}
                           {s.item.dueDate && <span>Due {s.item.dueDate}</span>}
                         </p>
                         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
