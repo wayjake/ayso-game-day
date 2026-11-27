@@ -33,8 +33,11 @@ export async function loader({ params }: Route.LoaderArgs) {
 }
 
 function venmoLink(handle: string, cents: number, note: string) {
-  const params = new URLSearchParams({ txn: "pay", amount: plainAmount(cents), note, audience: "private" });
-  return `https://venmo.com/${encodeURIComponent(handle)}?${params.toString()}`;
+  // encodeURIComponent, not URLSearchParams: Venmo shows a "+" for a space literally
+  const query = Object.entries({ txn: "pay", amount: plainAmount(cents), note, audience: "private" })
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&");
+  return `https://venmo.com/${encodeURIComponent(handle)}?${query}`;
 }
 
 export default function Pay({ loaderData }: Route.ComponentProps) {

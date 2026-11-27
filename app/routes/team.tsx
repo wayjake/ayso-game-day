@@ -11,7 +11,7 @@ import { navMotion } from "~/utils/nav-motion";
 import { TabTransition, type TransitionTab } from "~/components/TabTransition";
 import { useEffect, useRef, useState } from "react";
 import { countTasksToConfirm } from "~/utils/tasks.server";
-import { countPendingClaims } from "~/utils/ledger.server";
+import { countPaymentsToConfirm } from "~/utils/venmo-payments.server";
 import { AddressBook, Archive, CalendarBlank, ChatsCircle, Coins, Gear, House, ImagesSquare, ListChecks, UsersThree } from "@phosphor-icons/react";
 import { teamPath } from "~/utils/team-path";
 
@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [unread, tasksToConfirm, paymentsToConfirm] = await Promise.all([
     coachConversationIds(teamId, user.id).then((ids) => totalUnread(ids, user.id)),
     countTasksToConfirm(teamId),
-    countPendingClaims(teamId),
+    countPaymentsToConfirm(teamId),
   ]);
 
   return data(

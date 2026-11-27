@@ -31,6 +31,9 @@ import { useState } from "react";
 import { invoicePreview, pendingShareChanges, shareTotals } from "~/utils/billing.server";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
+import { teamFamilies } from "~/utils/billing.server";
+import { dismissVenmoPayment, pendingClaimIdsCoveredByVenmo, pendingVenmoPayments, recordVenmoPayment, venmoAutoStatus } from "~/utils/venmo-payments.server";
+import { familyMembersFromKey } from "~/utils/billing.server";
 
 export function meta() {
   return [{ title: "Finances - BenchTalk" }];
@@ -39,7 +42,19 @@ export function meta() {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
-  const [book, items, claims] = await Promise.all([loadBook(team.id), getItems(team.id), pendingClaims(team.id)]);
+  const [book, items, allClaims, venmoRows, families, venmoAuto] = await Promise.all([
+    loadBook(team.id),
+    getItems(team.id),
+    pendingClaims(team.id),
+    pendingVenmoPayments(team.id),
+    teamFamilies(db, team.id),
+    venmoAutoStatus(team.id),
+  ]);
+  // A family's "I sent a payment" that a Venmo email shows arrived: recording
+  // the Venmo payment confirms it, so it isn't listed twice
+  const covered = await pendingClaimIdsCoveredByVenmo(team.id, venmoRows);
+  const claims = allClaims.filter((c) => !covered.includes(c.id));
+  const familyName = new Map(families.map((f) => [f.key, f.name]));
   const members = await getMembers(team.id, book);
   const held = fundBalances(book);
   const names = await activityNames(team.id, book, members, items);
@@ -85,6 +100,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         notInvoiced: pendingByMember.get(memberKey(m.member)) ?? 0,
       })),
     claims: claims.map((c) => ({ ...c, forNames: c.playerIds.map((id) => playerName.get(id) ?? "a player") })),
+    venmoPayments: venmoRows.map((v) => ({
+      id: v.id,
+      payerName: v.payerName,
+      cents: v.cents,
+      note: v.note,
+      paidOn: v.paidOn,
+      sentTo: v.sentTo,
+      verified: v.verified,
+      familyKey: v.familyKey && familyName.has(v.familyKey) ? v.familyKey : null,
+      matchedBy: v.matchedBy,
+      coversClaim: allClaims.some((c) => covered.includes(c.id) && v.familyKey && familyMembersFromKey(v.familyKey).some((m) => c.playerIds.includes(m.id)) && c.cents === v.cents),
+      alreadyRecorded: alreadyRecordedOn(book, v),
+    })),
+    families: families.map((f) => ({ key: f.key, name: f.name, staff: f.key.startsWith("staff:") })),
+    venmoAuto,
     toInvoice: await invoicePreview(team.id).then((p) => ({ families: p.drafts.length, totalCents: p.totalCents })),
     activity,
   });
@@ -124,6 +154,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
+  if (intent === "recordVenmo") {
+    return runLedgerAction(() => recordVenmoPayment(team.id, readId(formData, "venmoId"), String(formData.get("familyKey") ?? ""), user.id));
+  }
+
+  if (intent === "dismissVenmo") {
+    return runLedgerAction(() => dismissVenmoPayment(team.id, readId(formData, "venmoId"), user.id));
+  }
+
   if (intent === "dismissClaim") {
     return runLedgerAction(async () => {
       const claimId = readId(formData, "claimId");
@@ -141,8 +179,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   return data({ ok: false as const, error: "Unknown action" }, { status: 400 });
 }
 
+// A payment someone recorded by hand that looks like this Venmo one: same
+// amount, same family, within a few days. Shown as a warning, never decided for them.
+function alreadyRecordedOn(book: Awaited<ReturnType<typeof loadBook>>, v: { familyKey: string | null; cents: number; paidOn: string | null }) {
+  if (!v.familyKey) return null;
+  const ids = new Set(familyMembersFromKey(v.familyKey).map((m) => m.id));
+  const day = (d: string) => new Date(`${d}T12:00:00Z`).getTime();
+  const paid = v.paidOn ?? todayISO();
+  const hit = book.find(
+    (t) =>
+      t.kind === "payment" &&
+      !t.reversed &&
+      !t.clientKey.startsWith("venmo:") &&
+      Math.abs(day(t.occurredOn) - day(paid)) <= 3 * 86400000 &&
+      t.lines.some((l) => l.account.type === "cash" && l.cents === v.cents) &&
+      t.lines.some((l) => (l.account.type === "player" || l.account.type === "staff") && l.account.id && ids.has(l.account.id))
+  );
+  return hit ? hit.occurredOn : null;
+}
+
 export default function Money({ loaderData }: Route.ComponentProps) {
-  const { teamCode, venmoHandle, formKey, today, cash, totals, items, people, claims, activity, toInvoice } = loaderData;
+  const { teamCode, venmoHandle, formKey, today, cash, totals, items, people, claims, venmoPayments, families, venmoAuto, activity, toInvoice } = loaderData;
   const base = teamPath(teamCode, "finances");
   const newItem = (
     <Link to={`${base}/items/new`} className={buttonClass()}>
@@ -190,12 +247,15 @@ export default function Money({ loaderData }: Route.ComponentProps) {
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-8">
-          {claims.length > 0 && (
+          {claims.length + venmoPayments.length > 0 && (
             <section>
               <h2 className="mb-3 flex items-center gap-2 font-semibold">
-                Payments to confirm <Badge tone="warning">{claims.length}</Badge>
+                Payments to confirm <Badge tone="warning">{claims.length + venmoPayments.length}</Badge>
               </h2>
               <ul className="space-y-3">
+                {venmoPayments.map((v) => (
+                  <VenmoPaymentCard key={v.id} payment={v} families={families} formKey={formKey} />
+                ))}
                 {claims.map((c) => (
                   <ClaimCard key={c.id} claim={c} formKey={formKey} today={today} />
                 ))}
@@ -292,7 +352,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
         </div>
 
         <aside className="space-y-8">
-          <VenmoCard handle={venmoHandle} formKey={formKey} />
+          <VenmoCard handle={venmoHandle} formKey={formKey} setupPath={`${base}/venmo`} autoLastAt={venmoAuto.lastAt} />
 
           <section>
             <h2 className="mb-3 font-semibold">People</h2>
@@ -381,7 +441,106 @@ function ClaimCard({
   );
 }
 
-function VenmoCard({ handle, formKey }: { handle: string | null; formKey: string }) {
+function VenmoPaymentCard({
+  payment,
+  families,
+  formKey,
+}: {
+  payment: {
+    id: string;
+    payerName: string;
+    cents: number;
+    note: string | null;
+    paidOn: string | null;
+    verified: boolean;
+    familyKey: string | null;
+    matchedBy: string | null;
+    coversClaim: boolean;
+    alreadyRecorded: string | null;
+  };
+  families: { key: string; name: string; staff: boolean }[];
+  formKey: string;
+}) {
+  const dismiss = useFetcher();
+  const [familyKey, setFamilyKey] = useState(payment.familyKey ?? "");
+  const matched = families.find((f) => f.key === payment.familyKey);
+  const how =
+    payment.matchedBy === "invoice"
+      ? "Matched by the invoice number in the note."
+      : payment.matchedBy === "ref"
+        ? "Matched by the ref code in the note."
+        : payment.matchedBy === "payer"
+          ? `${payment.payerName} paid for them last time.`
+          : null;
+  return (
+    <li>
+      <Card className="p-4">
+        <p className="text-sm">
+          <span className="font-semibold">{payment.payerName}</span> paid you <Amount cents={payment.cents} className="font-semibold" /> on Venmo
+          {payment.paidOn ? ` on ${shortDate(payment.paidOn)}` : ""}.
+        </p>
+        {payment.note && <p className="mt-1 text-sm text-muted">“{payment.note}”</p>}
+        {!payment.verified && (
+          <p className="mt-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-ink">
+            We couldn't confirm this email really came from Venmo. Check that it's in your Venmo app before you record it.
+          </p>
+        )}
+        {payment.alreadyRecorded && (
+          <p className="mt-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-ink">
+            A {formatCents(payment.cents)} payment for them was already recorded on {shortDate(payment.alreadyRecorded)}. If that's this one, dismiss it here.
+          </p>
+        )}
+        <LedgerForm intent="recordVenmo" formKey={`${formKey}-v-${payment.id}`} submitLabel="Record it" className="mt-3">
+          <input type="hidden" name="venmoId" value={payment.id} />
+          <div>
+            <label htmlFor={`venmo-${payment.id}-family`} className={labelClass}>
+              Who it's for
+            </label>
+            <select
+              id={`venmo-${payment.id}-family`}
+              name="familyKey"
+              value={familyKey}
+              onChange={(e) => setFamilyKey(e.target.value)}
+              className={inputClass}
+              required
+            >
+              <option value="" disabled>
+                Pick a family
+              </option>
+              <optgroup label="Families">
+                {families.filter((f) => !f.staff).map((f) => (
+                  <option key={f.key} value={f.key}>{f.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Staff">
+                {families.filter((f) => f.staff).map((f) => (
+                  <option key={f.key} value={f.key}>{f.name}</option>
+                ))}
+              </optgroup>
+            </select>
+            <p className={hintClass}>
+              {matched && familyKey === matched.key && how ? how : matched ? "You picked someone else: it's recorded for them." : "Nothing in the note said who it's from, so pick the family."}
+              {payment.coversClaim ? " This also confirms the payment they told you about." : ""}
+            </p>
+          </div>
+        </LedgerForm>
+        <dismiss.Form method="post" className="mt-2 border-t border-line pt-2">
+          <input type="hidden" name="_action" value="dismissVenmo" />
+          <input type="hidden" name="venmoId" value={payment.id} />
+          <button type="submit" className="tap text-sm font-semibold text-muted hover:text-danger" disabled={dismiss.state !== "idle"}>
+            Not a team payment: dismiss
+          </button>
+        </dismiss.Form>
+      </Card>
+    </li>
+  );
+}
+
+function shortDate(iso: string) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function VenmoCard({ handle, formKey, setupPath, autoLastAt }: { handle: string | null; formKey: string; setupPath: string; autoLastAt: string | null }) {
   const [editing, setEditing] = useState(!handle);
   return (
     <section>
@@ -416,6 +575,17 @@ function VenmoCard({ handle, formKey }: { handle: string | null; formKey: string
               Change
             </button>
           </div>
+        )}
+        {handle && (
+          <Link to={setupPath} className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3 text-sm">
+            <span>
+              <span className="block font-semibold text-ink">Match payments automatically</span>
+              <span className="block text-muted">
+                {autoLastAt ? `On. Last Venmo email ${new Date(autoLastAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.` : "Forward Venmo's emails here and each payment is matched to its family."}
+              </span>
+            </span>
+            <CaretRight size={16} className="shrink-0 text-muted" />
+          </Link>
         )}
       </Card>
     </section>

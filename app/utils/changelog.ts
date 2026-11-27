@@ -13,6 +13,17 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-27",
+    title: "Venmo payments, matched for you",
+    summary: "Forward Venmo's payment emails to the team, and each payment shows up matched to its family, ready to record with one tap.",
+    changes: [
+      { kind: "new", text: "Coaches: set up Match payments automatically under Finances → Venmo. Your inbox forwards Venmo's \"paid you\" emails to the team's own address, and each payment shows up under Payments to confirm, matched by the invoice number or ref code in the Venmo note. Check it and tap Record it." },
+      { kind: "new", text: "When a note doesn't say who paid, pick the family once, and the next payment from that person is matched to them." },
+      { kind: "improved", text: "A Venmo payment and the family's own \"I sent a payment\" for the same amount count once: recording one confirms the other." },
+      { kind: "fixed", text: "The Pay on Venmo button filled in the note with plus signs instead of spaces." },
+    ],
+  },
+  {
+    date: "2026-11-27",
     title: "Your invoice email, your words",
     summary: "Write the invoice email yourself, see exactly what each family will get, and pick who it goes to.",
     changes: [

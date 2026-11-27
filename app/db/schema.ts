@@ -50,6 +50,9 @@ export const teams = sqliteTable('teams', {
   // The team's own invoice email (placeholders like {family}); null = the default. See utils/invoice-email.ts.
   invoiceEmailSubject: text('invoice_email_subject'),
   invoiceEmailBody: text('invoice_email_body'),
+  // Secret part of the address the coach forwards Venmo's "paid you" emails to
+  // (venmo-<token>@<sending domain>). Made on first visit to Finances → Venmo.
+  venmoEmailToken: text('venmo_email_token').unique(),
   // Archived (a past season): left out of the team switcher, the /dashboard
   // redirect and the main teams list, for everyone on staff. Still opens and
   // works as before; All teams lists it under Archived. Only the owner sets it.
@@ -550,7 +553,7 @@ export const inboundEmails = sqliteTable('inbound_emails', {
   isAutoReply: integer('is_auto_reply', { mode: 'boolean' }).notNull().default(false),
   // matched: in a family thread. unmatched: needs a coach to assign it. dismissed: ignored.
   status: text('status', { enum: ['matched', 'unmatched', 'dismissed'] }).notNull().default('unmatched'),
-  matchedBy: text('matched_by'), // headers | sender | coach
+  matchedBy: text('matched_by'), // headers | sender | coach | venmo | gmail-forwarding
   teamId: text('team_id').references(() => teams.id),
   ownerUserId: text('owner_user_id').references(() => users.id), // Coach whose address it was sent to
   conversationId: text('conversation_id').references(() => conversations.id),
@@ -937,7 +940,35 @@ export const ledgerClaims = sqliteTable('ledger_claims', {
   uniqueIndex('ledger_claims_client_key_idx').on(t.teamId, t.clientKey),
 ]);
 
+// A Venmo "paid you" email the coach's inbox forwarded to the team's Venmo
+// address. Nothing is recorded until staff tap Record it, which posts the
+// payment (clientKey `venmo:<venmoTxnId>`, so it can only post once).
+export const ledgerVenmoPayments = sqliteTable('ledger_venmo_payments', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  inboundEmailId: text('inbound_email_id').references(() => inboundEmails.id),
+  venmoTxnId: text('venmo_txn_id').notNull(), // Venmo's Transaction ID
+  payerName: text('payer_name').notNull(), // As Venmo shows it
+  cents: integer('cents').notNull(),
+  note: text('note'),
+  sentTo: text('sent_to'), // The Venmo handle it went to, without the @
+  paidOn: text('paid_on'), // YYYY-MM-DD, from the email
+  // Who it's for, as matched from the note (invoice number or ref code), or picked by staff
+  familyKey: text('family_key'), // "players:<id>,<id>" or "staff:<id>"
+  matchedBy: text('matched_by'), // invoice | ref | payer | null
+  verified: integer('verified', { mode: 'boolean' }).notNull().default(false), // From venmo@venmo.com and DMARC passed
+  status: text('status', { enum: ['pending', 'recorded', 'dismissed'] }).notNull().default('pending'),
+  txnId: text('txn_id').references(() => ledgerTxns.id),
+  resolvedBy: text('resolved_by').references(() => users.id),
+  resolvedAt: text('resolved_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('ledger_venmo_payments_team_status_idx').on(t.teamId, t.status),
+  uniqueIndex('ledger_venmo_payments_txn_idx').on(t.teamId, t.venmoTxnId),
+]);
+
 export type LedgerItem = typeof ledgerItems.$inferSelect;
+export type LedgerVenmoPayment = typeof ledgerVenmoPayments.$inferSelect;
 export type LedgerFund = typeof ledgerFunds.$inferSelect;
 export type LedgerTxn = typeof ledgerTxns.$inferSelect;
 export type LedgerClaim = typeof ledgerClaims.$inferSelect;

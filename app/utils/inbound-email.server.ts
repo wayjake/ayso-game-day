@@ -30,6 +30,7 @@ import { sendPush } from "~/utils/push.server";
 import { publishConversation } from "~/utils/realtime.server";
 import { teamPath } from "~/utils/team-path";
 import { parseId } from "~/utils/ids";
+import { receiveVenmoEmail } from "~/utils/venmo-payments.server";
 
 // Everything that comes back from Resend: delivery events for mail we sent,
 // and email received on the domain.
@@ -477,6 +478,10 @@ export async function receiveEmail(resendEmailId: string) {
     .onConflictDoNothing()
     .returning();
   if (!inbound) return; // Lost a race with a duplicate delivery
+
+  // Venmo's "paid you" emails (and Gmail's forwarding confirmation) forwarded
+  // to a team's Venmo address: payments to record, never a family's email
+  if (await receiveVenmoEmail(inbound, email)) return;
 
   const match = (await matchByHeaders(refs)) ?? (inbound.authPassed ? await matchBySender(from.address, email.subject, inbound.ownerUserId, toTeam?.teamId ?? null) : null);
   if (match) await fileIntoThread(inbound, match);
