@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { detectPlatform, isStandalone, vapidKeyBytes } from "~/utils/pwa";
-import { wantsNotification, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
+import { prefKey, wantsNotification, type NotifyChannel, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
 
 // Web Push for this browser. Needs the service worker from /sw.js (registered
 // in root.tsx) and the VAPID public key from a loader. The family layout owns
@@ -171,22 +171,22 @@ export function usePush(vapidPublicKey: string | null, initialPrefs: NotifyPrefs
   }, [vapidPublicKey]);
 
   /** Which kinds this account gets, on every device. Saved right away, undone if the save fails. */
-  const choose = useCallback(async (kind: NotifyKind, on: boolean) => {
+  const choose = useCallback(async (kind: NotifyKind, on: boolean, channel: NotifyChannel = "push") => {
     setError(null);
     let before: NotifyPrefs = {};
     setPrefs((current) => {
       before = current;
-      return { ...current, [kind]: on };
+      return { ...current, [prefKey(kind, channel)]: on };
     });
     try {
-      await post({ action: "prefs", kind, on });
+      await post({ action: "prefs", kind, on, channel });
     } catch (e) {
       setPrefs(before);
       setError(`Couldn't save that: ${(e as Error).message}`);
     }
   }, []);
 
-  const wants = useCallback((kind: NotifyKind) => wantsNotification(prefs, kind), [prefs]);
+  const wants = useCallback((kind: NotifyKind, channel: NotifyChannel = "push") => wantsNotification(prefs, kind, channel), [prefs]);
 
   return { status, busy, error, enable, disable, sendTest, wants, choose };
 }

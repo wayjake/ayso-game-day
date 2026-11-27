@@ -3,7 +3,7 @@ import { data } from "react-router";
 import { z } from "zod";
 import { getUser } from "~/utils/auth.server";
 import { deleteSubscription, isPushConfigured, saveSubscription, sendPush, sendTestPush, setNotifyPref } from "~/utils/push.server";
-import { isSwitchableKind } from "~/utils/notify";
+import { isSwitchable } from "~/utils/notify";
 import { db, pushSubscriptions } from "~/db";
 import { and, eq } from "drizzle-orm";
 
@@ -20,7 +20,7 @@ const body = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("unsubscribe"), endpoint: z.string().max(2000) }),
   z.object({ action: z.literal("test"), endpoint: z.string().max(2000).optional() }),
-  z.object({ action: z.literal("prefs"), kind: z.string().refine(isSwitchableKind), on: z.boolean() }),
+  z.object({ action: z.literal("prefs"), kind: z.string(), on: z.boolean(), channel: z.enum(["push", "email"]).default("push") }),
 ]);
 
 export async function action({ request }: Route.ActionArgs) {
@@ -33,7 +33,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Choices are saved even before push is set up, so they're ready when it is
   if (input.action === "prefs") {
-    const prefs = await setNotifyPref(user.id, input.kind as Parameters<typeof setNotifyPref>[1], input.on);
+    if (!isSwitchable(input.kind, input.channel)) return data({ error: "Bad request" }, { status: 400 });
+    const prefs = await setNotifyPref(user.id, input.kind as Parameters<typeof setNotifyPref>[1], input.on, input.channel);
     return data({ ok: true, prefs });
   }
 

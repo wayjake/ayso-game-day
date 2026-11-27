@@ -1,11 +1,11 @@
 import type { Route } from "./+types/family.money";
 import { data } from "react-router";
 import { useState } from "react";
-import { getCoachUserIds, requireParent, requireParentOnTeam } from "~/utils/family.server";
+import { requireParent, requireParentOnTeam } from "~/utils/family.server";
 import { createClaim, getFamilyMoney, teamCodeFor, withdrawClaim, type FamilyTeamMoney } from "~/utils/ledger.server";
 import { familyInvoices, type InvoiceView } from "~/utils/billing.server";
 import { FormError, newFormKey, readCents, readClientKey, readId, readMethod, readText, runLedgerAction } from "~/utils/ledger-forms.server";
-import { sendPush } from "~/utils/push.server";
+import { alertStaff } from "~/utils/staff-alerts.server";
 import { METHOD_LABELS, type PaymentMethod } from "~/utils/ledger";
 import { formatCents, plainAmount } from "~/utils/money";
 import { Amount, InvoiceCard, LedgerForm, MethodField, MoneyField, TextField, memberLineText } from "~/components/money";
@@ -42,13 +42,15 @@ export async function action({ request }: Route.ActionArgs) {
       const owing = money?.kids.filter((k) => k.statement.owed > 0).map((k) => k.playerId) ?? [];
       const playerIds = owing.length ? owing : kidsOnTeam.map((k) => k.playerId);
       const method = readMethod(formData);
-      await createClaim({ teamId, userId: user.id, playerIds, cents, method, note: readText(formData, "note", 300), clientKey: readClientKey(formData) });
+      const claimId = await createClaim({ teamId, userId: user.id, playerIds, cents, method, note: readText(formData, "note", 300), clientKey: readClientKey(formData) });
       const who = user.name || user.email.split("@")[0];
-      await sendPush(await getCoachUserIds(teamId), "payments", {
+      await alertStaff(teamId, "payments", {
         title: `${who} sent ${formatCents(cents)}`,
         body: `On ${METHOD_LABELS[method]}. Confirm it once it arrives.`,
+        emailText: `${who} says they sent ${formatCents(cents)} on ${METHOD_LABELS[method]}. Once it's in your account, confirm it from Payments to confirm on the team's Finances page.`,
         url: teamPath(await teamCodeFor(teamId), "finances"),
         tag: `ledger-claim-${teamId}`,
+        emailKey: `claim-${claimId}`,
       });
     });
   }

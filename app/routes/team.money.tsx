@@ -24,7 +24,7 @@ import { newFormKey, readCents, readClientKey, readDate, readId, readMethod, run
 import { CATEGORY_LABELS, METHOD_LABELS, type PaymentMethod } from "~/utils/ledger";
 import { formatCents, sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
-import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
+import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, ReceiptButton, ReceiptCheckbox, UndoButton } from "~/components/money";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx, inputClass, labelClass, hintClass } from "~/components/ui";
 import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -34,6 +34,7 @@ import { teamPath } from "~/utils/team-path";
 import { teamFamilies } from "~/utils/billing.server";
 import { dismissVenmoPayment, pendingClaimIdsCoveredByVenmo, pendingVenmoPayments, recordVenmoPayment, venmoAutoStatus } from "~/utils/venmo-payments.server";
 import { familyMembersFromKey } from "~/utils/billing.server";
+import { afterPayment, appOrigin, receiptMessage, receiptsByTxn, sendReceiptNow } from "~/utils/receipts.server";
 
 export function meta() {
   return [{ title: "Finances - BenchTalk" }];
@@ -59,6 +60,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const held = fundBalances(book);
   const names = await activityNames(team.id, book, members, items);
   const activity = describeBook(book, names).reverse().slice(0, 30);
+  // Family payments in the list can have their receipt sent (again)
+  const familyPayments = new Set(book.filter((t) => t.kind === "payment" && t.lines.some((l) => l.account.type === "player")).map((t) => t.id));
+  const receipts = await receiptsByTxn(team.id, activity.filter((a) => familyPayments.has(a.id)).map((a) => a.id));
   const playerName = new Map(members.filter((m) => m.member.type === "player").map((m) => [m.member.id, m.name]));
 
   // Shares not invoiced yet still count as owed, marked as such
@@ -116,7 +120,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     families: families.map((f) => ({ key: f.key, name: f.name, staff: f.key.startsWith("staff:") })),
     venmoAuto,
     toInvoice: await invoicePreview(team.id).then((p) => ({ families: p.drafts.length, totalCents: p.totalCents })),
-    activity,
+    activity: activity.map((a) => ({ ...a, receipt: familyPayments.has(a.id) && !a.reversed ? receipts[a.id] ?? { lastAt: null, count: 0 } : null })),
   });
 }
 
@@ -139,11 +143,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       const [claim] = await db.select().from(ledgerClaims).where(and(eq(ledgerClaims.id, claimId), eq(ledgerClaims.teamId, team.id))).limit(1);
       if (!claim || claim.status !== "pending") throw new LedgerError("Someone already handled that payment");
       const playerIds = parsePlayerIds(claim.playerIds);
-      await recordPayment({
+      const method = readMethod(formData);
+      const posted = await recordPayment({
         teamId: team.id,
         members: playerIds.map((id) => ({ type: "player" as const, id })),
         cents: readCents(formData, "cents", "what arrived"),
-        method: readMethod(formData),
+        method,
         occurredOn: readDate(formData),
         payerUserId: claim.userId,
         createdBy: user.id,
@@ -151,11 +156,28 @@ export async function action({ request, params }: Route.ActionArgs) {
         claimId: claim.id,
         memo: claim.note,
       });
+      const receipt = await afterPayment({
+        teamId: team.id,
+        ...posted,
+        by: user,
+        receipt: formData.get("receipt") === "1",
+        origin: appOrigin(request),
+        how: `${method === "other" ? "a payment" : `a ${METHOD_LABELS[method].toLowerCase()} payment`} the family told you about`,
+      });
+      return receiptMessage(receipt);
     });
   }
 
   if (intent === "recordVenmo") {
-    return runLedgerAction(() => recordVenmoPayment(team.id, readId(formData, "venmoId"), String(formData.get("familyKey") ?? ""), user.id));
+    // The Venmo flow always emails the family a receipt
+    return runLedgerAction(async () => {
+      const posted = await recordVenmoPayment(team.id, readId(formData, "venmoId"), String(formData.get("familyKey") ?? ""), user.id);
+      return receiptMessage(await afterPayment({ teamId: team.id, ...posted, by: user, receipt: true, origin: appOrigin(request), how: "a Venmo payment" }));
+    });
+  }
+
+  if (intent === "sendReceipt") {
+    return runLedgerAction(() => sendReceiptNow(team.id, readId(formData, "txnId"), user.id, appOrigin(request)));
   }
 
   if (intent === "dismissVenmo") {
@@ -342,6 +364,7 @@ export default function Money({ loaderData }: Route.ComponentProps) {
                         </span>
                       </span>
                       <Amount cents={a.cents} className="font-semibold" />
+                      {a.receipt && <ReceiptButton txnId={a.id} formKey={formKey} sent={a.receipt.lastAt ? { lastAt: a.receipt.lastAt, count: a.receipt.count } : null} />}
                       {!a.reversed && !["reversal", "charge", "adjust", "settle"].includes(a.kind) && <UndoButton txnId={a.id} formKey={formKey} />}
                     </li>
                   ))}
@@ -428,6 +451,7 @@ function ClaimCard({
             <MethodField defaultValue={claim.method} />
             <DateField today={today} label="Arrived" />
           </div>
+          <ReceiptCheckbox />
         </LedgerForm>
         <dismiss.Form method="post" className="mt-2 border-t border-line pt-2">
           <input type="hidden" name="_action" value="dismissClaim" />
@@ -521,6 +545,7 @@ function VenmoPaymentCard({
             <p className={hintClass}>
               {matched && familyKey === matched.key && how ? how : matched ? "You picked someone else: it's recorded for them." : "Nothing in the note said who it's from, so pick the family."}
               {payment.coversClaim ? " This also confirms the payment they told you about." : ""}
+              {families.find((f) => f.key === familyKey)?.staff ? "" : " The family gets a receipt by email."}
             </p>
           </div>
         </LedgerForm>

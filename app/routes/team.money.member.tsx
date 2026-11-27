@@ -28,13 +28,14 @@ import {
   readText,
   runLedgerAction,
 } from "~/utils/ledger-forms.server";
-import { FULL_SHARE, LedgerError, refundLines, reimburseLines, type Member } from "~/utils/ledger";
-import { familyFor, getShares, invoicePreview, resendInvoice, saveShares, sendInvoices, teamInvoices } from "~/utils/billing.server";
+import { FULL_SHARE, LedgerError, METHOD_LABELS, refundLines, reimburseLines, type Member } from "~/utils/ledger";
+import { afterPayment, appOrigin, receiptMessage, receiptsByTxn, sendReceiptNow } from "~/utils/receipts.server";
+import { familyEmails, familyFor, getShares, invoicePreview, resendInvoice, saveShares, sendInvoices, teamInvoices } from "~/utils/billing.server";
 import { useState } from "react";
 import { parseCents } from "~/utils/money";
 import { formatCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
-import { ActionPanel, Amount, Balance, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, TextField, UndoButton, memberLineText } from "~/components/money";
+import { ActionPanel, Amount, Balance, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, ReceiptButton, ReceiptCheckbox, TextField, UndoButton, memberLineText } from "~/components/money";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ArrowBendUpLeft, HandCoins, Plus } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
@@ -108,9 +109,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (inv) => (family && inv.familyKey === family.key) || inv.lines.some((l) => l.playerId && familyKeys.has(`player:${l.playerId}`))
   );
 
+  // Receipts go to the family's parents' emails, for their payments only
+  const paymentIds = history.filter((h) => h.kind === "payment").map((h) => h.txnId);
+  const receipts = member.type === "player" ? await receiptsByTxn(team.id, paymentIds) : {};
+  const hasEmail = member.type === "player" && (await familyEmails(team.id, family?.members.filter((m) => m.type === "player").map((m) => m.id) ?? [member.id])).length > 0;
+
   return data({
     teamId: team.id,
     teamCode: team.code,
+    receipts,
+    hasEmail,
     family: family ? { key: family.key, name: family.name, size: family.members.length } : null,
     preview,
     invoices,
@@ -143,19 +151,30 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "payment": {
         // This member, plus any siblings ticked on the form
         const others = member.type === "player" ? readMembers(formData, "sibling").filter((m) => m.type === "player" && m.id !== member.id) : [];
-        await recordPayment({
+        const method = readMethod(formData);
+        const posted = await recordPayment({
           teamId: team.id,
           members: [member, ...others],
           cents: readCents(formData, "cents"),
-          method: readMethod(formData),
+          method,
           occurredOn: readDate(formData),
           payerName: readText(formData, "payerName", 100),
           memo: readText(formData, "memo"),
           createdBy: user.id,
           clientKey,
         });
-        return;
+        const receipt = await afterPayment({
+          teamId: team.id,
+          ...posted,
+          by: user,
+          receipt: member.type === "player" && formData.get("receipt") === "1",
+          origin: appOrigin(request),
+          how: method === "other" ? "a payment" : `a ${METHOD_LABELS[method].toLowerCase()} payment`,
+        });
+        return receiptMessage(receipt);
       }
+      case "sendReceipt":
+        return sendReceiptNow(team.id, readId(formData, "txnId"), user.id, appOrigin(request));
       case "payBack": {
         const cents = readCents(formData, "cents");
         if (cents > me.statement.dueBack) throw new FormError(`They're only owed ${formatCents(me.statement.dueBack)}.`);
@@ -188,14 +207,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "sendFamily": {
         const family = await familyFor(team.id, member);
         if (!family) throw new LedgerError("They're not on this team any more");
-        const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
-        const sent = await sendInvoices(team.id, user.id, clientKey.slice(0, 60), origin, [family.key]);
+        const sent = await sendInvoices(team.id, user.id, clientKey.slice(0, 60), appOrigin(request), [family.key]);
         if (sent.length === 0) throw new LedgerError("There's nothing new to invoice for them");
         return;
       }
       case "resendInvoice": {
-        const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
-        await resendInvoice(team.id, String(formData.get("invoiceId") ?? ""), user.id, origin);
+        await resendInvoice(team.id, String(formData.get("invoiceId") ?? ""), user.id, appOrigin(request));
         return;
       }
       case "reverse":
@@ -208,7 +225,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberMoney({ loaderData }: Route.ComponentProps) {
-  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, cash, formKey, today, family, preview, invoices } = loaderData;
+  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, cash, formKey, today, family, preview, invoices, receipts, hasEmail } = loaderData;
   const base = teamPath(teamCode, "finances");
   const itemName = new Map(items.map((i) => [i.id, i.name]));
   const isStaff = member.type === "staff";
@@ -282,6 +299,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                       <span className={cx("font-semibold tabular", h.cents > 0 ? "" : "text-success")}>
                         {h.cents > 0 ? "" : "−"}{formatCents(Math.abs(h.cents))}
                       </span>
+                      {!isStaff && h.kind === "payment" && !h.reversed && <ReceiptButton txnId={h.txnId} formKey={formKey} sent={receipts[h.txnId] ?? null} />}
                       {!h.reversed && !["reversal", "charge", "adjust", "settle"].includes(h.kind) && <UndoButton txnId={h.txnId} formKey={formKey} />}
                     </li>
                   ))}
@@ -324,6 +342,7 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
               )}
               <TextField name="payerName" label="Paid by someone else" placeholder="Grandma, a sponsor…" />
               <TextField name="memo" label="Note for staff" />
+              {!isStaff && <ReceiptCheckbox disabledReason={hasEmail ? null : "There's no parent email on file for this family."} />}
             </LedgerForm>
           </ActionPanel>
 

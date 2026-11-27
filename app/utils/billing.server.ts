@@ -652,7 +652,7 @@ export async function invoicePreview(teamId: string): Promise<{ drafts: PreviewD
 }
 
 // Parents' and guardians' emails on a family's kids, not emergency contacts
-async function familyEmails(teamId: string, playerIds: string[]) {
+export async function familyEmails(teamId: string, playerIds: string[]) {
   if (playerIds.length === 0) return [];
   const rows = await db
     .selectDistinct({ email: sql<string>`lower(trim(${contacts.email}))` })

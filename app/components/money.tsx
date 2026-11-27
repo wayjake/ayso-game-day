@@ -121,7 +121,7 @@ export function TextField({ name, label, placeholder, optional = true, defaultVa
   );
 }
 
-type ActionResult = { ok?: boolean; error?: string; message?: string };
+type ActionResult = { ok?: boolean; error?: string; message?: string; warn?: boolean };
 
 // A form for one ledger action. Carries a key from the loader so a double
 // submit posts once; the loader hands out a new key after each save, which
@@ -158,6 +158,7 @@ export function LedgerForm({
       <input type="hidden" name="_action" value={intent} />
       <input type="hidden" name="clientKey" value={`${formKey}:${intent}`} />
       {fetcher.data?.error && <Alert>{fetcher.data.error}</Alert>}
+      {fetcher.state === "idle" && fetcher.data?.ok && fetcher.data.message && <Alert tone={fetcher.data.warn ? "warning" : "success"}>{fetcher.data.message}</Alert>}
       {children}
       <div className="flex justify-end">
         <Button type="submit" variant={variant} disabled={busy}>
@@ -166,6 +167,44 @@ export function LedgerForm({
       </div>
     </fetcher.Form>
   );
+}
+
+// "Email a receipt" on a payment form: the family gets a receipt once it's recorded
+export function ReceiptCheckbox({ defaultChecked = true, disabledReason }: { defaultChecked?: boolean; disabledReason?: string | null }) {
+  return (
+    <label className={cx("flex items-start gap-3 text-sm", disabledReason ? "opacity-60" : "cursor-pointer")}>
+      <input type="checkbox" name="receipt" value="1" defaultChecked={defaultChecked && !disabledReason} disabled={Boolean(disabledReason)} className="mt-0.5" />
+      <span>
+        <span className="block font-semibold">Email the family a receipt</span>
+        <span className="block text-muted">{disabledReason ?? "You can also send it later from their page."}</span>
+      </span>
+    </label>
+  );
+}
+
+// A payment's receipt: when it last went out, and a button to send it (again)
+export function ReceiptButton({ txnId, formKey, sent, action }: { txnId: string; formKey: string; sent?: { lastAt: string; count: number } | null; action?: string }) {
+  const fetcher = useFetcher<ActionResult>();
+  const busy = fetcher.state !== "idle";
+  const justSent = fetcher.state === "idle" && fetcher.data?.ok;
+  return (
+    <fetcher.Form method="post" action={action} className="inline-flex flex-wrap items-baseline gap-x-2">
+      <input type="hidden" name="_action" value="sendReceipt" />
+      <input type="hidden" name="txnId" value={txnId} />
+      <input type="hidden" name="clientKey" value={`${formKey}:receipt:${txnId}`} />
+      {sent && !justSent && <span className="text-xs text-muted">Receipt sent {shortWhen(sent.lastAt)}</span>}
+      <button type="submit" disabled={busy} className="tap text-sm font-semibold text-primary underline-offset-2 hover:underline disabled:opacity-50">
+        {busy ? "Sending…" : justSent ? "Receipt sent" : sent ? "Send again" : "Send receipt"}
+      </button>
+      {fetcher.state === "idle" && fetcher.data?.error && <span className="text-sm text-danger">{fetcher.data.error}</span>}
+    </fetcher.Form>
+  );
+}
+
+function shortWhen(iso: string) {
+  // Stored as UTC "YYYY-MM-DD HH:MM:SS"
+  const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
+  return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // A section that opens to show its form. <details> works before hydration and needs no state.

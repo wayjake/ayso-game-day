@@ -50,6 +50,9 @@ export const teams = sqliteTable('teams', {
   // The team's own invoice email (placeholders like {family}); null = the default. See utils/invoice-email.ts.
   invoiceEmailSubject: text('invoice_email_subject'),
   invoiceEmailBody: text('invoice_email_body'),
+  // The team's own payment receipt email; null = the default. See utils/receipt-email.ts.
+  receiptEmailSubject: text('receipt_email_subject'),
+  receiptEmailBody: text('receipt_email_body'),
   // Secret part of the address the coach forwards Venmo's "paid you" emails to
   // (venmo-<token>@<sending domain>). Made on first visit to Finances → Venmo.
   venmoEmailToken: text('venmo_email_token').unique(),
@@ -967,6 +970,19 @@ export const ledgerVenmoPayments = sqliteTable('ledger_venmo_payments', {
   uniqueIndex('ledger_venmo_payments_txn_idx').on(t.teamId, t.venmoTxnId),
 ]);
 
+// Each time a payment's receipt was emailed to the family: automatically when a
+// Venmo payment is recorded, when staff tick "Email a receipt", or sent later
+// from the family's page. Append only, like the ledger.
+export const ledgerReceipts = sqliteTable('ledger_receipts', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  txnId: text('txn_id').notNull().references(() => ledgerTxns.id),
+  sentTo: text('sent_to').notNull(), // JSON array of the family addresses it went to
+  sentBy: text('sent_by').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [index('ledger_receipts_txn_idx').on(t.teamId, t.txnId)]);
+
+export type LedgerReceipt = typeof ledgerReceipts.$inferSelect;
 export type LedgerItem = typeof ledgerItems.$inferSelect;
 export type LedgerVenmoPayment = typeof ledgerVenmoPayments.$inferSelect;
 export type LedgerFund = typeof ledgerFunds.$inferSelect;
