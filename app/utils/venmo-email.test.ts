@@ -7,6 +7,7 @@ import {
   parseVenmoForwardAddress,
   parseVenmoPaymentEmail,
   refCodesIn,
+  venmoDmarcPassed,
   venmoForwardAddress,
 } from "./venmo-email.ts";
 
@@ -81,4 +82,18 @@ test("reads Gmail's forwarding confirmation code", () => {
   );
   assert.deepEqual(parseGmailForwardingConfirmation("Gmail Forwarding Confirmation", "Confirmation code: 987654321"), { code: "987654321", from: null });
   assert.equal(parseGmailForwardingConfirmation("Pat Rivera paid you $5.00", ""), null);
+});
+
+test("trusts Resend's DMARC result for venmo.com only", () => {
+  const resend = "receive.forge.rmta.net;\n\tspf=fail smtp.mailfrom=gmail.com;\n\tdkim=pass header.d=venmo.com;\n\tdmarc=pass header.from=venmo.com";
+  assert.equal(venmoDmarcPassed({ dmarc: "pass" }, null), true);
+  assert.equal(venmoDmarcPassed({ dmarc: "fail" }, { "Authentication-Results": resend }), false);
+  assert.equal(venmoDmarcPassed(null, { "Authentication-Results": resend }), true);
+  assert.equal(venmoDmarcPassed(null, { "authentication-results": [resend] }), true);
+  // Someone else's DMARC, a failed one, or two of Resend's (one forged): not trusted
+  assert.equal(venmoDmarcPassed(null, { "Authentication-Results": resend.replace("header.from=venmo.com", "header.from=evil.com") }), false);
+  assert.equal(venmoDmarcPassed(null, { "Authentication-Results": resend.replace("dmarc=pass", "dmarc=fail") }), false);
+  assert.equal(venmoDmarcPassed(null, { "Authentication-Results": [resend, resend] }), false);
+  assert.equal(venmoDmarcPassed(null, { "Authentication-Results": "mx.evil.com; dmarc=pass header.from=venmo.com" }), false);
+  assert.equal(venmoDmarcPassed(null, null), false);
 });

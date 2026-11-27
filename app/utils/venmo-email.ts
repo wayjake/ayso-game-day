@@ -119,3 +119,20 @@ export function parseGmailForwardingConfirmation(subject: string | null, text: s
   const from = s.match(/receive mail from\s+(\S+@\S+)/i)?.[1] ?? null;
   return { code, from };
 }
+
+// Did the email really come from venmo.com? Resend's receiving server checks
+// DMARC: use its `authentication` result when the API gives one, otherwise
+// the Authentication-Results header it adds (authserv-id …rmta.net). Exactly
+// one of those is trusted: a second one could be the sender's own forgery.
+export function venmoDmarcPassed(
+  authentication: { dmarc?: string } | null | undefined,
+  headers: Record<string, string | string[]> | null | undefined
+) {
+  if (authentication?.dmarc) return authentication.dmarc.toLowerCase() === "pass";
+  const values: string[] = [];
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (key.toLowerCase() === "authentication-results") values.push(...(Array.isArray(value) ? value : [value]).map(String));
+  }
+  const ours = values.filter((v) => /^\s*[a-z0-9.-]*\brmta\.net\s*;/i.test(v));
+  return ours.length === 1 && /\bdmarc=pass\b[^;]*\bheader\.from=venmo\.com\b/i.test(ours[0]);
+}

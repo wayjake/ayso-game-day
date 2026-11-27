@@ -154,7 +154,7 @@ export default function VenmoSetup({ loaderData: d }: Route.ComponentProps) {
 
               <Step n={4} title="That's it">
                 <p>
-                  The next time someone pays @{d.venmoHandle}, it appears on Finances under Payments to confirm, matched by the invoice number or ref code in their Venmo note. Check it and tap <b>Record it</b>. Nothing is recorded until you do.
+                  The next time someone pays @{d.venmoHandle}, it appears on Finances under Payments to confirm, matched by the invoice number or ref code in their Venmo note. Check it and tap <b>Record it</b>. Nothing is recorded until you do, and Undo in Recent activity puts it back.
                 </p>
                 {!working && <p className="mt-2 text-muted">To try it now, have someone send you $1 on Venmo.</p>}
               </Step>
@@ -168,6 +168,9 @@ export default function VenmoSetup({ loaderData: d }: Route.ComponentProps) {
             </p>
             <p>
               <b>Not Gmail?</b> Outlook, iCloud and Yahoo can do the same with a rule: emails from venmo@venmo.com whose subject contains "paid you", forwarded to the address above. If they send a confirmation, it shows up in step 2.
+            </p>
+            <p>
+              <b>Every payment to @{d.venmoHandle} is forwarded</b>, team or not, and everyone on the team's staff sees it under Payments to confirm, with the payer's name, amount and note. Dismiss any that aren't for the team. If you also use this Venmo for personal payments, a separate Venmo for the team keeps those private.
             </p>
             <p>
               <b>When the note doesn't say who it's from</b> (someone typed their own), the payment still shows up, and you pick the family. Next time that person pays, it remembers them.

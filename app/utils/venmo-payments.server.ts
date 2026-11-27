@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, guardians, inboundEmails, ledgerClaims, ledgerInvoices, ledgerVenmoPayments, teams } from "~/db";
+import { db, guardians, inboundEmails, ledgerClaims, ledgerInvoices, ledgerTxns, ledgerVenmoPayments, teams } from "~/db";
 import { familyMembersFromKey, teamFamilies, type Family } from "~/utils/billing.server";
 import { sendingDomain, type ReceivedEmail } from "~/utils/email.server";
 import { getHeader, parseAddress } from "~/utils/email-reply";
@@ -20,6 +20,7 @@ import {
   parseVenmoForwardAddress,
   parseVenmoPaymentEmail,
   refCodesIn,
+  venmoDmarcPassed,
   venmoForwardAddress,
 } from "~/utils/venmo-email";
 
@@ -141,9 +142,12 @@ export async function receiveVenmoEmail(inbound: typeof inboundEmails.$inferSele
   }
 
   const parsed = parseVenmoPaymentEmail({ subject: email.subject, html: email.html, text: email.text });
-  // No forwarding address: the Venmo account it was paid to can still say which team
+  const verified = venmoDmarcPassed(email.authentication, email.headers);
+  // No forwarding address: the Venmo account it was paid to can still say
+  // which team, but only from an email that really is Venmo's (anyone can see
+  // a team's handle on its pay page)
   let teamId = team?.id ?? null;
-  if (!teamId && parsed?.sentTo) {
+  if (!teamId && verified && parsed?.sentTo) {
     const byHandle = await db
       .select({ id: teams.id })
       .from(teams)
@@ -163,7 +167,6 @@ export async function receiveVenmoEmail(inbound: typeof inboundEmails.$inferSele
 
   const families = await teamFamilies(db, teamId);
   const match = await matchFamily(teamId, parsed.note, parsed.payerName, families);
-  const verified = (email.authentication?.dmarc ?? "").toLowerCase() === "pass";
   const [row] = await db
     .insert(ledgerVenmoPayments)
     .values({
@@ -185,8 +188,14 @@ export async function receiveVenmoEmail(inbound: typeof inboundEmails.$inferSele
 
   const family = match.familyKey ? families.find((f) => f.key === match.familyKey) : null;
   await sendPush(await getCoachUserIds(teamId), "payments", {
-    title: `${parsed.payerName} paid you ${formatCents(parsed.cents)} on Venmo`,
-    body: family ? `For ${family.name}. Tap to record it.` : "Tap to pick who it's for and record it.",
+    title: verified
+      ? `${parsed.payerName} paid you ${formatCents(parsed.cents)} on Venmo`
+      : `Check Venmo: an email says ${parsed.payerName} paid ${formatCents(parsed.cents)}`,
+    body: !verified
+      ? "We couldn't confirm it came from Venmo. Check your Venmo app before you record it."
+      : family
+        ? `For ${family.name}. Tap to record it.`
+        : "Tap to pick who it's for and record it.",
     url: teamPath(await teamCodeFor(teamId), "finances"),
     tag: `ledger-venmo-${row.id}`,
   });
@@ -235,6 +244,16 @@ export async function pendingClaimIdsCoveredByVenmo(teamId: string, rows: { fami
   return ids;
 }
 
+async function venmoClientKey(teamId: string, venmoTxnId: string) {
+  const base = `venmo:${venmoTxnId}`.slice(0, 90);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(ledgerTxns)
+    .where(and(eq(ledgerTxns.teamId, teamId), sql`(${ledgerTxns.clientKey} = ${base} or ${ledgerTxns.clientKey} like ${`${base}:%`})`));
+  const used = Number(row?.n ?? 0);
+  return used === 0 ? base : `${base}:${used + 1}`;
+}
+
 export async function recordVenmoPayment(teamId: string, venmoId: string, familyKey: string, by: string) {
   const [row] = await db
     .select()
@@ -258,8 +277,9 @@ export async function recordVenmoPayment(teamId: string, venmoId: string, family
     claimId: claim?.id,
     memo: row.note ? `Venmo: ${row.note}` : "Venmo",
     createdBy: by,
-    // Venmo's own id: the same payment can only ever post once
-    clientKey: `venmo:${row.venmoTxnId}`.slice(0, 100),
+    // Venmo's own id: the same payment posts once. Undone and recorded
+    // again, it gets the next number, since the first key is spent.
+    clientKey: await venmoClientKey(teamId, row.venmoTxnId),
   });
   await db
     .update(ledgerVenmoPayments)

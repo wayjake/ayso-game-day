@@ -20,7 +20,6 @@ export const releases: Release[] = [
       { kind: "new", text: "When a note doesn't say who paid, pick the family once, and the next payment from that person is matched to them." },
       { kind: "improved", text: "A Venmo payment and the family's own \"I sent a payment\" for the same amount count once: recording one confirms the other." },
       { kind: "fixed", text: "The Pay on Venmo button filled in the note with plus signs instead of spaces." },
-      { kind: "fixed", text: "Emails families send to the team now arrive in Messages. They weren't getting through before." },
     ],
   },
   {

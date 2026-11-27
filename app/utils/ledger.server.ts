@@ -8,6 +8,7 @@ import {
   db,
   guardians,
   ledgerClaims,
+  ledgerVenmoPayments,
   ledgerEntries,
   ledgerFunds,
   ledgerItems,
@@ -256,7 +257,7 @@ export async function reverseTxn(teamId: string, txnId: string, by: string, clie
   if (already) throw new LedgerError("That was already undone");
   const rows = await db.select().from(ledgerEntries).where(eq(ledgerEntries.txnId, txnId));
   const lines = rows.map((r) => ({ account: entryAccount(r), cents: r.cents }));
-  return postTxn({
+  const result = await postTxn({
     teamId,
     kind: "reversal",
     lines: reversalLines(lines),
@@ -266,6 +267,14 @@ export async function reverseTxn(teamId: string, txnId: string, by: string, clie
     fundId: txn.fundId,
     reversesId: txn.id,
   });
+  // A Venmo payment recorded from its email goes back to Payments to confirm
+  if (txn.clientKey.startsWith("venmo:")) {
+    await db
+      .update(ledgerVenmoPayments)
+      .set({ status: "pending", txnId: null, resolvedBy: null, resolvedAt: null })
+      .where(and(eq(ledgerVenmoPayments.teamId, teamId), eq(ledgerVenmoPayments.txnId, txn.id)));
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
