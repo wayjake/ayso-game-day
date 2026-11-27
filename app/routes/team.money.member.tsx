@@ -3,7 +3,6 @@ import { Link, data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import {
-  ensureDefaultFund,
   fundBalances,
   getItems,
   getMembers,
@@ -15,7 +14,8 @@ import {
   reverseTxn,
 } from "~/utils/ledger.server";
 import { siblingIds } from "~/utils/tasks.core";
-import { db } from "~/db";
+import { db, ledgerFunds } from "~/db";
+import { eq } from "drizzle-orm";
 import {
   FormError,
   newFormKey,
@@ -28,7 +28,7 @@ import {
   readText,
   runLedgerAction,
 } from "~/utils/ledger-forms.server";
-import { FULL_SHARE, LedgerError, donationLines, refundLines, reimburseLines, type Member } from "~/utils/ledger";
+import { FULL_SHARE, LedgerError, refundLines, reimburseLines, type Member } from "~/utils/ledger";
 import { familyFor, getShares, invoicePreview, resendInvoice, saveShares, sendInvoices, teamInvoices } from "~/utils/billing.server";
 import { useState } from "react";
 import { parseCents } from "~/utils/money";
@@ -36,7 +36,7 @@ import { formatCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { ActionPanel, Amount, Balance, Choice, DateField, LedgerForm, MemberChecklist, MethodField, MoneyField, TextField, UndoButton, memberLineText } from "~/components/money";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
-import { ArrowBendUpLeft, HandCoins, PiggyBank, Plus } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, HandCoins, Plus } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 import { parseId } from "~/utils/ids";
@@ -66,7 +66,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const member = readMember(params);
   const { book, items, members, me } = await load(team.id, member);
-  const funds = await ensureDefaultFund(team.id);
+  // Only to name old fund lines; funds are off for now
+  const funds = await db.select({ id: ledgerFunds.id, name: ledgerFunds.name }).from(ledgerFunds).where(eq(ledgerFunds.teamId, team.id));
   const held = fundBalances(book);
 
   const siblings =
@@ -122,7 +123,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     history,
     siblings,
     codes: member.type === "player" ? await guardianCodes(team.id, member.id) : [],
-    funds: funds.map((f) => ({ id: f.id, name: f.name, balance: held.fund(f.id) })),
     cash: held.cash,
     formKey: newFormKey(),
     today: todayISO(),
@@ -143,13 +143,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "payment": {
         // This member, plus any siblings ticked on the form
         const others = member.type === "player" ? readMembers(formData, "sibling").filter((m) => m.type === "player" && m.id !== member.id) : [];
-        const extra = String(formData.get("extra") ?? "credit");
-        const donateExtraTo = extra.startsWith("fund:") ? parseId(extra.slice(5)) : null;
         await recordPayment({
           teamId: team.id,
           members: [member, ...others],
           cents: readCents(formData, "cents"),
-          donateExtraTo,
           method: readMethod(formData),
           occurredOn: readDate(formData),
           payerName: readText(formData, "payerName", 100),
@@ -174,13 +171,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return;
       }
-      case "donateCredit": {
-        const cents = readCents(formData, "cents");
-        if (cents > me.statement.dueBack) throw new FormError(`They're only owed ${formatCents(me.statement.dueBack)}.`);
-        const fundId = readId(formData, "fundId");
-        await postTxn({ teamId: team.id, kind: "donation", fundId, lines: donationLines(fundId, cents, { type: "member", member }), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
-        return;
-      }
       case "share": {
         // Adds them to an expense (or changes their share); it goes on their next invoice
         if (!me.onTeam) throw new LedgerError("They're not on the team any more");
@@ -199,7 +189,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         const family = await familyFor(team.id, member);
         if (!family) throw new LedgerError("They're not on this team any more");
         const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
-        const sent = await sendInvoices(team.id, user.id, clientKey.slice(0, 60), origin, family.key);
+        const sent = await sendInvoices(team.id, user.id, clientKey.slice(0, 60), origin, [family.key]);
         if (sent.length === 0) throw new LedgerError("There's nothing new to invoice for them");
         return;
       }
@@ -218,7 +208,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberMoney({ loaderData }: Route.ComponentProps) {
-  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, funds, cash, formKey, today, family, preview, invoices } = loaderData;
+  const { teamCode, member, name, detail, onTeam, statement, items, history, siblings, codes, cash, formKey, today, family, preview, invoices } = loaderData;
   const base = teamPath(teamCode, "finances");
   const itemName = new Map(items.map((i) => [i.id, i.name]));
   const isStaff = member.type === "staff";
@@ -333,23 +323,11 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                 </div>
               )}
               <TextField name="payerName" label="Paid by someone else" placeholder="Grandma, a sponsor…" />
-              <div>
-                <p className={labelClass}>If it's more than they owe</p>
-                <Choice
-                  name="extra"
-                  defaultValue="credit"
-                  options={[
-                    { value: "credit", label: "Keep it as credit", hint: "Pays toward their next invoice, or you pay it back." },
-                    ...funds.map((f) => ({ value: `fund:${f.id}`, label: `They're donating it to ${f.name}` })),
-                  ]}
-                />
-              </div>
               <TextField name="memo" label="Note for staff" />
             </LedgerForm>
           </ActionPanel>
 
           {statement.dueBack > 0 && (
-            <>
               <ActionPanel title={isStaff ? "Pay them back" : "Pay back their credit"} hint={`${formatCents(statement.dueBack)} owed to them. The team holds ${formatCents(cash)}.`} icon={<ArrowBendUpLeft size={18} />} defaultOpen>
                 <LedgerForm intent="payBack" formKey={formKey} submitLabel="Record it">
                   <MoneyField name="cents" label="Amount" defaultCents={Math.min(statement.dueBack, Math.max(cash, 0)) || statement.dueBack} />
@@ -360,21 +338,6 @@ export default function MemberMoney({ loaderData }: Route.ComponentProps) {
                   <TextField name="memo" label="Note the family sees" />
                 </LedgerForm>
               </ActionPanel>
-              <ActionPanel title="They're donating it" hint="Their credit goes into a fund instead." icon={<PiggyBank size={18} />}>
-                <LedgerForm intent="donateCredit" formKey={formKey} submitLabel="Move it to the fund">
-                  <div>
-                    <label htmlFor="fundId" className={labelClass}>To</label>
-                    <select id="fundId" name="fundId" className={inputClass}>
-                      {funds.map((f) => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <MoneyField name="cents" label="Amount" defaultCents={statement.dueBack} />
-                  <TextField name="memo" label="Note the family sees" />
-                </LedgerForm>
-              </ActionPanel>
-            </>
           )}
 
           {onTeam && items.some((i) => i.shareMode && !i.settledAt) && (

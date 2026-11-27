@@ -9,7 +9,6 @@ import {
   activityNames,
   cleanVenmoHandle,
   describeBook,
-  ensureDefaultFund,
   fundBalances,
   getItems,
   getMembers,
@@ -27,7 +26,7 @@ import { formatCents, sumCents } from "~/utils/money";
 import { todayISO } from "~/utils/dates";
 import { Amount, Balance, RefundableBadge, DateField, LedgerForm, MethodField, MoneyField, UndoButton } from "~/components/money";
 import { Badge, Card, CardHeader, EmptyState, Page, PageHeader, buttonClass, cx, inputClass, labelClass, hintClass } from "~/components/ui";
-import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, PiggyBank, Plus, Receipt } from "@phosphor-icons/react";
+import { Bank, CaretRight, CurrencyDollar, HandCoins, Invoice, Plus, Receipt } from "@phosphor-icons/react";
 import { useState } from "react";
 import { invoicePreview, pendingShareChanges, shareTotals } from "~/utils/billing.server";
 import { teamIdFromCode } from "~/utils/team-access.server";
@@ -40,7 +39,6 @@ export function meta() {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
-  const funds = await ensureDefaultFund(team.id);
   const [book, items, claims] = await Promise.all([loadBook(team.id), getItems(team.id), pendingClaims(team.id)]);
   const members = await getMembers(team.id, book);
   const held = fundBalances(book);
@@ -62,7 +60,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     formKey: newFormKey(),
     today: todayISO(),
     cash: held.cash,
-    funds: funds.map((f) => ({ id: f.id, name: f.name, visible: f.visibleToFamilies, balance: held.fund(f.id) })),
     totals: {
       owedToTeam: sumCents(members.map((m) => m.statement.owed)),
       notInvoiced: sumCents([...pendingByMember.values()].filter((c) => c > 0)),
@@ -145,7 +142,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function Money({ loaderData }: Route.ComponentProps) {
-  const { teamCode, venmoHandle, formKey, today, cash, funds, totals, items, people, claims, activity, toInvoice } = loaderData;
+  const { teamCode, venmoHandle, formKey, today, cash, totals, items, people, claims, activity, toInvoice } = loaderData;
   const base = teamPath(teamCode, "finances");
   const newItem = (
     <Link to={`${base}/items/new`} className={buttonClass()}>
@@ -164,10 +161,6 @@ export default function Money({ loaderData }: Route.ComponentProps) {
             <Link to={`${base}/invoices`} className={buttonClass({ variant: "secondary" })}>
               <Invoice size={18} />
               Invoices
-            </Link>
-            <Link to={`${base}/funds`} className={buttonClass({ variant: "secondary" })}>
-              <PiggyBank size={18} />
-              Funds
             </Link>
             {newItem}
           </>
@@ -191,8 +184,8 @@ export default function Money({ loaderData }: Route.ComponentProps) {
           hint={totals.notInvoiced ? `${formatCents(totals.notInvoiced)} not invoiced yet` : "On invoices, not paid yet"}
           icon={<HandCoins size={18} />}
         />
-        <Stat label="Due back to families" cents={totals.dueBackToFamilies} icon={<Receipt size={18} />} />
-        <Stat label="Owed to staff" cents={totals.owedToStaff} hint="Money staff fronted" icon={<CurrencyDollar size={18} />} />
+        <Stat label="Owed to staff" cents={totals.owedToStaff} hint="Money staff fronted, to pay back" icon={<CurrencyDollar size={18} />} />
+        <Stat label="Due back to families" cents={totals.dueBackToFamilies} hint="Refunds and credit to pay back" icon={<Receipt size={18} />} />
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -300,28 +293,6 @@ export default function Money({ loaderData }: Route.ComponentProps) {
 
         <aside className="space-y-8">
           <VenmoCard handle={venmoHandle} formKey={formKey} />
-
-          <section>
-            <h2 className="mb-3 font-semibold">Funds</h2>
-            <Card>
-              <ul className="divide-y divide-line">
-                {funds.map((f) => (
-                  <li key={f.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                    <span className="min-w-0">
-                      <span className="font-medium">{f.name}</span>
-                      {!f.visible && <span className="ml-2 text-xs text-muted">Hidden from families</span>}
-                    </span>
-                    <Amount cents={f.balance} className="font-semibold" />
-                  </li>
-                ))}
-              </ul>
-              <div className="border-t border-line px-4 py-3">
-                <Link to={`${base}/funds`} className="text-sm font-semibold text-primary hover:underline">
-                  Add money, move it or spend it
-                </Link>
-              </div>
-            </Card>
-          </section>
 
           <section>
             <h2 className="mb-3 font-semibold">People</h2>

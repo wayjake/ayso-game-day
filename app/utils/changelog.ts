@@ -12,6 +12,17 @@ export type Release = {
 
 export const releases: Release[] = [
   {
+    date: "2026-11-27",
+    title: "Your invoice email, your words",
+    summary: "Write the invoice email yourself, see exactly what each family will get, and pick who it goes to.",
+    changes: [
+      { kind: "new", text: "Coaches: edit the invoice email on the Invoices page. Drop in each family's name, their kids' names, the line items, what they owe and the pay button, and the same email goes to everyone with their own details filled in." },
+      { kind: "new", text: "Preview the email for any family before you send it, with their real amounts." },
+      { kind: "new", text: "Tick which families get an invoice this time. The rest stay ready for the next send. Families with no parent email on file are flagged." },
+      { kind: "improved", text: "Finances is simpler: funds are gone for now. It tracks what families owe, what staff fronted, and refunds due back to families." },
+    ],
+  },
+  {
     date: "2026-11-26",
     title: "Cover a fee yourself",
     summary: "Pay part of an expense so families don't, and log card payments as credit card.",

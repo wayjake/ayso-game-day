@@ -54,6 +54,7 @@ import { sendPush } from "~/utils/push.server";
 import { coachFromAddress, familyDeliveryAddress, sendEmail } from "~/utils/email.server";
 import { formatCents } from "~/utils/money";
 import { compareIds, parseId, parseIds } from "~/utils/ids";
+import { invoiceLineLabel, renderInvoiceEmail } from "~/utils/invoice-email";
 
 type Reader = typeof db | Tx;
 
@@ -426,8 +427,6 @@ export async function familySharesByGame(kids: { playerId: string; teamId: strin
 
 export type Family = { key: string; name: string; members: Member[] };
 
-const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
-
 function familyName(names: string[]) {
   if (names.length === 1) return names[0];
   const parts = names.map((n) => n.trim().split(/\s+/));
@@ -606,13 +605,19 @@ function groupDrafts(families: Family[], lines: (DraftLine & { entryId?: string;
   return [...drafts.values()].sort((a, b) => a.familyName.localeCompare(b.familyName));
 }
 
-// What "Send invoices" would send right now
-export async function invoicePreview(teamId: string): Promise<{ drafts: DraftInvoice[]; totalCents: Cents }> {
+export type PreviewDraft = DraftInvoice & {
+  balanceCents: Cents; // what the family will owe in all once it's sent (negative: due back)
+  emails: string[]; // where the invoice email goes (none for staff, or no contact email)
+  players: string[];
+};
+
+// What "Send invoices" would send right now, and what each family's email would say
+export async function invoicePreview(teamId: string): Promise<{ drafts: PreviewDraft[]; totalCents: Cents; nextNumber: number }> {
   const n = await names(db, teamId);
   const pending = await pendingShareChanges(db, teamId);
   const open = await uninvoicedEntries(db, teamId);
-  const lines: DraftLine[] = [
-    ...open.map((e) => ({ member: e.member, who: n.who(e.member), label: lineLabel(e, n.item(e.itemId), n.fund(e.fundId)), cents: e.cents })),
+  const lines: (DraftLine & { pending: boolean })[] = [
+    ...open.map((e) => ({ member: e.member, who: n.who(e.member), label: lineLabel(e, n.item(e.itemId), n.fund(e.fundId)), cents: e.cents, pending: false })),
     ...pending.flatMap((p) =>
       p.changes.map((c) => ({
         member: c.member,
@@ -623,25 +628,56 @@ export async function invoicePreview(teamId: string): Promise<{ drafts: DraftInv
           ""
         ),
         cents: c.cents,
+        pending: true,
       }))
     ),
   ];
-  const drafts = groupDrafts(await teamFamilies(db, teamId), lines).map(({ raw: _raw, ...d }) => d);
-  return { drafts, totalCents: sumCents(drafts.map((d) => d.totalCents)) };
+  const grouped = groupDrafts(await teamFamilies(db, teamId), lines);
+  const drafts: PreviewDraft[] = [];
+  for (const { raw, ...d } of grouped) {
+    const members = familyMembersFromKey(d.familyKey);
+    // Posted entries are already in the balance; share changes post when it's sent
+    const { balance } = await paidInFor(db, teamId, members, []);
+    const notPosted = sumCents((raw as typeof lines).filter((l) => l.pending).map((l) => l.cents));
+    const playerIds = members.filter((m) => m.type === "player").map((m) => m.id);
+    drafts.push({
+      ...d,
+      balanceCents: balance + notPosted,
+      emails: d.familyKey.startsWith("players:") ? await familyEmails(teamId, playerIds) : [],
+      players: playerIds.map((id) => n.who({ type: "player", id })),
+    });
+  }
+  const [last] = await db.select({ n: sql<number>`coalesce(max(${ledgerInvoices.number}), 0)` }).from(ledgerInvoices).where(eq(ledgerInvoices.teamId, teamId));
+  return { drafts, totalCents: sumCents(drafts.map((d) => d.totalCents)), nextNumber: Number(last?.n ?? 0) + 1 };
+}
+
+// Parents' and guardians' emails on a family's kids, not emergency contacts
+async function familyEmails(teamId: string, playerIds: string[]) {
+  if (playerIds.length === 0) return [];
+  const rows = await db
+    .selectDistinct({ email: sql<string>`lower(trim(${contacts.email}))` })
+    .from(contacts)
+    .where(and(eq(contacts.teamId, teamId), inArray(contacts.playerId, playerIds), sql`coalesce(${contacts.relationship}, '') != 'emergency'`));
+  return rows.map((r) => r.email).filter(Boolean);
 }
 
 // Bills every share change, then puts everything not yet invoiced on one
 // invoice per family. All or nothing; sending the same form twice sends once.
-// `only`: one family's key, to send just their invoice (from their page)
-export async function sendInvoices(teamId: string, by: string, formKey: string, origin: string, only?: string) {
+// `only`: the family keys to send to (the picked ones, or one family from their
+// page); everyone else's shares wait for the next send
+export async function sendInvoices(teamId: string, by: string, formKey: string, origin: string, only?: string[]) {
   const key = formKey.trim();
   if (!key || key.length > 60) throw new LedgerError("Reload the page and try again");
 
   // Reads that don't need to be in the transaction (Turso keeps those short)
   const families = await teamFamilies(db, teamId);
-  const onlyFamily = only ? families.find((f) => f.key === only) : null;
-  if (only && !onlyFamily) throw new LedgerError("That family isn't on this team");
-  const onlyKeys = onlyFamily ? new Set(onlyFamily.members.map(memberKey)) : null;
+  let onlyKeys: Set<string> | null = null;
+  if (only) {
+    if (only.length === 0) throw new LedgerError("Pick at least one family");
+    const picked = only.map((key) => families.find((f) => f.key === key));
+    if (picked.some((f) => !f)) throw new LedgerError("A family you picked isn't on this team any more. Reload and try again.");
+    onlyKeys = new Set(picked.flatMap((f) => f!.members.map(memberKey)));
+  }
   const mine = (m: Member) => !onlyKeys || onlyKeys.has(memberKey(m));
 
   const sent = await db.transaction(async (tx) => {
@@ -710,7 +746,7 @@ export async function sendInvoices(teamId: string, by: string, formKey: string, 
           playerId: l.member.type === "player" ? l.member.id : null,
           userId: l.member.type === "staff" ? l.member.id : null,
           itemId: l.itemId ?? null,
-          label: several ? `${l.label} (${firstName(l.who)})` : l.label,
+          label: invoiceLineLabel(l.label, l.who, several),
           cents: l.cents,
         }));
       })
@@ -795,77 +831,54 @@ export async function payView(teamId: string, playerIds: string[]) {
   return { invoices, owed: Math.max(0, balance), dueBack: Math.max(0, -balance) };
 }
 
-const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 // Each family's invoice by email, to every contact email on their kids, with
-// their pay link. Outside production it goes to the sender instead (see
-// familyDeliveryAddress). A failed email doesn't undo the send.
+// their pay link, in the team's own words (utils/invoice-email.ts). Outside
+// production it goes to the sender instead (see familyDeliveryAddress). A
+// failed email doesn't undo the send.
 export async function emailInvoices(team: { id: string; code: string; name: string }, by: string, invoiceIds: string[], origin: string, resend = false) {
   const [sender] = await db.select({ id: users.id, name: users.name, email: users.email, sendingEmail: users.sendingEmail }).from(users).where(eq(users.id, by)).limit(1);
   if (!sender) return;
+  const [template] = await db.select({ subject: teams.invoiceEmailSubject, body: teams.invoiceEmailBody }).from(teams).where(eq(teams.id, team.id)).limit(1);
   const from = coachFromAddress(sender, team);
   const invoices = await db.select().from(ledgerInvoices).where(inArray(ledgerInvoices.id, invoiceIds));
   const lines = await db.select().from(ledgerInvoiceLines).where(inArray(ledgerInvoiceLines.invoiceId, invoiceIds)).orderBy(asc(ledgerInvoiceLines.id));
+  const roster = await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.teamId, team.id)).orderBy(asc(players.name));
   for (const inv of invoices) {
     const path = payPath(team.id, inv.familyKey);
     if (!path) continue; // A staff member's own share: they see it in the app
     const playerIds = familyMembersFromKey(inv.familyKey).map((m) => m.id);
-    const emails = await db
-      .selectDistinct({ email: sql<string>`lower(trim(${contacts.email}))` })
-      .from(contacts)
-      // Parents and guardians, not emergency contacts
-      .where(and(eq(contacts.teamId, team.id), inArray(contacts.playerId, playerIds), sql`coalesce(${contacts.relationship}, '') != 'emergency'`));
+    const emails = await familyEmails(team.id, playerIds);
     if (emails.length === 0) continue;
     const { owed, dueBack } = await payView(team.id, playerIds);
-    const url = `${origin}${path}`;
-    const mine = lines.filter((l) => l.invoiceId === inv.id);
-    const amount = (cents: number) => `${cents < 0 ? "−" : ""}${formatCents(Math.abs(cents))}`;
-    const subject = `${team.name}: invoice #${inv.number} for ${amount(inv.totalCents)}`;
-    const text = [
-      "Hi,",
-      "",
-      `Here's invoice #${inv.number} from ${team.name}, for ${inv.familyName}:`,
-      "",
-      ...mine.map((l) => `  ${l.label}: ${amount(l.cents)}`),
-      `  Total: ${amount(inv.totalCents)}`,
-      "",
-      owed > 0
-        ? `You owe ${formatCents(owed)} in all. See your invoices and pay on Venmo here, no sign-in needed:`
-        : dueBack > 0
-          ? `The team owes you ${formatCents(dueBack)}. The coach will pay it back. Your invoices are here:`
-          : "You're all paid up. Your invoices are here:",
-      url,
-      "",
-      `Questions? Just reply to this email.`,
-      "",
-      sender.name || sender.email.split("@")[0],
-    ].join("\n");
-    const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a;max-width:520px">
-<p>Hi,</p>
-<p>Here's invoice #${inv.number} from ${escapeHtml(team.name)}, for ${escapeHtml(inv.familyName)}:</p>
-<table style="width:100%;border-collapse:collapse;font-size:14px">
-${mine.map((l) => `<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;color:#475569">${escapeHtml(l.label)}</td><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap">${amount(l.cents)}</td></tr>`).join("\n")}
-<tr><td style="padding:8px 0;font-weight:600">Total</td><td style="padding:8px 0;text-align:right;font-weight:600">${amount(inv.totalCents)}</td></tr>
-</table>
-<p>${owed > 0 ? `You owe <strong>${formatCents(owed)}</strong> in all.` : dueBack > 0 ? `The team owes you <strong>${formatCents(dueBack)}</strong>. The coach will pay it back.` : "You're all paid up."}</p>
-<p><a href="${escapeHtml(url)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">${owed > 0 ? `See it and pay ${formatCents(owed)}` : "See your invoices"}</a></p>
-<p style="color:#64748b;font-size:13px">No sign-in needed. Questions? Just reply to this email.</p>
-<p>${escapeHtml(sender.name || sender.email.split("@")[0])}</p>
-</div>`;
-    for (const { email } of emails) {
-      if (!email) continue;
+    const email = renderInvoiceEmail(template ?? { subject: null, body: null }, {
+      team: team.name,
+      coach: sender.name || sender.email.split("@")[0],
+      number: inv.number,
+      family: inv.familyName,
+      players: roster.filter((p) => playerIds.includes(p.id)).map((p) => p.name),
+      lines: lines.filter((l) => l.invoiceId === inv.id).map((l) => ({ label: l.label, cents: l.cents })),
+      totalCents: inv.totalCents,
+      balanceCents: owed - dueBack,
+      payUrl: `${origin}${path}`,
+    });
+    for (const to of emails) {
       await sendEmail({
-        to: familyDeliveryAddress(email, sender.email),
+        to: familyDeliveryAddress(to, sender.email),
         from: from.header,
         replyTo: from.address,
-        subject,
-        text,
-        html,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
         tags: [{ name: "kind", value: "invoice" }],
-        idempotencyKey: `invoice-${inv.id}-${email}${resend ? `-again-${Date.now()}` : ""}`.slice(0, 250),
+        idempotencyKey: `invoice-${inv.id}-${to}${resend ? `-again-${Date.now()}` : ""}`.slice(0, 250),
       });
     }
   }
+}
+
+// Save the team's invoice email (null: back to the default)
+export async function saveInvoiceTemplate(teamId: string, template: { subject: string | null; body: string | null }) {
+  await db.update(teams).set({ invoiceEmailSubject: template.subject, invoiceEmailBody: template.body, updatedAt: new Date().toISOString() }).where(eq(teams.id, teamId));
 }
 
 // Email a sent invoice again (from the family's page)

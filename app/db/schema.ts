@@ -47,6 +47,9 @@ export const teams = sqliteTable('teams', {
   teamNumber: text('team_number'), // AYSO team # printed on game cards
   // Where families send money (personal Venmo, without the @). See the Money page.
   venmoHandle: text('venmo_handle'),
+  // The team's own invoice email (placeholders like {family}); null = the default. See utils/invoice-email.ts.
+  invoiceEmailSubject: text('invoice_email_subject'),
+  invoiceEmailBody: text('invoice_email_body'),
   // Archived (a past season): left out of the team switcher, the /dashboard
   // redirect and the main teams list, for everyone on staff. Still opens and
   // works as before; All teams lists it under Archived. Only the owner sets it.

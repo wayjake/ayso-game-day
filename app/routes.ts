@@ -92,7 +92,6 @@ export default [
       route("finances", "routes/team.money.tsx"),
       route("finances/items/new", "routes/team.money.items-new.tsx"),
       route("finances/items/:itemId", "routes/team.money.item.tsx"),
-      route("finances/funds", "routes/team.money.funds.tsx"),
       route("finances/invoices", "routes/team.money.invoices.tsx"),
       // :memberType is "player" or "staff"
       route("finances/:memberType/:memberId", "routes/team.money.member.tsx"),
