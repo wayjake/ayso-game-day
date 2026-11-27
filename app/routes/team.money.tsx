@@ -33,7 +33,7 @@ import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 import { teamFamilies } from "~/utils/billing.server";
 import { dismissVenmoPayment, pendingClaimIdsCoveredByVenmo, pendingVenmoPayments, recordVenmoPayment, venmoAutoStatus } from "~/utils/venmo-payments.server";
-import { familyMembersFromKey } from "~/utils/billing.server";
+import { familyEmails, familyMembersFromKey } from "~/utils/billing.server";
 import { afterPayment, appOrigin, receiptMessage, receiptsByTxn, sendReceiptNow } from "~/utils/receipts.server";
 
 export function meta() {
@@ -103,7 +103,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         balance: m.statement.balance,
         notInvoiced: pendingByMember.get(memberKey(m.member)) ?? 0,
       })),
-    claims: claims.map((c) => ({ ...c, forNames: c.playerIds.map((id) => playerName.get(id) ?? "a player") })),
+    claims: await Promise.all(
+      claims.map(async (c) => ({ ...c, forNames: c.playerIds.map((id) => playerName.get(id) ?? "a player"), hasEmail: (await familyEmails(team.id, c.playerIds)).length > 0 }))
+    ),
     venmoPayments: venmoRows.map((v) => ({
       id: v.id,
       payerName: v.payerName,
@@ -117,7 +119,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       coversClaim: allClaims.some((c) => covered.includes(c.id) && v.familyKey && familyMembersFromKey(v.familyKey).some((m) => c.playerIds.includes(m.id)) && c.cents === v.cents),
       alreadyRecorded: alreadyRecordedOn(book, v),
     })),
-    families: families.map((f) => ({ key: f.key, name: f.name, staff: f.key.startsWith("staff:") })),
+    // Whether a receipt can go out: only to a family with a parent email
+    families: await Promise.all(
+      families.map(async (f) => {
+        const staff = f.key.startsWith("staff:");
+        const kids = f.members.filter((m) => m.type === "player").map((m) => m.id);
+        return { key: f.key, name: f.name, staff, hasEmail: !staff && (await familyEmails(team.id, kids)).length > 0 };
+      })
+    ),
     venmoAuto,
     toInvoice: await invoicePreview(team.id).then((p) => ({ families: p.drafts.length, totalCents: p.totalCents })),
     activity: activity.map((a) => ({ ...a, receipt: familyPayments.has(a.id) && !a.reversed ? receipts[a.id] ?? { lastAt: null, count: 0 } : null })),
@@ -162,7 +171,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         by: user,
         receipt: formData.get("receipt") === "1",
         origin: appOrigin(request),
-        how: `${method === "other" ? "a payment" : `a ${METHOD_LABELS[method].toLowerCase()} payment`} the family told you about`,
+        how: `${method === "other" ? "a payment" : `a ${METHOD_LABELS[method].toLowerCase()} payment`} the family said they sent`,
       });
       return receiptMessage(receipt);
     });
@@ -432,7 +441,7 @@ function ClaimCard({
   formKey,
   today,
 }: {
-  claim: { id: string; cents: number; method: PaymentMethod; from: string; forNames: string[]; note: string | null; createdAt: string };
+  claim: { id: string; cents: number; method: PaymentMethod; from: string; forNames: string[]; note: string | null; createdAt: string; hasEmail: boolean };
   formKey: string;
   today: string;
 }) {
@@ -451,7 +460,7 @@ function ClaimCard({
             <MethodField defaultValue={claim.method} />
             <DateField today={today} label="Arrived" />
           </div>
-          <ReceiptCheckbox />
+          <ReceiptCheckbox disabledReason={claim.hasEmail ? null : "There's no parent email on file for this family."} />
         </LedgerForm>
         <dismiss.Form method="post" className="mt-2 border-t border-line pt-2">
           <input type="hidden" name="_action" value="dismissClaim" />
@@ -482,7 +491,7 @@ function VenmoPaymentCard({
     coversClaim: boolean;
     alreadyRecorded: string | null;
   };
-  families: { key: string; name: string; staff: boolean }[];
+  families: { key: string; name: string; staff: boolean; hasEmail: boolean }[];
   formKey: string;
 }) {
   const dismiss = useFetcher();
@@ -545,7 +554,7 @@ function VenmoPaymentCard({
             <p className={hintClass}>
               {matched && familyKey === matched.key && how ? how : matched ? "You picked someone else: it's recorded for them." : "Nothing in the note said who it's from, so pick the family."}
               {payment.coversClaim ? " This also confirms the payment they told you about." : ""}
-              {families.find((f) => f.key === familyKey)?.staff ? "" : " The family gets a receipt by email."}
+              {receiptNote(families.find((f) => f.key === familyKey))}
             </p>
           </div>
         </LedgerForm>
@@ -559,6 +568,11 @@ function VenmoPaymentCard({
       </Card>
     </li>
   );
+}
+
+function receiptNote(family: { staff: boolean; hasEmail: boolean } | undefined) {
+  if (!family || family.staff) return "";
+  return family.hasEmail ? " The family gets a receipt by email." : " There's no parent email on file, so no receipt goes out.";
 }
 
 function shortDate(iso: string) {
