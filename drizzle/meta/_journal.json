@@ -169,6 +169,13 @@
       "when": 1795731943914,
       "tag": "0023_fees_and_files",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795803892899,
+      "tag": "0024_invoice_email",
+      "breakpoints": true
     }
   ]
 }

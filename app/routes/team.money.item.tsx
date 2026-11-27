@@ -7,7 +7,6 @@ import { getTeamStaff, requireTeamAccess } from "~/utils/team-access.server";
 import {
   activityNames,
   describeBook,
-  ensureDefaultFund,
   fundBalances,
   getItem,
   getItems,
@@ -24,7 +23,6 @@ import {
   FULL_SHARE,
   ITEM_CATEGORIES,
   LedgerError,
-  coverLines,
   creditLines,
   expenseLines,
   maxReducible,
@@ -42,7 +40,7 @@ import { games as gamesTable } from "~/db";
 import { formatGameDate } from "~/utils/dates";
 import { Badge, Card, Page, PageHeader, cx, hintClass, inputClass, labelClass } from "~/components/ui";
 import { ExpenseFiles } from "~/components/ExpenseFiles";
-import { ArrowBendUpLeft, ArrowRight, CalendarBlank, Paperclip, CheckCircle, HandCoins, PencilSimple, PiggyBank, Scales, SoccerBall, UsersThree, HandHeart } from "@phosphor-icons/react";
+import { ArrowBendUpLeft, ArrowRight, CalendarBlank, Paperclip, CheckCircle, HandCoins, PencilSimple, Scales, SoccerBall, UsersThree, HandHeart } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
 import { parseId, parseIds } from "~/utils/ids";
@@ -63,7 +61,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
   const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const { item, book, items, members } = await load(team.id, parseId(params.itemId));
-  const funds = await ensureDefaultFund(team.id);
   const held = fundBalances(book);
   const staff = await getTeamStaff(team.id);
   const names = await activityNames(team.id, book, members, items);
@@ -113,7 +110,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     today: todayISO(),
     cash: held.cash,
     rows,
-    funds: funds.map((f) => ({ id: f.id, name: f.name, balance: held.fund(f.id) })),
     staff: staff.map((s) => ({ userId: s.userId, name: s.name || s.email.split("@")[0] })),
     staffOwed: staff.map((s) => ({
       userId: s.userId,
@@ -223,13 +219,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         await saveShares(team.id, item.id, readShares(formData, item.shareMode));
         return;
       }
-      case "cover": {
-        const fundId = readId(formData, "fundId");
-        const shares = sharesFromForm(formData, readMembers(formData), perMember);
-        capCheck(shares, "covered");
-        await postTxn({ teamId: team.id, kind: "cover", itemId: item.id, fundId, lines: coverLines(fundId, shares), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
-        return;
-      }
       case "settle": {
         const cost = await settlePreview(team.id, item);
         if (cost.paidOut === 0) throw new FormError("Record what the team paid out first (Pay out). Settling splits what it really cost.");
@@ -288,7 +277,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         return;
       case "credit": {
         if (item.settledAt) throw new LedgerError("This expense is settled, so refunds are worked out for you. Record the refund received instead.");
-        if (!item.refundable) throw new LedgerError("This expense isn't refundable. To pay for someone, cover it from a fund instead.");
+        if (!item.refundable) throw new LedgerError("This expense isn't refundable, so there's nothing to refund.");
         const shares = sharesFromForm(formData, readMembers(formData), perMember);
         capCheck(shares, "back");
         await postTxn({ teamId: team.id, kind: "credit", itemId: item.id, lines: creditLines(item.id, shares), createdBy: user.id, clientKey, memo: readText(formData, "memo") });
@@ -348,7 +337,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ItemPage({ loaderData }: Route.ComponentProps) {
-  const { teamId, teamCode, item, summary, formKey, today, cash, rows, funds, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo, fees, files, staffOwed } = loaderData;
+  const { teamId, teamCode, item, summary, formKey, today, cash, rows, staff, shareOptions, shareTotal, notInvoiced, activity, settle, linkedGames, teamGames, cantGo, fees, files, staffOwed } = loaderData;
   const base = teamPath(teamCode, "finances");
   const reducible = rows.filter((r) => r.reducible > 0);
 
@@ -421,7 +410,7 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
           cents={item.shareMode ? shareTotal : summary.charged}
           sub={`${rows.filter((r) => r.target || r.charged).length} ${rows.length === 1 ? "person" : "people"}${notInvoiced ? ` · ${formatCents(notInvoiced)} not invoiced yet` : ""}`}
         />
-        <Fig label="Collected" cents={summary.collected} sub="Paid, or covered by a fund" />
+        <Fig label="Collected" cents={summary.collected} sub="Paid by families" />
         <Fig label="Still owed" cents={summary.stillOwed} sub="On invoices, not paid yet" />
         <Fig
           label="Paid out"
@@ -572,32 +561,6 @@ export default function ItemPage({ loaderData }: Route.ComponentProps) {
               </LedgerForm>
             </ActionPanel>
           )}
-
-          <ActionPanel title="Cover from a fund" hint="The team fund or a sponsor pays some people's share." icon={<PiggyBank size={18} />}>
-            <LedgerForm intent="cover" formKey={formKey} submitLabel="Cover it">
-              <div>
-                <label htmlFor="fundId" className={labelClass}>From</label>
-                <select id="fundId" name="fundId" className={inputClass}>
-                  {funds.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name} ({formatCents(f.balance)})</option>
-                  ))}
-                </select>
-              </div>
-              <MemberChecklist options={reducible.map((r) => ({ key: r.key, label: r.name, detail: <Amount cents={r.remaining} /> }))} />
-              <Choice
-                name="mode"
-                defaultValue="rest"
-                options={[
-                  { value: "rest", label: "Whatever each still owes on it" },
-                  { value: "each", label: "This amount each" },
-                  { value: "split", label: "Split this total", hint: "In proportion to each share." },
-                ]}
-              />
-              <MoneyField name="cents" label="Amount" required={false} hint="Not needed for “whatever each still owes”." />
-              <TextField name="memo" label="Note the family sees" placeholder="Thanks to Acme Plumbing" />
-              <p className={hintClass}>Only invoiced shares can be covered. It shows on the family's next invoice; covering someone who already paid gives them that much credit.</p>
-            </LedgerForm>
-          </ActionPanel>
 
           {item.refundable && (
             <>

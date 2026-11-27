@@ -210,16 +210,6 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
         </Card>
       )}
 
-      {money.funds.length > 0 && money.funds.some((f) => f.balance !== 0) && (
-        <div className="flex flex-wrap gap-2 text-sm">
-          {money.funds.map((f) => (
-            <span key={f.id} className="rounded-lg bg-surface px-3 py-1.5 ring-1 ring-line">
-              {f.name}: <Amount cents={f.balance} className="font-semibold" />
-            </span>
-          ))}
-        </div>
-      )}
-
       {money.history.length > 0 && (
         <details className="group">
           <summary className="tap cursor-pointer list-none text-sm font-semibold text-primary [&::-webkit-details-marker]:hidden">
