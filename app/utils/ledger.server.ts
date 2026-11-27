@@ -448,14 +448,6 @@ export async function pendingClaims(teamId: string) {
   return rows.map((r) => ({ ...r.claim, playerIds: parsePlayerIds(r.claim.playerIds), from: r.userName || r.userEmail.split("@")[0] }));
 }
 
-export async function countPendingClaims(teamId: string) {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)` })
-    .from(ledgerClaims)
-    .where(and(eq(ledgerClaims.teamId, teamId), eq(ledgerClaims.status, "pending")));
-  return Number(row?.n ?? 0);
-}
-
 export function parsePlayerIds(json: string): string[] {
   try {
     const value = JSON.parse(json);
