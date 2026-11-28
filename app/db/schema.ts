@@ -762,6 +762,47 @@ export type PostMedia = typeof postMedia.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type TaskAssignment = typeof taskAssignments.$inferSelect;
 
+// Jobs on an event: snacks, setting up the goals, taking them down. One family
+// (or a staff member) covers each spot for everyone. `volunteer` jobs are
+// taken by families themselves, `assigned` ones are handed out by staff; a
+// family can give either back. Rules in utils/jobs.server.ts.
+export const eventJobs = sqliteTable('event_jobs', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  eventType: text('event_type', { enum: ['game', 'practice'] }).notNull(),
+  eventId: text('event_id').notNull(),
+  title: text('title').notNull(),
+  details: text('details'), // "Nut-free please"
+  timing: text('timing', { enum: ['before', 'during', 'after'] }),
+  mode: text('mode', { enum: ['volunteer', 'assigned'] }).notNull().default('volunteer'),
+  spots: integer('spots').notNull().default(1),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('event_jobs_event_idx').on(t.teamId, t.eventType, t.eventId),
+]);
+
+// Who covers a job: a family (one of its kids, `playerId`) or a staff member
+// (`userId`). These rows are also the record of what each family has done.
+export const eventJobSignups = sqliteTable('event_job_signups', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  jobId: text('job_id').notNull().references(() => eventJobs.id),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  playerId: text('player_id').references(() => players.id),
+  userId: text('user_id').references(() => users.id),
+  signedUpBy: text('signed_up_by').references(() => users.id),
+  via: text('via', { enum: ['app', 'coach'] }).notNull(),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  uniqueIndex('event_job_signups_job_player_idx').on(t.jobId, t.playerId),
+  uniqueIndex('event_job_signups_job_user_idx').on(t.jobId, t.userId),
+  index('event_job_signups_team_player_idx').on(t.teamId, t.playerId),
+]);
+
+export type EventJob = typeof eventJobs.$inferSelect;
+export type EventJobSignup = typeof eventJobSignups.$inferSelect;
+
 // ---------------------------------------------------------------------------
 // Team money ledger (utils/ledger.ts holds the rules, ledger.server.ts the
 // reads and writes). Double entry: every transaction's entries add up to zero,

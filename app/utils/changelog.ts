@@ -12,6 +12,17 @@ export type Release = {
 
 export const releases: Release[] = [
   {
+    date: "2026-11-28",
+    title: "Jobs on games and practices",
+    summary: "Snacks, setting up the goals, bringing the tent: add the jobs an event needs, and families sign up from their schedule.",
+    changes: [
+      { kind: "new", text: "Coaches: open a game or practice from the Schedule and add jobs like snacks or setting up the goals, with when (before, during or after), how many people, and whether families sign up themselves or you assign them." },
+      { kind: "new", text: "Families see every job and who has it on their schedule, tap I'll do it to take an open spot, and Can't do it to give theirs back (you get a notification when they do)." },
+      { kind: "new", text: "Remind the people on a job, or ask families to sign up for open spots, with one tap." },
+      { kind: "new", text: "Jobs by family, for staff only, shows what each family has done and signed up for this season." },
+    ],
+  },
+  {
     date: "2026-11-27",
     title: "Add your family",
     summary: "Families can add another parent or guardian themselves, and remove one, from Settings.",

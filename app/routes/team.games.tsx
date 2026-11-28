@@ -18,6 +18,7 @@ import {
   Note,
   PencilSimple,
   Coins,
+  HandHeart,
   Play,
   Plus,
   Printer,
@@ -25,6 +26,8 @@ import {
 } from "@phosphor-icons/react";
 
 import { expensesByGame } from "~/utils/billing.server";
+import { jobsByEvent } from "~/utils/jobs.server";
+import { openSpots, type JobView } from "~/utils/jobs";
 import { formatCents } from "~/utils/money";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
@@ -86,6 +89,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     counts,
     today,
     expenses: await expensesByGame(teamId),
+    jobs: await jobsByEvent([teamId]),
   });
 }
 
@@ -102,7 +106,7 @@ type PracticeRow = Route.ComponentProps["loaderData"]["practices"][number];
 type UpcomingItem = { kind: "game"; date: string; time: string | null; game: GameRow } | { kind: "practice"; date: string; time: string | null; practice: PracticeRow };
 
 export default function TeamGames({ loaderData }: Route.ComponentProps) {
-  const { team, games, practices, counts, today, expenses } = loaderData;
+  const { team, games, practices, counts, today, expenses, jobs } = loaderData;
   const base = `${teamPath(team)}`;
 
   // Separate upcoming and past games; most recent past game first
@@ -151,6 +155,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
         }
         actions={
           <>
+            <Link to={`${base}/jobs`} className={buttonClass({ variant: "ghost" })}>
+              <HandHeart size={18} />
+              Jobs by family
+            </Link>
             {practiceLink}
             {scheduleLink("Schedule game", "secondary")}
           </>
@@ -177,9 +185,9 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
                 <ul className="divide-y divide-line">
                   {upcoming.map((item) =>
                     item.kind === "game" ? (
-                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} base={base} today={today} counts={counts[`game-${item.game.id}`]} expenses={expenses[`game-${item.game.id}`]} />
+                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} base={base} today={today} counts={counts[`game-${item.game.id}`]} expenses={expenses[`game-${item.game.id}`]} jobs={jobs[`game-${item.game.id}`]} />
                     ) : (
-                      <UpcomingPracticeRow key={`p${item.practice.id}`} practice={item.practice} base={base} today={today} counts={counts[`practice-${item.practice.id}`]} />
+                      <UpcomingPracticeRow key={`p${item.practice.id}`} practice={item.practice} base={base} today={today} counts={counts[`practice-${item.practice.id}`]} jobs={jobs[`practice-${item.practice.id}`]} />
                     )
                   )}
                 </ul>
@@ -229,16 +237,42 @@ function RsvpSummary({ counts, href }: { counts?: RsvpCounts; href: string }) {
   );
 }
 
+// "Snacks: Dev's family · Set up goals: 1 open", linking to the event page where jobs are managed
+function JobsSummary({ jobs, href }: { jobs?: JobView[]; href: string }) {
+  if (!jobs || jobs.length === 0) return null;
+  return (
+    <Link to={href} className="mt-1 flex items-start gap-1.5 rounded-md text-sm text-muted hover:underline">
+      <HandHeart size={16} className="mt-0.5 shrink-0 text-subtle" />
+      <span>
+        {jobs.map((job, i) => {
+          const open = openSpots(job);
+          return (
+            <span key={job.id}>
+              {i > 0 && " · "}
+              <span className="font-medium text-ink">{job.title}:</span>{" "}
+              {[job.holders.map((h) => h.label).join(", "), open > 0 && <span key="open" className="text-warning">{open} open</span>]
+                .filter(Boolean)
+                .map((part, j) => (j > 0 ? [", ", part] : part))}
+            </span>
+          );
+        })}
+      </span>
+    </Link>
+  );
+}
+
 function UpcomingPracticeRow({
   practice,
   base,
   today,
   counts,
+  jobs,
 }: {
   practice: PracticeRow;
   base: string;
   today: string;
   counts?: RsvpCounts;
+  jobs?: JobView[];
 }) {
   const soon = relativeGameDay(practice.practiceDate, today);
   const cancelled = practice.status === "cancelled";
@@ -281,6 +315,7 @@ function UpcomingPracticeRow({
             </p>
           )}
           {!cancelled && <RsvpSummary counts={counts} href={`${base}/rsvps/practice/${practice.id}`} />}
+          <JobsSummary jobs={jobs} href={`${base}/rsvps/practice/${practice.id}`} />
         </div>
       </div>
       <div className="flex gap-2 sm:pl-16 md:shrink-0 md:pl-0">
@@ -299,12 +334,14 @@ function UpcomingGameRow({
   today,
   counts,
   expenses,
+  jobs,
 }: {
   game: GameRow;
   base: string;
   today: string;
   counts?: RsvpCounts;
   expenses?: { itemId: string; name: string; cents: number }[];
+  jobs?: JobView[];
 }) {
   const notes = gameNotesText(game.notes);
   const soon = relativeGameDay(game.gameDate, today);
@@ -341,6 +378,7 @@ function UpcomingGameRow({
             </p>
           )}
           <RsvpSummary counts={counts} href={`${base}/rsvps/game/${game.id}`} />
+          <JobsSummary jobs={jobs} href={`${base}/rsvps/game/${game.id}`} />
           {expenses?.map((e) => (
             <Link key={e.itemId} to={`${base}/finances/items/${e.itemId}`} className="mt-1 flex items-center gap-1.5 text-sm text-muted hover:underline">
               <Coins size={16} className="text-subtle" />

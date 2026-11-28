@@ -72,6 +72,7 @@ export default [
       route("practices/new", "routes/team.practices-new.tsx"),
       route("practices/:practiceId/edit", "routes/team.practices.edit.tsx"),
       route("rsvps/:eventType/:eventId", "routes/team.rsvps.tsx"),
+      route("jobs", "routes/team.jobs.tsx"),
       // List beside the open thread on desktop; one at a time on phones
       route("messages", "routes/team.messages.tsx", [
         index("routes/team.messages._index.tsx"),

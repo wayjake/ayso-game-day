@@ -2,7 +2,7 @@ import type { Route } from "./+types/team.player.remove";
 import { data } from "react-router";
 import { getUser } from "~/utils/auth.server";
 import { canAccessTeam } from "~/utils/team-access.server";
-import { db, teams, players, guardians, rsvps, contacts, taskAssignments, ledgerShares } from "~/db";
+import { db, teams, players, guardians, rsvps, contacts, taskAssignments, ledgerShares, eventJobSignups } from "~/db";
 import { eq, and } from "drizzle-orm";
 import { deletePlayerImage } from "~/utils/upload.server";
 import { hasLedgerHistory } from "~/utils/ledger.server";
@@ -59,6 +59,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       await tx.delete(guardians).where(eq(guardians.playerId, playerId));
       await tx.delete(rsvps).where(eq(rsvps.playerId, playerId));
       await tx.delete(taskAssignments).where(eq(taskAssignments.playerId, playerId));
+      // Jobs they were down for open back up
+      await tx.delete(eventJobSignups).where(eq(eventJobSignups.playerId, playerId));
       // Shares on expenses never invoiced (anything invoiced is ledger history, which blocks removal above)
       await tx.delete(ledgerShares).where(eq(ledgerShares.playerId, playerId));
       await tx.update(contacts).set({ playerId: null }).where(eq(contacts.playerId, playerId));
