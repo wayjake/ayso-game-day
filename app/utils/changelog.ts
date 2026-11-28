@@ -16,7 +16,7 @@ export const releases: Release[] = [
     title: "Know when families join",
     summary: "Get a heads-up when a family signs up for BenchTalk, with how many are on the app so far.",
     changes: [
-      { kind: "new", text: "Coaches: when a family accepts their invite and joins BenchTalk, you get a notification saying who joined, which kids they're linked to, and how many families are on the app now. Turn it off, or get it by email too, under Notifications on your Account page." },
+      { kind: "new", text: "Coaches: when a family accepts their invite and joins BenchTalk, you get a notification saying who joined the team, which kids they're linked to, and how many families are on the app now. Turn it off, or get it by email too, under Notifications on your Account page." },
     ],
   },
   {

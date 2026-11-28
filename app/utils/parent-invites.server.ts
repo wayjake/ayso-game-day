@@ -163,19 +163,23 @@ export async function linkFamily(teamId: string, email: string, userId: string) 
 
 // Tells the team's staff (familiesJoined) that a parent just joined, with how
 // many households are on the app now. Never throws: joining mustn't fail on it.
-async function alertFamilyJoined(teamId: string, userId: string, kids: { name: string }[]) {
+async function alertFamilyJoined(teamId: string, userId: string, kids: { id: string; name: string }[]) {
   try {
     const [user] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
-    const [team] = await db.select({ code: teams.code }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    const [team] = await db.select({ code: teams.code, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
     if (!user || !team) return;
     const who = user.name?.trim() || user.email;
     const kidNames = joinNames(kids.map((k) => k.name.trim().split(/\s+/)[0] || k.name));
 
-    // Households as the Families page groups them: emails with the same kids
+    // Households as the Families page groups them: emails with the same kids.
+    // The just-linked kids count as joined whatever email the account has,
+    // since the invite may not be marked accepted yet.
+    const justLinked = new Set(kids.map((k) => k.id));
     const households = new Map<string, boolean>();
     for (const f of await listFamilies(null, teamId)) {
       const key = f.kids.map((k) => k.id).sort().join(",");
-      households.set(key, (households.get(key) ?? false) || f.status === "joined");
+      const joined = f.status === "joined" || f.kids.some((k) => justLinked.has(k.id));
+      households.set(key, (households.get(key) ?? false) || joined);
     }
     const total = households.size;
     const joined = [...households.values()].filter(Boolean).length;
@@ -185,9 +189,9 @@ async function alertFamilyJoined(teamId: string, userId: string, kids: { name: s
       teamId,
       "familiesJoined",
       {
-        title: `${who} joined BenchTalk`,
+        title: `${who} joined ${team.name}`,
         body: [`Linked to ${kidNames}.`, progress].filter(Boolean).join(" "),
-        emailText: [`${who} signed up for BenchTalk and is linked to ${kidNames}.`, progress, "See who's still to join on the team's Families page."].filter(Boolean).join("\n\n"),
+        emailText: [`${who} joined ${team.name} on BenchTalk and is linked to ${kidNames}.`, progress, "See who's still to join on the team's Families page."].filter(Boolean).join("\n\n"),
         url: teamPath(team.code, "families"),
         tag: `family-joined-${teamId}`,
         emailKey: `joined-${teamId}-${userId}`,
