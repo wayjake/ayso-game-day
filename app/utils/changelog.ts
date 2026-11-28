@@ -13,6 +13,15 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-27",
+    title: "Add your family",
+    summary: "Families can add another parent or guardian themselves, and remove one, from Settings.",
+    changes: [
+      { kind: "new", text: "Families: under Your family in Settings, add another parent or guardian with their name and email. They're linked to the same kids and get an email invite to join BenchTalk. No need to ask the coach." },
+      { kind: "new", text: "Families can send a new invite to someone who hasn't joined yet, or remove someone they added. Coaches can still make the same changes from Families." },
+    ],
+  },
+  {
+    date: "2026-11-27",
     title: "Channels",
     summary: "Named, lasting places to talk about one thing, like tournament travel or snacks, alongside the team chat.",
     changes: [
