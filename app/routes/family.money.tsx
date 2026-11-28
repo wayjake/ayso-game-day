@@ -96,6 +96,9 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
   const [telling, setTelling] = useState(false);
   const note = `${money.teamName} · ref ${money.refCode}`;
   const nothingYet = money.history.length === 0 && money.pending.length === 0 && money.invoices.length === 0;
+  // Only while something is still owed beyond what they've already said they sent
+  const pendingCents = money.pending.reduce((sum, p) => sum + p.cents, 0);
+  const canTell = money.owed > pendingCents;
 
   return (
     <section className="space-y-4">
@@ -138,13 +141,13 @@ function TeamMoney({ money, formKey, showTeam }: { money: FamilyTeamMoney & { in
           <PendingClaim key={p.id} claim={p} />
         ))}
 
-        {!nothingYet && (
+        {canTell && (
           <div className="mt-4 border-t border-line pt-4">
             {telling ? (
               <LedgerForm intent="claim" formKey={formKey} submitLabel="Tell the coach" onDone={() => setTelling(false)}>
                 <input type="hidden" name="teamId" value={money.teamId} />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <MoneyField name="cents" id={`claim-${money.teamId}`} label="How much you sent" defaultCents={money.owed || null} />
+                  <MoneyField name="cents" id={`claim-${money.teamId}`} label="How much you sent" defaultCents={money.owed - pendingCents || null} />
                   <MethodField />
                 </div>
                 <TextField name="note" label="Anything the coach should know" placeholder="Sent from my husband's account" />
