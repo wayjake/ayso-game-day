@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useFetcher } from "react-router";
+import { Form, useFetcher } from "react-router";
 import { Archive, ArrowCounterClockwise, PencilSimple, SignOut, UserPlus, X } from "@phosphor-icons/react";
 import { PeopleChecklist } from "~/components/PeoplePicker";
 import { StaffBadge } from "~/components/StaffBadge";
@@ -117,7 +117,7 @@ export function ChannelPanel({ channel, meId, className }: { channel: ChannelInf
           <input type="hidden" name="_action" value="channelSave" />
           <ChannelFields defaults={channel} audience={audience} onAudience={setAudience} idPrefix="channel-edit" />
           {audience === "private" && channel.audience !== "private" && (
-            <p className={hintClass}>Staff who aren't picked lose the channel. You stay in it.</p>
+            <p className={hintClass}>Only the people already picked stay in it, plus you. Add anyone else after saving.</p>
           )}
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={busy}>Save</Button>
@@ -142,7 +142,7 @@ export function ChannelPanel({ channel, meId, className }: { channel: ChannelInf
             {channel.staffOnlyPosts && <Badge>Only staff post</Badge>}
             {channel.archived && <Badge>Archived</Badge>}
           </div>
-          <p className="mt-2 text-xs text-muted">{AUDIENCE_OPTIONS[channel.audience].detail}</p>
+          <p className="mt-2 text-xs text-muted">{AUDIENCE_OPTIONS[channel.audience].about}</p>
         </div>
       )}
 
@@ -228,15 +228,21 @@ export function ChannelPanel({ channel, meId, className }: { channel: ChannelInf
 
       {!editing && (channel.canManage || channel.canLeave) && (
         <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-          {confirm ? (
+          {confirm === "leave" ? (
+            // A navigation, not a fetcher: the page is gone afterwards and the action redirects to the list
+            <Form method="post" className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="_action" value="channelLeave" />
+              <span className="text-sm">Leave this channel? You won't see it anymore.</span>
+              <Button type="submit" size="sm" variant="danger">Leave</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
+            </Form>
+          ) : confirm === "archive" ? (
             <fetcher.Form method="post" className="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="_action" value={confirm === "leave" ? "channelLeave" : "channelArchive"} />
+              <input type="hidden" name="_action" value="channelArchive" />
               <span className="text-sm">
-                {confirm === "leave"
-                  ? "Leave this channel? You won't see it anymore."
-                  : "Archive this channel? Nobody can post, and it leaves everyone's list. Staff who could read it find it under Archived and can bring it back."}
+                Archive this channel? Nobody can post, and it leaves everyone's list. Staff who could read it find it under Archived and can bring it back.
               </span>
-              <Button type="submit" size="sm" variant="danger" disabled={busy}>{confirm === "leave" ? "Leave" : "Archive"}</Button>
+              <Button type="submit" size="sm" variant="danger" disabled={busy}>Archive</Button>
               <Button type="button" size="sm" variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
             </fetcher.Form>
           ) : (

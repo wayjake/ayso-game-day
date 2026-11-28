@@ -362,24 +362,22 @@ export async function channelIdsFor(teamId: string, userId: string, side: "coach
     eq(conversations.kind, "channel"),
     options.archived ? undefined : isNull(conversations.archivedAt)
   );
-  const [open, joined] = await Promise.all([
+  // Staff read every channel but other people's private ones; parents only Everyone channels without a member row
+  const joinedAudiences = side === "coach" ? (["private"] as const) : (["families", "private"] as const);
+  const [open, ...joined] = await Promise.all([
     db
       .select({ id: conversations.id })
       .from(conversations)
       .where(and(base, side === "coach" ? ne(conversations.audience, "private") : eq(conversations.audience, "everyone"))),
-    db
-      .select({ id: conversations.id })
-      .from(conversationMembers)
-      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
-      .where(
-        and(
-          base,
-          eq(conversationMembers.userId, userId),
-          side === "coach" ? eq(conversations.audience, "private") : inArray(conversations.audience, ["families", "private"])
-        )
-      ),
+    ...joinedAudiences.map((audience) =>
+      db
+        .select({ id: conversations.id })
+        .from(conversationMembers)
+        .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+        .where(and(base, eq(conversationMembers.userId, userId), eq(conversations.audience, audience)))
+    ),
   ]);
-  return [...new Set([...open, ...joined].map((r) => r.id))];
+  return [...new Set([...open, ...joined.flat()].map((r) => r.id))];
 }
 
 /** Direct threads a staff member is in, on one team */

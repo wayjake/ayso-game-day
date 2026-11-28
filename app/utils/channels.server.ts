@@ -147,6 +147,8 @@ export async function handleChannelAction(formData: FormData, channel: Channel, 
   }
 
   if (viewer.side !== "coach") return { error: "Only staff can change a channel" };
+  // Archived: read only until someone unarchives it
+  if (channel.archivedAt && intent !== "channelUnarchive") return { error: "Unarchive the channel to change it" };
   const audience = audienceOf(channel);
   let updated: Channel = channel;
 

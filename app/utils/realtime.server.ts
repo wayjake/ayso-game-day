@@ -109,17 +109,17 @@ async function capabilityFor(userId: string) {
   // For staff, the channels that matter here are private ones; the rest are under team:<id>:*.
   const onTeams = [...coachedIds, ...parentTeamIds];
   if (onTeams.length > 0) {
-    const joined = await db
-      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind, audience: conversations.audience })
-      .from(conversationMembers)
-      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
-      .where(
-        and(
-          eq(conversationMembers.userId, userId),
-          inArray(conversations.kind, ["group", "channel"]),
-          inArray(conversations.teamId, onTeams)
-        )
+    // One query per kind, not an IN over it (see above)
+    const joined = [];
+    for (const kind of ["group", "channel"] as const) {
+      joined.push(
+        ...(await db
+          .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind, audience: conversations.audience })
+          .from(conversationMembers)
+          .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+          .where(and(eq(conversationMembers.userId, userId), eq(conversations.kind, kind), inArray(conversations.teamId, onTeams))))
       );
+    }
     for (const c of joined) {
       // A member row in a channel that's no longer picked-people (now everyone or staff) gives nothing
       if (c.kind === "channel" && c.audience !== "families" && c.audience !== "private") continue;

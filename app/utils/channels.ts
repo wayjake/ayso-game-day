@@ -11,11 +11,24 @@ export const CHANNEL_AUDIENCES: ChannelAudience[] = ["everyone", "staff", "famil
 export const MAX_CHANNEL_NAME = 60;
 export const MAX_CHANNEL_TOPIC = 140;
 
-export const AUDIENCE_OPTIONS: Record<ChannelAudience, { label: string; detail: string }> = {
-  everyone: { label: "Everyone on the team", detail: "All staff and every family on the app. Families who join later are in it too." },
-  staff: { label: "Staff only", detail: "Coaches, assistant coaches and team managers." },
-  families: { label: "Staff and some families", detail: "All staff, plus the families you pick, like the ones going to a tournament." },
-  private: { label: "Private", detail: "Only the people you pick. Other staff, the team owner included, can't see it." },
+// `detail` is for whoever is making the channel; `about` is shown to everyone in it
+export const AUDIENCE_OPTIONS: Record<ChannelAudience, { label: string; detail: string; about: string }> = {
+  everyone: {
+    label: "Everyone on the team",
+    detail: "All staff and every family on the app. Families who join later are in it too.",
+    about: "Every coach and family on the team can see this.",
+  },
+  staff: { label: "Staff only", detail: "Coaches, assistant coaches and team managers.", about: "Only coaches, assistant coaches and team managers can see this." },
+  families: {
+    label: "Staff and some families",
+    detail: "All staff, plus the families you pick, like the ones going to a tournament.",
+    about: "All staff and the families listed here can see this.",
+  },
+  private: {
+    label: "Private",
+    detail: "Only the people you pick. Other staff, the team owner included, can't see it.",
+    about: "Only the people listed here can see this. Other staff can't.",
+  },
 };
 
 export function parseAudience(value: unknown): ChannelAudience | null {
