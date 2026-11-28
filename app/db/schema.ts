@@ -92,6 +92,24 @@ export const templateFormations = sqliteTable('template_formations', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+// Tournaments: several games over one or more days, shown as one all-day
+// event (free on calendars) with its games inside it (busy). A game belongs to
+// at most one (games.tournamentId).
+export const tournaments = sqliteTable('tournaments', {
+  id: text('id').primaryKey().$defaultFn(() => newId()),
+  teamId: text('team_id').notNull().references(() => teams.id),
+  name: text('name').notNull(),
+  startDate: text('start_date').notNull(), // YYYY-MM-DD
+  endDate: text('end_date').notNull(), // YYYY-MM-DD, the last day
+  location: text('location'),
+  notes: text('notes'), // Families see these
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => [
+  index('tournaments_team_dates_idx').on(t.teamId, t.endDate),
+]);
+
 // Games table
 export const games = sqliteTable('games', {
   id: text('id').primaryKey().$defaultFn(() => newId()),
@@ -104,6 +122,7 @@ export const games = sqliteTable('games', {
   homeAway: text('home_away', { enum: ['home', 'away'] }),
   status: text('status', { enum: ['scheduled', 'in-progress', 'completed', 'cancelled'] }).default('scheduled'),
   notes: text('notes'),
+  tournamentId: text('tournament_id').references(() => tournaments.id),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -720,6 +739,7 @@ export type NewPlayer = typeof players.$inferInsert;
 export type TemplateFormation = typeof templateFormations.$inferSelect;
 export type NewTemplateFormation = typeof templateFormations.$inferInsert;
 export type Game = typeof games.$inferSelect;
+export type Tournament = typeof tournaments.$inferSelect;
 export type NewGame = typeof games.$inferInsert;
 export type Assignment = typeof assignments.$inferSelect;
 export type NewAssignment = typeof assignments.$inferInsert;

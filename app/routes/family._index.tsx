@@ -17,8 +17,10 @@ import { MoneyCard } from "~/components/money";
 import { familyTasks } from "~/utils/tasks.server";
 import { alertJobGivenBack, getJob, getSignup, jobsByEvent, releaseSpot, takeSpot, teamFamilies } from "~/utils/jobs.server";
 import { FamilyEventJobs } from "~/components/EventJobs";
+import { getTournaments } from "~/utils/tournaments.server";
+import { tournamentDates } from "~/utils/tournaments";
 import { Alert, Badge, Card, DateTile, EmptyState, HomeAwayBadge, PlayerAvatar, buttonClass, cx } from "~/components/ui";
-import { Bell, CalendarBlank, CaretRight, Clock, Coins, ListChecks, MapPin, Note, Sneaker, SoccerBall } from "@phosphor-icons/react";
+import { Bell, CalendarBlank, CaretRight, Clock, Coins, ListChecks, MapPin, Note, Sneaker, SoccerBall, Trophy } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 import { parseId } from "~/utils/ids";
 
@@ -50,6 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     shares: await familySharesByGame(kids),
     jobs,
     myPlayerIds,
+    tournaments: (await getTournaments(teamIds, { from: today })).map((t) => ({ id: t.id, teamId: t.teamId, name: t.name, startDate: t.startDate, endDate: t.endDate, location: t.location, notes: t.notes })),
   });
 }
 
@@ -136,7 +139,12 @@ function summarizeMoney(teams: FamilyTeamMoney[]) {
 }
 
 export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
-  const { kids, events, answers, today, firstName, suggestPush, openTasks, money, shares, jobs, myPlayerIds } = loaderData;
+  const { kids, events, answers, today, firstName, suggestPush, openTasks, money, shares, jobs, myPlayerIds, tournaments } = loaderData;
+  // A tournament card sits above its first day's events; one already under way, at the top
+  const items = [
+    ...tournaments.map((t) => ({ kind: "tournament" as const, date: t.startDate < today ? today : t.startDate, time: "", tournament: t })),
+    ...events.map((event) => ({ kind: "event" as const, date: event.date, time: event.time ?? "99", event })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
   const [params] = useSearchParams();
   const multipleTeams = new Set(kids.map((k) => k.teamId)).size > 1;
 
@@ -192,7 +200,7 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
-      {events.length === 0 ? (
+      {items.length === 0 ? (
         <Card className="mt-6">
           <EmptyState icon={<CalendarBlank size={24} />} title="Nothing scheduled yet">
             New games and practices show up here as soon as the coach adds them.
@@ -200,22 +208,76 @@ export default function FamilySchedule({ loaderData }: Route.ComponentProps) {
         </Card>
       ) : (
         <ul className="mt-6 space-y-3">
-          {events.map((event) => (
-            <EventCard
-              key={event.key}
-              event={event}
-              kids={kids.filter((k) => k.teamId === event.teamId)}
-              answers={answers}
-              today={today}
-              showTeam={multipleTeams}
-              shares={shares[event.key]}
-              jobs={jobs[event.key] ?? []}
-              myPlayerIds={myPlayerIds}
-            />
-          ))}
+          {items.map((item) =>
+            item.kind === "tournament" ? (
+              <TournamentCard
+                key={`t-${item.tournament.id}`}
+                tournament={item.tournament}
+                teamName={multipleTeams ? kids.find((k) => k.teamId === item.tournament.teamId)?.teamName : undefined}
+                games={events.filter((e) => e.tournament?.id === item.tournament.id).length}
+              />
+            ) : (
+              <EventCard
+                key={item.event.key}
+                event={item.event}
+                kids={kids.filter((k) => k.teamId === item.event.teamId)}
+                answers={answers}
+                today={today}
+                showTeam={multipleTeams}
+                shares={shares[item.event.key]}
+                jobs={jobs[item.event.key] ?? []}
+                myPlayerIds={myPlayerIds}
+              />
+            )
+          )}
         </ul>
       )}
     </div>
+  );
+}
+
+// The whole tournament as one card; its games follow as their own cards
+function TournamentCard({
+  tournament,
+  teamName,
+  games,
+}: {
+  tournament: { name: string; startDate: string; endDate: string; location: string | null; notes: string | null };
+  teamName?: string;
+  games: number;
+}) {
+  return (
+    <li>
+      <Card className="flex gap-4 p-4 ring-warning/30">
+        <DateTile iso={tournament.startDate} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-warning">
+              <Trophy size={14} weight="fill" />
+              Tournament
+            </span>
+            {teamName && <span className="text-xs text-muted">· {teamName}</span>}
+          </div>
+          <h2 className="mt-0.5 font-display text-xl font-bold leading-tight tracking-tight">{tournament.name}</h2>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+            <span>{tournamentDates(tournament)}</span>
+            {tournament.location && (
+              <a href={mapsUrl(tournament.location)} target="_blank" rel="noopener" className="pointer-coarse:min-h-11 flex min-w-0 items-center gap-1.5 underline decoration-line-strong underline-offset-2 hover:text-ink">
+                <MapPin size={16} className="shrink-0 text-subtle" />
+                <span className="break-words">{tournament.location}</span>
+              </a>
+            )}
+            {games > 0 && <span>{games === 1 ? "1 game" : `${games} games`}, below</span>}
+          </div>
+          {tournament.notes && (
+            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-muted">
+              <Note size={16} className="mt-0.5 shrink-0 text-subtle" />
+              <span className="whitespace-pre-line">{tournament.notes}</span>
+            </p>
+          )}
+        </div>
+      </Card>
+    </li>
   );
 }
 
@@ -278,6 +340,12 @@ function EventCard({
                 </a>
               )}
             </div>
+            {event.tournament && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted">
+                <Trophy size={16} className="shrink-0 text-subtle" />
+                Part of {event.tournament.name}
+              </p>
+            )}
             {event.notes && (
               <p className="mt-1.5 flex items-start gap-1.5 text-sm text-muted">
                 <Note size={16} className="mt-0.5 shrink-0 text-subtle" />

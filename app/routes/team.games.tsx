@@ -19,6 +19,7 @@ import {
   PencilSimple,
   Coins,
   HandHeart,
+  Trophy,
   Play,
   Plus,
   Printer,
@@ -27,6 +28,8 @@ import {
 
 import { expensesByGame } from "~/utils/billing.server";
 import { jobsByEvent } from "~/utils/jobs.server";
+import { getTournaments } from "~/utils/tournaments.server";
+import { tournamentDates } from "~/utils/tournaments";
 import { openSpots, type JobView } from "~/utils/jobs";
 import { formatCents } from "~/utils/money";
 import { teamIdFromCode } from "~/utils/team-access.server";
@@ -57,6 +60,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       field: games.field,
       homeAway: games.homeAway,
       notes: games.notes,
+      tournamentId: games.tournamentId,
     })
     .from(games)
     .where(eq(games.teamId, teamId))
@@ -90,6 +94,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     today,
     expenses: await expensesByGame(teamId),
     jobs: await jobsByEvent([teamId]),
+    tournaments: (await getTournaments([teamId])).map((t) => ({ id: t.id, name: t.name, startDate: t.startDate, endDate: t.endDate, location: t.location })),
   });
 }
 
@@ -103,10 +108,16 @@ export function meta({ params }: Route.MetaArgs) {
 type GameRow = Route.ComponentProps["loaderData"]["games"][number];
 type PracticeRow = Route.ComponentProps["loaderData"]["practices"][number];
 
-type UpcomingItem = { kind: "game"; date: string; time: string | null; game: GameRow } | { kind: "practice"; date: string; time: string | null; practice: PracticeRow };
+type TournamentRow = Route.ComponentProps["loaderData"]["tournaments"][number];
+
+type UpcomingItem =
+  | { kind: "game"; date: string; time: string | null; game: GameRow }
+  | { kind: "practice"; date: string; time: string | null; practice: PracticeRow }
+  | { kind: "tournament"; date: string; time: string | null; tournament: TournamentRow };
 
 export default function TeamGames({ loaderData }: Route.ComponentProps) {
-  const { team, games, practices, counts, today, expenses, jobs } = loaderData;
+  const { team, games, practices, counts, today, expenses, jobs, tournaments } = loaderData;
+  const tournamentName = new Map(tournaments.map((t) => [t.id, t.name]));
   const base = `${teamPath(team)}`;
 
   // Separate upcoming and past games; most recent past game first
@@ -117,6 +128,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
   const upcoming: UpcomingItem[] = [
     ...upcomingGames.map((game) => ({ kind: "game" as const, date: game.gameDate, time: game.gameTime, game })),
     ...practices.map((practice) => ({ kind: "practice" as const, date: practice.practiceDate, time: practice.startTime, practice })),
+    // A tournament sits above its first day's games; one already under way, at the top
+    ...tournaments
+      .filter((t) => t.endDate >= today)
+      .map((tournament) => ({ kind: "tournament" as const, date: tournament.startDate < today ? today : tournament.startDate, time: "", tournament })),
   ].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "99").localeCompare(b.time ?? "99"));
 
   const practiceLink = (
@@ -159,6 +174,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
               <HandHeart size={18} />
               Jobs by family
             </Link>
+            <Link to={`${base}/tournaments/new`} className={buttonClass({ variant: "secondary" })}>
+              <Trophy size={18} weight="bold" />
+              Add tournament
+            </Link>
             {practiceLink}
             {scheduleLink("Schedule game", "secondary")}
           </>
@@ -184,8 +203,10 @@ export default function TeamGames({ loaderData }: Route.ComponentProps) {
               {upcoming.length > 0 ? (
                 <ul className="divide-y divide-line">
                   {upcoming.map((item) =>
-                    item.kind === "game" ? (
-                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} base={base} today={today} counts={counts[`game-${item.game.id}`]} expenses={expenses[`game-${item.game.id}`]} jobs={jobs[`game-${item.game.id}`]} />
+                    item.kind === "tournament" ? (
+                      <TournamentScheduleRow key={`t${item.tournament.id}`} tournament={item.tournament} base={base} games={games.filter((g) => g.tournamentId === item.tournament.id).length} />
+                    ) : item.kind === "game" ? (
+                      <UpcomingGameRow key={`g${item.game.id}`} game={item.game} tournament={item.game.tournamentId ? tournamentName.get(item.game.tournamentId) : undefined} base={base} today={today} counts={counts[`game-${item.game.id}`]} expenses={expenses[`game-${item.game.id}`]} jobs={jobs[`game-${item.game.id}`]} />
                     ) : (
                       <UpcomingPracticeRow key={`p${item.practice.id}`} practice={item.practice} base={base} today={today} counts={counts[`practice-${item.practice.id}`]} jobs={jobs[`practice-${item.practice.id}`]} />
                     )
@@ -234,6 +255,38 @@ function RsvpSummary({ counts, href }: { counts?: RsvpCounts; href: string }) {
       {counts.no > 0 && <span className="text-danger">· {counts.no} out</span>}
       {counts.none > 0 && <span className="text-muted">· {counts.none} no reply</span>}
     </Link>
+  );
+}
+
+function TournamentScheduleRow({ tournament, base, games }: { tournament: TournamentRow; base: string; games: number }) {
+  return (
+    <li className="flex flex-col gap-3 bg-surface-2/50 p-4 sm:px-5 md:flex-row md:items-center md:gap-6">
+      <div className="flex min-w-0 flex-1 items-start gap-4">
+        <DateTile iso={tournament.startDate} />
+        <div className="min-w-0 flex-1">
+          <h3 className="flex min-w-0 items-center gap-1.5 break-words font-display text-xl font-bold leading-tight tracking-tight">
+            <Trophy size={18} weight="fill" className="shrink-0 text-warning" />
+            {tournament.name}
+          </h3>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+            <span>Tournament · {tournamentDates(tournament)}</span>
+            {tournament.location && (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <MapPin size={16} className="shrink-0 text-subtle" />
+                <span className="break-words">{tournament.location}</span>
+              </span>
+            )}
+            <span>{games === 0 ? "No games yet" : games === 1 ? "1 game" : `${games} games`}</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-2 sm:pl-16 md:shrink-0 md:pl-0">
+        <Link to={`${base}/tournaments/${tournament.id}`} className={buttonClass({ variant: "ghost" })}>
+          <PencilSimple size={18} />
+          Games and details
+        </Link>
+      </div>
+    </li>
   );
 }
 
@@ -335,7 +388,9 @@ function UpcomingGameRow({
   counts,
   expenses,
   jobs,
+  tournament,
 }: {
+  tournament?: string;
   game: GameRow;
   base: string;
   today: string;
@@ -356,6 +411,12 @@ function UpcomingGameRow({
               vs {game.opponent}
             </h3>
             <HomeAwayBadge homeAway={game.homeAway} />
+            {tournament && (
+              <Badge>
+                <Trophy size={12} weight="fill" />
+                {tournament}
+              </Badge>
+            )}
             {(soon === "Today" || soon === "Tomorrow") && <Badge tone="primary">{soon}</Badge>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">

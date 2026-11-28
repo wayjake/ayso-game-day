@@ -6,6 +6,8 @@ import { canAccessTeam } from "~/utils/team-access.server";
 import { getEvents } from "~/utils/schedule.server";
 import { addDays, todayISO } from "~/utils/dates";
 import { addMinutes, buildCalendar, type IcalEvent } from "~/utils/ical";
+import { getTournaments } from "~/utils/tournaments.server";
+import { formatGameDate, formatGameTime } from "~/utils/dates";
 import { teamPath } from "~/utils/team-path";
 
 // A person's subscribed calendar: one private link covering every team they
@@ -97,6 +99,7 @@ export async function buildCalendarFeed(token: string, request: Request) {
     const description = [
       event.cancelled ? "This was cancelled." : null,
       event.homeAway ? (event.homeAway === "home" ? "Home game" : "Away game") : null,
+      event.tournament ? `Part of ${event.tournament.name}.` : null,
       event.time ? null : "Time to be confirmed.",
       event.notes,
       `RSVP and details: ${url}`,
@@ -118,6 +121,28 @@ export async function buildCalendarFeed(token: string, request: Request) {
       cancelled: event.cancelled,
     };
   });
+
+  // A tournament is one all-day event across its days, marked free: its games
+  // are their own timed events and those are the busy ones
+  for (const t of await getTournaments(teamIds, { from: addDays(todayISO(), -PAST_DAYS) })) {
+    const team = byId.get(t.teamId)!;
+    const url = team.code ? `${origin}${teamPath(team.code, `tournaments/${t.id}`)}` : `${origin}/family`;
+    const itsGames = events
+      .filter((e) => e.tournament?.id === t.id && !e.cancelled)
+      .map((e) => `${formatGameDate(e.date, { weekday: "short", month: "short", day: "numeric" })}${e.time ? ` ${formatGameTime(e.time)}` : ""}: ${e.title}`);
+    icalEvents.push({
+      uid: `tournament-${t.id}@benchtalk.app`,
+      summary: `${manyTeams ? `${team.name}: ` : ""}Tournament: ${t.name}`,
+      date: t.startDate,
+      endDate: t.endDate,
+      start: null,
+      end: null,
+      busy: false,
+      location: t.location,
+      description: [itsGames.length > 0 ? `Games:\n${itsGames.join("\n")}` : null, t.notes, `Details: ${url}`].filter(Boolean).join("\n\n"),
+      url,
+    });
+  }
 
   const only = manyTeams ? null : byId.get(teamIds[0]);
   return buildCalendar({

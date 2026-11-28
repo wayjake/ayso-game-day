@@ -12,6 +12,9 @@ import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 import { CalendarCheck, Lightbulb } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
+import { checkGameTournament, getTournament, tournamentChoices } from "~/utils/tournaments.server";
+import { parseId } from "~/utils/ids";
+import { todayISO } from "~/utils/dates";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -28,8 +31,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Team not found", { status: 404 });
   }
   
+  // Coming from a tournament's page: start in it, on its first day
+  const picked = await getTournament(teamId, parseId(new URL(request.url).searchParams.get("tournament")));
   return data({
     team,
+    tournaments: await tournamentChoices(teamId, todayISO()),
+    picked: picked ? { id: picked.id, startDate: picked.startDate } : null,
   });
 }
 
@@ -54,11 +61,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ error: parsed.error }, { status: 400 });
   }
 
+  const inTournament = await checkGameTournament(teamId, formData.get("tournamentId"), parsed.values.gameDate);
+  if ("error" in inTournament) return data({ error: inTournament.error }, { status: 400 });
+
   try {
     // Create game
     const [newGame] = await db.insert(games).values({
       teamId: teamId,
       ...parsed.values,
+      tournamentId: inTournament.tournamentId,
       notes: serializeGameNotes({ text: parsed.notesText }),
     }).returning();
 
@@ -87,7 +98,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function NewGame({ loaderData, actionData }: Route.ComponentProps) {
-  const { team } = loaderData;
+  const { team, tournaments, picked } = loaderData;
   const error = actionData?.error;
   const gamesUrl = `${teamPath(team)}/games`;
 
@@ -103,7 +114,7 @@ export default function NewGame({ loaderData, actionData }: Route.ComponentProps
 
       <Card>
         <Form method="post" className="space-y-6 p-5 sm:p-6">
-          <GameFormFields />
+          <GameFormFields tournaments={tournaments} defaults={picked ? { tournamentId: picked.id, gameDate: picked.startDate } : {}} />
 
           {/* Form actions */}
           <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">

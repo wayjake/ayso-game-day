@@ -18,6 +18,8 @@ export type ScheduleEvent = {
   notes: string | null;
   cancelled: boolean;
   seriesId: string | null;
+  /** Games only: the tournament it's part of */
+  tournament: { id: string; name: string } | null;
 };
 
 export const RSVP_LABELS: Record<RsvpStatus, string> = {
