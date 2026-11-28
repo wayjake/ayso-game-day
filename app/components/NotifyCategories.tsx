@@ -4,7 +4,7 @@ import { NOTIFY_CATEGORIES } from "~/utils/notify";
 
 // One switch per kind of notification. The choices follow the account to every
 // device; the locked one shows as on so it's clear it can't be missed. Staff
-// payment alerts can come by email too, so those rows get a second switch.
+// staff alerts (payments, families joining) can come by email too, so those rows get a second switch.
 // `emailOnly`: only the email switches (this server can't send notifications).
 
 export function NotifyCategories({ push, audience, emailOnly = false }: { push: PushState; audience: "family" | "coach"; emailOnly?: boolean }) {
