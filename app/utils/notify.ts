@@ -46,7 +46,7 @@ export const NOTIFY_CATEGORIES: NotifyCategory[] = [
     default: true,
     email: { default: false },
   },
-  { kind: "dropouts", label: "Players dropping out", detail: "When a family says their player can't make it.", coachOnly: true, default: true },
+  { kind: "dropouts", label: "Players dropping out", detail: "When a family says their player can't make it, or gives back a job.", coachOnly: true, default: true },
   { kind: "venmo", label: "Venmo payments to record", detail: "When a forwarded Venmo email shows a family paid.", coachOnly: true, default: true, email: { default: true } },
   { kind: "payments", label: "Families saying they paid", detail: "When a family taps “I sent a payment”.", coachOnly: true, default: true, email: { default: true } },
   {

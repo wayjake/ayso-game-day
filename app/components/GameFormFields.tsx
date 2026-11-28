@@ -1,6 +1,7 @@
 import { AirplaneTilt, House } from "@phosphor-icons/react";
 import { GameDatePicker, GameTimePicker } from "~/components/GameDateTimePickers";
 import { hintClass, inputClass, labelClass } from "~/components/ui";
+import { tournamentDates } from "~/utils/tournaments";
 
 // The fields shared by the new-game and edit-game forms
 
@@ -11,7 +12,10 @@ export type GameFormDefaults = {
   field?: string | null;
   homeAway?: "home" | "away" | null;
   notesText?: string;
+  tournamentId?: string | null;
 };
+
+export type TournamentChoice = { id: string; name: string; startDate: string; endDate: string };
 
 type GameFormValues = {
   opponent: string;
@@ -60,9 +64,25 @@ const Optional = () => <span className="font-normal text-subtle">(optional)</spa
 const choiceClass =
   "flex min-h-12 cursor-pointer items-center gap-2.5 rounded-lg border border-field bg-surface px-3 py-2.5 text-sm font-medium transition hover:bg-surface-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:checked]:text-primary-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/30";
 
-export function GameFormFields({ defaults = {} }: { defaults?: GameFormDefaults }) {
+export function GameFormFields({ defaults = {}, tournaments = [] }: { defaults?: GameFormDefaults; tournaments?: TournamentChoice[] }) {
   return (
     <>
+      {tournaments.length > 0 && (
+        <div>
+          <label htmlFor="tournamentId" className={labelClass}>
+            Tournament <Optional />
+          </label>
+          <select id="tournamentId" name="tournamentId" defaultValue={defaults.tournamentId ?? ""} className={inputClass}>
+            <option value="">Not part of a tournament</option>
+            {tournaments.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({tournamentDates(t)})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Opponent */}
       <div>
         <label htmlFor="opponent" className={labelClass}>

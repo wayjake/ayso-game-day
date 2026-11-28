@@ -3,7 +3,7 @@
 // ("YYYY-MM-DD" and "HH:MM", wall-clock time in APP_TIME_ZONE) and go out with
 // that zone's TZID, so calendar apps handle daylight saving themselves.
 
-import { addDays, APP_TIME_ZONE } from "~/utils/dates";
+import { addDays, APP_TIME_ZONE } from "./dates.ts";
 
 export type IcalEvent = {
   uid: string;
@@ -13,6 +13,10 @@ export type IcalEvent = {
   start: string | null;
   /** HH:MM end; required when start is given */
   end: string | null;
+  /** All-day events only: the last day, for one that runs several days */
+  endDate?: string | null;
+  /** Shown as busy or free. Defaults: timed events busy, all-day ones free */
+  busy?: boolean;
   location?: string | null;
   description?: string | null;
   url?: string | null;
@@ -130,13 +134,17 @@ export function buildCalendar({ name, description, events, now = new Date() }: I
       lines.push(
         `DTSTART;TZID=${tz}:${compactDate(event.date)}T${compactTime(event.start)}`,
         `DTEND;TZID=${tz}:${compactDate(endDate)}T${compactTime(event.end)}`,
+        // Said outright, since a game should block its time even next to a free all-day tournament
+        event.busy === false ? "TRANSP:TRANSPARENT" : "TRANSP:OPAQUE",
       );
     } else {
+      // DTEND is the day after the last one (exclusive)
+      const last = event.endDate && event.endDate > event.date ? event.endDate : event.date;
       lines.push(
         `DTSTART;VALUE=DATE:${compactDate(event.date)}`,
-        `DTEND;VALUE=DATE:${compactDate(addDays(event.date, 1))}`,
-        // All-day events shouldn't block the day as busy
-        "TRANSP:TRANSPARENT",
+        `DTEND;VALUE=DATE:${compactDate(addDays(last, 1))}`,
+        // All-day events (a tournament weekend, a game with no time yet) shouldn't block the day as busy
+        event.busy === true ? "TRANSP:OPAQUE" : "TRANSP:TRANSPARENT",
       );
     }
     lines.push(`SUMMARY:${escapeText(event.summary)}`);

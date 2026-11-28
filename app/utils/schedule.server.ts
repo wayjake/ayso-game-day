@@ -1,4 +1,4 @@
-import { db, games, practices, rsvps, players } from "~/db";
+import { db, games, practices, rsvps, players, tournaments } from "~/db";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { RsvpStatus, ScheduleEvent } from "~/utils/schedule";
 import { getParentUserIds } from "~/utils/family.server";
@@ -31,12 +31,20 @@ export async function getEvents(
       to ? lte(practices.practiceDate, to) : undefined
     ));
 
-  const events = [...gameRows.map(gameToEvent), ...practiceRows.map(practiceToEvent)];
+  const names = await tournamentNames(gameRows);
+  const events = [...gameRows.map((g) => gameToEvent(g, names)), ...practiceRows.map(practiceToEvent)];
 
   return events.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "99").localeCompare(b.time ?? "99"));
 }
 
-function gameToEvent(g: typeof games.$inferSelect): ScheduleEvent {
+async function tournamentNames(rows: { tournamentId: string | null }[]) {
+  const ids = [...new Set(rows.map((r) => r.tournamentId).filter((id): id is string => !!id))];
+  if (ids.length === 0) return new Map<string, string>();
+  const found = await db.select({ id: tournaments.id, name: tournaments.name }).from(tournaments).where(inArray(tournaments.id, ids));
+  return new Map(found.map((t) => [t.id, t.name]));
+}
+
+function gameToEvent(g: typeof games.$inferSelect, names: Map<string, string>): ScheduleEvent {
   return {
     key: `game-${g.id}`,
     type: "game",
@@ -51,6 +59,7 @@ function gameToEvent(g: typeof games.$inferSelect): ScheduleEvent {
     notes: null, // Game notes were written for coaches only, so families never see them
     cancelled: g.status === "cancelled",
     seriesId: null,
+    tournament: g.tournamentId && names.has(g.tournamentId) ? { id: g.tournamentId, name: names.get(g.tournamentId)! } : null,
   };
 }
 
@@ -69,6 +78,7 @@ function practiceToEvent(p: typeof practices.$inferSelect): ScheduleEvent {
     notes: p.notes,
     cancelled: p.status === "cancelled",
     seriesId: p.seriesId,
+    tournament: null,
   };
 }
 
@@ -77,7 +87,7 @@ export async function getTeamEvent(teamId: string, type: string, id: string | nu
   if (!id) return null;
   if (type === "game") {
     const [g] = await db.select().from(games).where(and(eq(games.id, id), eq(games.teamId, teamId))).limit(1);
-    return g ? gameToEvent(g) : null;
+    return g ? gameToEvent(g, await tournamentNames([g])) : null;
   }
   if (type === "practice") {
     const [p] = await db.select().from(practices).where(and(eq(practices.id, id), eq(practices.teamId, teamId))).limit(1);

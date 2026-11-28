@@ -1,6 +1,7 @@
 import { db, practices, rsvps } from "~/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { addDays, dayOfWeek, formatGameDate, formatTimeRange } from "~/utils/dates";
+import { deleteJobsForEvents } from "~/utils/jobs.server";
 export { describePractice } from "~/utils/schedule";
 
 export const MAX_SERIES_PRACTICES = 80;
@@ -26,9 +27,10 @@ export function describeSeries(weekdays: number[], dates: string[], startTime: s
   return [days, time].filter(Boolean).join(" ") + `, ${range}`;
 }
 
-// Deletes practices and their RSVPs
+// Deletes practices with their RSVPs and jobs
 export async function deletePractices(teamId: string, ids: string[]) {
   if (ids.length === 0) return;
+  await deleteJobsForEvents(teamId, "practice", ids);
   await db.delete(rsvps).where(and(eq(rsvps.eventType, "practice"), inArray(rsvps.eventId, ids)));
   await db.delete(practices).where(and(eq(practices.teamId, teamId), inArray(practices.id, ids)));
 }

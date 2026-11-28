@@ -12,6 +12,8 @@ import { Alert, Card, Page, PageHeader, buttonClass } from "~/components/ui";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { parseId } from "~/utils/ids";
 import { teamPath } from "~/utils/team-path";
+import { checkGameTournament, tournamentChoices } from "~/utils/tournaments.server";
+import { todayISO } from "~/utils/dates";
 
 async function loadGame(request: Request, params: Route.LoaderArgs["params"]) {
   const user = await getUser(request);
@@ -34,22 +36,26 @@ async function loadGame(request: Request, params: Route.LoaderArgs["params"]) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { team, game } = await loadGame(request, params);
-  return data({ team, game, notesText: gameNotesText(game.notes) });
+  return data({ team, game, notesText: gameNotesText(game.notes), tournaments: await tournamentChoices(team.id, todayISO(), game.tournamentId) });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const { team, game } = await loadGame(request, params);
-  const parsed = readGameForm(await request.formData());
+  const formData = await request.formData();
+  const parsed = readGameForm(formData);
 
   if ("error" in parsed) {
     return data({ error: parsed.error }, { status: 400 });
   }
+  const inTournament = await checkGameTournament(team.id, formData.get("tournamentId"), parsed.values.gameDate);
+  if ("error" in inTournament) return data({ error: inTournament.error }, { status: 400 });
 
   // Keep the lineup planner's saved formations; only the text is from the form
   await db
     .update(games)
     .set({
       ...parsed.values,
+      tournamentId: inTournament.tournamentId,
       notes: serializeGameNotes({ ...parseGameNotes(game.notes), text: parsed.notesText }),
       updatedAt: sql`CURRENT_TIMESTAMP`,
     })
@@ -78,7 +84,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function EditGame({ loaderData, actionData }: Route.ComponentProps) {
-  const { team, game, notesText } = loaderData;
+  const { team, game, notesText, tournaments } = loaderData;
   const error = actionData?.error;
   const gamesUrl = `${teamPath(team)}/games`;
 
@@ -91,7 +97,9 @@ export default function EditGame({ loaderData, actionData }: Route.ComponentProp
       <Card>
         <Form method="post" className="space-y-6 p-5 sm:p-6">
           <GameFormFields
+            tournaments={tournaments}
             defaults={{
+              tournamentId: game.tournamentId,
               opponent: game.opponent,
               gameDate: game.gameDate,
               gameTime: game.gameTime,
