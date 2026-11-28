@@ -13,6 +13,14 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-27",
+    title: "Paid up means paid up",
+    summary: "Families who've paid in full no longer see \"I sent a payment\".",
+    changes: [
+      { kind: "fixed", text: "Families: \"I sent a payment\" showed even after your payment was recorded and you owed nothing. It now shows only while there's something left to pay beyond what you've already told the coach you sent." },
+    ],
+  },
+  {
+    date: "2026-11-27",
     title: "Payment receipts",
     summary: "Families get a receipt by email once you record their payment, and you choose which payment alerts reach you.",
     changes: [
