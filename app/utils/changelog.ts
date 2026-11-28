@@ -13,6 +13,17 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-27",
+    title: "Payment receipts",
+    summary: "Families get a receipt by email once you record their payment, and you choose which payment alerts reach you.",
+    changes: [
+      { kind: "new", text: "Coaches: when you record a Venmo payment from Payments to confirm, the family gets a receipt by email with what arrived and what's left to pay." },
+      { kind: "new", text: "Recording a payment by hand, or confirming one a family told you about, has an \"Email the family a receipt\" box. Missed it? Send the receipt any time from the family's history or Recent activity, and see when it last went out." },
+      { kind: "new", text: "Write the receipt email yourself on the Invoices page, previewed with your latest payment." },
+      { kind: "new", text: "Choose which payment alerts you get, as notifications and as email: Venmo payments to record, families saying they paid, and payments someone else on staff recorded. Find them under Notifications on your Account page." },
+    ],
+  },
+  {
+    date: "2026-11-27",
     title: "Venmo payments, matched for you",
     summary: "Forward Venmo's payment emails to the team, and each payment shows up matched to its family, ready to record with one tap.",
     changes: [

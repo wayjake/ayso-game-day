@@ -21,13 +21,19 @@ import { Alert, Badge, Button, Card, CardHeader, EmptyState, Page, PageHeader, c
 import { ArrowCounterClockwise, CaretDown, CheckCircle, EnvelopeSimple, Eye, Invoice, LinkSimple, PaperPlaneTilt, WarningCircle } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { teamPath } from "~/utils/team-path";
+import { appOrigin, latestReceiptPreview, saveReceiptTemplate } from "~/utils/receipts.server";
+import {
+  DEFAULT_RECEIPT_BODY,
+  DEFAULT_RECEIPT_SUBJECT,
+  RECEIPT_PLACEHOLDERS,
+  cleanReceiptTemplate,
+  renderReceiptEmail,
+  type ReceiptEmailData,
+} from "~/utils/receipt-email";
+import { todayISO } from "~/utils/dates";
 
 export function meta() {
   return [{ title: "Invoices - Finances - BenchTalk" }];
-}
-
-function appOrigin(request: Request) {
-  return process.env.APP_URL?.replace(/\/$/, "") || new URL(request.url).origin;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -35,6 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const { team } = await requireTeamAccess((await teamIdFromCode(params.teamCode)), user.id);
   const [preview, sent] = await Promise.all([invoicePreview(team.id), teamInvoices(team.id)]);
   const origin = appOrigin(request);
+  const coachName = user.name || user.email.split("@")[0];
   return data({
     teamId: team.id,
     teamCode: team.code,
@@ -48,6 +55,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     sampleUrl: `${origin}/pay/…`,
     sent,
+    receiptTemplate: { subject: team.receiptEmailSubject ?? DEFAULT_RECEIPT_SUBJECT, body: team.receiptEmailBody ?? DEFAULT_RECEIPT_BODY },
+    receiptLatest: await latestReceiptPreview(team.id, coachName, origin),
+    receiptSample: {
+      team: team.name,
+      coach: coachName,
+      family: "Alex Sample",
+      players: ["Alex Sample"],
+      cents: 8500,
+      method: "Venmo",
+      date: todayISO(),
+      balanceCents: 0,
+      payUrl: `${origin}/pay/…`,
+    },
   });
 }
 
@@ -58,6 +78,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("_action");
   const template = () => cleanTemplate(String(formData.get("subject") ?? ""), String(formData.get("body") ?? ""));
 
+  if (intent === "saveReceiptEmail") {
+    return runLedgerAction(() => saveReceiptTemplate(team.id, cleanReceiptTemplate(String(formData.get("subject") ?? ""), String(formData.get("body") ?? ""))));
+  }
   if (intent === "saveEmail") {
     return runLedgerAction(() => saveInvoiceTemplate(team.id, template()));
   }
@@ -78,7 +101,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 type Draft = Route.ComponentProps["loaderData"]["preview"]["drafts"][number];
 
 export default function Invoices({ loaderData }: Route.ComponentProps) {
-  const { teamCode, teamName, coachName, formKey, template, preview, sampleUrl, sent } = loaderData;
+  const { teamCode, teamName, coachName, formKey, template, preview, sampleUrl, sent, receiptTemplate, receiptLatest, receiptSample } = loaderData;
   const base = teamPath(teamCode, "finances");
   const drafts = preview.drafts;
 
@@ -169,6 +192,8 @@ export default function Invoices({ loaderData }: Route.ComponentProps) {
       />
 
       {drafts.length > 0 && <SendBar formKey={formKey} chosen={chosen} subject={subject} body={body} />}
+
+      <ReceiptEmailSection saved={receiptTemplate} sample={receiptLatest ?? receiptSample} real={Boolean(receiptLatest)} />
 
       <section className="mt-10">
         <CardHeader title="Sent" count={sent.length} className="mb-3" />
@@ -264,9 +289,6 @@ function EmailSection({
   sampleUrl: string;
 }) {
   const save = useFetcher<{ ok?: boolean; error?: string }>();
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const subjectRef = useRef<HTMLInputElement>(null);
-  const lastField = useRef<"subject" | "body">("body");
   const emailable = drafts.filter((d) => !d.familyKey.startsWith("staff:"));
   const draft = emailable.find((d) => d.familyKey === previewKey) ?? emailable[0] ?? null;
   const dirty = subject !== saved.subject || body !== saved.body;
@@ -303,25 +325,7 @@ function EmailSection({
     );
   }, [subject, body, draft, index, chosen.length, nextNumber, teamName, coachName, sampleUrl]);
 
-  function insert(key: string) {
-    const token = `{${key}}`;
-    const field = lastField.current === "subject" ? subjectRef.current : bodyRef.current;
-    const value = lastField.current === "subject" ? subject : body;
-    const set = lastField.current === "subject" ? setSubject : setBody;
-    const start = field?.selectionStart ?? value.length;
-    const end = field?.selectionEnd ?? value.length;
-    caret.current = { field, at: start + token.length };
-    set(value.slice(0, start) + token + value.slice(end));
-  }
-  // Put the cursor after what was inserted, once React has written the new value
-  const caret = useRef<{ field: HTMLInputElement | HTMLTextAreaElement | null; at: number } | null>(null);
-  useLayoutEffect(() => {
-    const c = caret.current;
-    if (!c?.field) return;
-    caret.current = null;
-    c.field.focus();
-    c.field.setSelectionRange(c.at, c.at);
-  }, [subject, body]);
+  const { subjectRef, bodyRef, lastField, insert } = usePlaceholderInsert(subject, setSubject, body, setBody);
 
   return (
     <section id="invoice-email" className="mt-10 scroll-mt-24">
@@ -437,6 +441,139 @@ function EmailSection({
       </div>
     </section>
   );
+}
+
+// The receipt families get once a payment is recorded: the team's words, previewed with its latest payment
+function ReceiptEmailSection({ saved, sample, real }: { saved: { subject: string; body: string }; sample: ReceiptEmailData; real: boolean }) {
+  const save = useFetcher<{ ok?: boolean; error?: string }>();
+  const [subject, setSubject] = useState(saved.subject);
+  const [body, setBody] = useState(saved.body);
+  const { subjectRef, bodyRef, lastField, insert } = usePlaceholderInsert(subject, setSubject, body, setBody);
+  const dirty = subject !== saved.subject || body !== saved.body;
+  const email = useMemo(() => renderReceiptEmail({ subject, body }, sample), [subject, body, sample]);
+
+  return (
+    <section id="receipt-email" className="mt-10 scroll-mt-24">
+      <CardHeader title="Receipt email" className="mb-1" />
+      <p className="mb-3 text-sm text-muted">
+        Families get it when you record a Venmo payment from Payments to confirm, when you tick “Email the family a receipt” on a payment, or when you send one later from their page.
+      </p>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <save.Form method="post" className="space-y-4">
+            <input type="hidden" name="_action" value="saveReceiptEmail" />
+            <div>
+              <label htmlFor="receipt-subject" className={labelClass}>Subject</label>
+              <input
+                id="receipt-subject"
+                ref={subjectRef}
+                name="subject"
+                value={subject}
+                maxLength={SUBJECT_MAX}
+                onChange={(e) => setSubject(e.target.value)}
+                onFocus={() => (lastField.current = "subject")}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="receipt-body" className={labelClass}>Message</label>
+              <textarea
+                id="receipt-body"
+                ref={bodyRef}
+                name="body"
+                value={body}
+                maxLength={BODY_MAX}
+                rows={12}
+                onChange={(e) => setBody(e.target.value)}
+                onFocus={() => (lastField.current = "body")}
+                className={cx(inputClass, "font-mono text-sm leading-relaxed")}
+              />
+              <p className={hintClass}>A blank line starts a new paragraph. It never says who paid or shows your staff notes.</p>
+            </div>
+            <div>
+              <p className={labelClass}>Insert</p>
+              <div className="flex flex-wrap gap-2">
+                {RECEIPT_PLACEHOLDERS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    title={p.hint}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => insert(p.key)}
+                    className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs font-semibold text-ink ring-1 ring-line hover:ring-primary pointer-coarse:py-2.5"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {save.data?.error && <Alert>{save.data.error}</Alert>}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" disabled={!dirty || save.state !== "idle"}>
+                {save.state !== "idle" ? "Saving…" : "Save receipt email"}
+              </Button>
+              {(subject !== DEFAULT_RECEIPT_SUBJECT || body !== DEFAULT_RECEIPT_BODY) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubject(DEFAULT_RECEIPT_SUBJECT);
+                    setBody(DEFAULT_RECEIPT_BODY);
+                  }}
+                  className="tap inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-ink"
+                >
+                  <ArrowCounterClockwise size={16} />
+                  Back to the default
+                </button>
+              )}
+              <span className="text-sm text-muted">{dirty ? "Not saved yet." : save.data?.ok ? "Saved" : ""}</span>
+            </div>
+          </save.Form>
+        </Card>
+
+        <Card className="p-4">
+          <p className="flex items-center gap-3 text-sm font-medium">
+            <EnvelopeSimple size={18} className="text-muted" />
+            {real ? `Preview with ${sample.family}'s latest payment` : "Preview with a sample payment"}
+          </p>
+          <dl className="mt-3 space-y-1 border-b border-line pb-3 text-sm">
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-muted">Subject</dt>
+              <dd className="min-w-0 break-words font-semibold">{email.subject}</dd>
+            </div>
+          </dl>
+          {/* Built by renderReceiptEmail, which escapes everything the coach typed */}
+          <div className="mt-3 overflow-x-auto rounded-xl bg-white p-4 text-slate-900 ring-1 ring-line" dangerouslySetInnerHTML={{ __html: email.html }} />
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+// Insert-a-placeholder buttons: put {key} where the cursor was, in whichever field had it last
+function usePlaceholderInsert(subject: string, setSubject: (s: string) => void, body: string, setBody: (s: string) => void) {
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const lastField = useRef<"subject" | "body">("body");
+  // Put the cursor after what was inserted, once React has written the new value
+  const caret = useRef<{ field: HTMLInputElement | HTMLTextAreaElement | null; at: number } | null>(null);
+  useLayoutEffect(() => {
+    const c = caret.current;
+    if (!c?.field) return;
+    caret.current = null;
+    c.field.focus();
+    c.field.setSelectionRange(c.at, c.at);
+  }, [subject, body]);
+  function insert(key: string) {
+    const token = `{${key}}`;
+    const field = lastField.current === "subject" ? subjectRef.current : bodyRef.current;
+    const value = lastField.current === "subject" ? subject : body;
+    const set = lastField.current === "subject" ? setSubject : setBody;
+    const start = field?.selectionStart ?? value.length;
+    const end = field?.selectionEnd ?? value.length;
+    caret.current = { field, at: start + token.length };
+    set(value.slice(0, start) + token + value.slice(end));
+  }
+  return { subjectRef, bodyRef, lastField, insert };
 }
 
 function SendBar({ formKey, chosen, subject, body }: { formKey: string; chosen: Draft[]; subject: string; body: string }) {

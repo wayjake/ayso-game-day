@@ -1,7 +1,7 @@
 import { sendNotification, WebPushError } from "web-push";
 import { db, pushSubscriptions, users } from "~/db";
 import { and, eq, inArray } from "drizzle-orm";
-import { isSwitchableKind, parseNotifyPrefs, wantsNotification, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
+import { isSwitchable, isSwitchableKind, parseNotifyPrefs, prefKey, wantsNotification, type NotifyChannel, type NotifyKind, type NotifyPrefs } from "~/utils/notify";
 
 // Web Push with VAPID. Nothing is sent unless VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY and VAPID_SUBJECT are set (generate a pair with
@@ -48,9 +48,9 @@ export async function getNotifyPrefs(userId: string): Promise<NotifyPrefs> {
   return parseNotifyPrefs(row?.prefs);
 }
 
-export async function setNotifyPref(userId: string, kind: NotifyKind, on: boolean) {
-  if (!isSwitchableKind(kind)) throw new Error("That kind of notification can't be turned off");
-  const prefs = { ...(await getNotifyPrefs(userId)), [kind]: on };
+export async function setNotifyPref(userId: string, kind: NotifyKind, on: boolean, channel: NotifyChannel = "push") {
+  if (!isSwitchable(kind, channel)) throw new Error("That kind of notification can't be turned off");
+  const prefs = { ...(await getNotifyPrefs(userId)), [prefKey(kind, channel)]: on };
   await db.update(users).set({ notifyPrefs: JSON.stringify(prefs) }).where(eq(users.id, userId));
   return prefs;
 }

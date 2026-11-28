@@ -5,8 +5,12 @@
 //
 // Stored as JSON overrides in users.notify_prefs, so adding a category later
 // needs no migration: anyone without an override gets its default.
+//
+// A category with `email` can also come by email (staff payment alerts). Its
+// email choice is stored under "email:<kind>", apart from the push one.
 
-export type NotifyKind = "team" | "chat" | "replies" | "reactions" | "posts" | "comments" | "dropouts" | "payments";
+export type NotifyKind = "team" | "chat" | "replies" | "reactions" | "posts" | "comments" | "dropouts" | "payments" | "venmo" | "paymentsRecorded";
+export type NotifyChannel = "push" | "email";
 
 export type NotifyCategory = {
   kind: NotifyKind;
@@ -17,6 +21,8 @@ export type NotifyCategory = {
   /** Only coaches get these */
   coachOnly?: boolean;
   default: boolean;
+  /** Can also come by email; the default for that */
+  email?: { default: boolean };
 };
 
 export const NOTIFY_CATEGORIES: NotifyCategory[] = [
@@ -33,10 +39,22 @@ export const NOTIFY_CATEGORIES: NotifyCategory[] = [
   { kind: "posts", label: "New photos and videos", detail: "When someone posts to the team feed.", default: false },
   { kind: "comments", label: "Comments on your posts", detail: "When someone comments on a photo or video you posted.", default: true },
   { kind: "dropouts", label: "Players dropping out", detail: "When a family says their player can't make it.", coachOnly: true, default: true },
-  { kind: "payments", label: "Payments to confirm", detail: "When a family says they sent money.", coachOnly: true, default: true },
+  { kind: "venmo", label: "Venmo payments to record", detail: "When a forwarded Venmo email shows a family paid.", coachOnly: true, default: true, email: { default: true } },
+  { kind: "payments", label: "Families saying they paid", detail: "When a family taps “I sent a payment”.", coachOnly: true, default: true, email: { default: true } },
+  {
+    kind: "paymentsRecorded",
+    label: "Payments recorded",
+    detail: "When someone else on staff records a payment, and whether the family got a receipt.",
+    coachOnly: true,
+    default: true,
+    email: { default: false },
+  },
 ];
 
-export type NotifyPrefs = Partial<Record<NotifyKind, boolean>>;
+type PrefKey = NotifyKind | `email:${NotifyKind}`;
+export type NotifyPrefs = Partial<Record<PrefKey, boolean>>;
+
+export const prefKey = (kind: NotifyKind, channel: NotifyChannel = "push"): PrefKey => (channel === "email" ? `email:${kind}` : kind);
 
 export function parseNotifyPrefs(json: string | null | undefined): NotifyPrefs {
   if (!json) return {};
@@ -46,6 +64,8 @@ export function parseNotifyPrefs(json: string | null | undefined): NotifyPrefs {
     const prefs: NotifyPrefs = {};
     for (const c of NOTIFY_CATEGORIES) {
       if (typeof value[c.kind] === "boolean") prefs[c.kind] = value[c.kind];
+      const email = prefKey(c.kind, "email");
+      if (c.email && typeof value[email] === "boolean") prefs[email] = value[email];
     }
     return prefs;
   } catch {
@@ -53,12 +73,20 @@ export function parseNotifyPrefs(json: string | null | undefined): NotifyPrefs {
   }
 }
 
-export function wantsNotification(prefs: NotifyPrefs, kind: NotifyKind) {
+export function wantsNotification(prefs: NotifyPrefs, kind: NotifyKind, channel: NotifyChannel = "push") {
   const category = NOTIFY_CATEGORIES.find((c) => c.kind === kind);
+  if (channel === "email") {
+    if (!category?.email) return false;
+    return prefs[prefKey(kind, "email")] ?? category.email.default;
+  }
   if (!category || category.locked) return true;
   return prefs[kind] ?? category.default;
 }
 
 export function isSwitchableKind(kind: string): kind is NotifyKind {
   return NOTIFY_CATEGORIES.some((c) => c.kind === kind && !c.locked);
+}
+
+export function isSwitchable(kind: string, channel: NotifyChannel): kind is NotifyKind {
+  return channel === "email" ? NOTIFY_CATEGORIES.some((c) => c.kind === kind && c.email) : isSwitchableKind(kind);
 }

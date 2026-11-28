@@ -91,6 +91,13 @@ export function PushControls({
           <NotifyCategories push={push} audience={audience} />
         </div>
       )}
+      {/* No push on this server: the payment emails can still be chosen */}
+      {push.status === "unconfigured" && audience === "coach" && (
+        <div className="border-t border-line pt-4">
+          <p className="mb-3 text-xs text-muted">Emails to you:</p>
+          <NotifyCategories push={push} audience={audience} emailOnly />
+        </div>
+      )}
 
       {tested && push.status === "on" && <PushTestResult outcome={tested} />}
       {push.error && <Alert tone="danger">{push.error}</Alert>}

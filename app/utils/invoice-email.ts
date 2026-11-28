@@ -108,7 +108,8 @@ function values(d: InvoiceEmailData) {
   };
 }
 
-function fill(text: string, plain: Record<string, string>, html: boolean) {
+// Shared with the receipt email (receipt-email.ts)
+export function fillPlaceholders(text: string, plain: Record<string, string>, html: boolean) {
   const out = html ? escapeHtml(text) : text;
   return out.replace(PLACEHOLDER, (whole, key: string) => {
     const v = plain[key.toLowerCase()];
@@ -124,7 +125,7 @@ export function renderInvoiceEmail(template: InvoiceEmailTemplate, d: InvoiceEma
   if (!/\{\s*pay_link\s*\}/i.test(body)) body = `${body}\n\n{pay_link}`;
   const { owed, plain } = values(d);
 
-  const subject = fill(subjectTpl.replace(BLOCK, "").replace(/[\r\n]+/g, " "), plain, false)
+  const subject = fillPlaceholders(subjectTpl.replace(BLOCK, "").replace(/[\r\n]+/g, " "), plain, false)
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, SUBJECT_MAX);
@@ -137,7 +138,7 @@ export function renderInvoiceEmail(template: InvoiceEmailTemplate, d: InvoiceEma
     .map((p) => {
       if (isBlock(p, "items")) return [...d.lines.map((l) => `  ${l.label}: ${signedAmount(l.cents)}`), `  Total: ${signedAmount(d.totalCents)}`].join("\n");
       if (isBlock(p, "pay_link")) return owed > 0 ? `Pay ${formatCents(owed)} here, no sign-in needed:\n${d.payUrl}` : `See your invoices here, no sign-in needed:\n${d.payUrl}`;
-      return fill(p, plain, false);
+      return fillPlaceholders(p, plain, false);
     })
     .join("")
     .replace(/\n{3,}/g, "\n\n")
@@ -156,19 +157,24 @@ ${d.lines.map((l) => `<tr><td style="${cell};color:#475569">${escapeHtml(l.label
       if (isBlock(p, "pay_link")) {
         return `<p style="margin:0 0 16px"><a href="${escapeHtml(d.payUrl)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">${owed > 0 ? `See it and pay ${formatCents(owed)}` : "See your invoices"}</a><br><span style="color:#64748b;font-size:13px">No sign-in needed.</span></p>`;
       }
-      return p
-        .split(/\n\s*\n/)
-        .map((para) => para.trim())
-        .filter(Boolean)
-        .map((para) => `<p style="margin:0 0 16px">${fill(para, plain, true).replace(/\n/g, "<br>")}</p>`)
-        .join("\n");
+      return paragraphsHtml(p, plain);
     })
     .filter(Boolean)
     .join("\n");
 
-  return {
-    subject,
-    text,
-    html: `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a;max-width:520px">\n${html}\n</div>`,
-  };
+  return { subject, text, html: emailHtml(html) };
+}
+
+// The coach's words as HTML paragraphs: a blank line starts a new one
+export function paragraphsHtml(text: string, plain: Record<string, string>) {
+  return text
+    .split(/\n\s*\n/)
+    .map((para) => para.trim())
+    .filter(Boolean)
+    .map((para) => `<p style="margin:0 0 16px">${fillPlaceholders(para, plain, true).replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
+}
+
+export function emailHtml(inner: string) {
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a;max-width:520px">\n${inner}\n</div>`;
 }

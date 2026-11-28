@@ -4,11 +4,10 @@ import { db, guardians, inboundEmails, ledgerClaims, ledgerInvoices, ledgerTxns,
 import { familyMembersFromKey, teamFamilies, type Family } from "~/utils/billing.server";
 import { sendingDomain, type ReceivedEmail } from "~/utils/email.server";
 import { getHeader, parseAddress } from "~/utils/email-reply";
-import { getCoachUserIds } from "~/utils/family.server";
 import { familyRefCode, memberKey, parsePlayerIds, recordPayment, teamCodeFor } from "~/utils/ledger.server";
 import { LedgerError } from "~/utils/ledger";
 import { formatCents } from "~/utils/money";
-import { sendPush } from "~/utils/push.server";
+import { alertStaff } from "~/utils/staff-alerts.server";
 import { teamPath } from "~/utils/team-path";
 import {
   GMAIL_FORWARDING_SENDER,
@@ -187,17 +186,23 @@ export async function receiveVenmoEmail(inbound: typeof inboundEmails.$inferSele
   if (!row) return true; // Already had this one (forwarded twice)
 
   const family = match.familyKey ? families.find((f) => f.key === match.familyKey) : null;
-  await sendPush(await getCoachUserIds(teamId), "payments", {
-    title: verified
-      ? `${parsed.payerName} paid you ${formatCents(parsed.cents)} on Venmo`
-      : `Check Venmo: an email says ${parsed.payerName} paid ${formatCents(parsed.cents)}`,
-    body: !verified
-      ? "We couldn't confirm it came from Venmo. Check your Venmo app before you record it."
-      : family
-        ? `For ${family.name}. Tap to record it.`
-        : "Tap to pick who it's for and record it.",
+  const title = verified
+    ? `${parsed.payerName} paid you ${formatCents(parsed.cents)} on Venmo`
+    : `Check Venmo: an email says ${parsed.payerName} paid ${formatCents(parsed.cents)}`;
+  const body = !verified
+    ? "We couldn't confirm it came from Venmo. Check your Venmo app before you record it."
+    : family
+      ? `For ${family.name}. Tap to record it.`
+      : "Tap to pick who it's for and record it.";
+  await alertStaff(teamId, "venmo", {
+    title,
+    body,
+    emailText: !verified
+      ? `${body}\n\nRecord it from Payments to confirm on the team's Finances page, or dismiss it there.`
+      : `${family ? `It looks like it's for ${family.name}.` : "Nothing in the note said who it's from, so pick the family."}${parsed.note ? ` The note says “${parsed.note.slice(0, 200)}”.` : ""}\n\nRecord it from Payments to confirm on the team's Finances page. The family gets a receipt by email once it's recorded.`,
     url: teamPath(await teamCodeFor(teamId), "finances"),
     tag: `ledger-venmo-${row.id}`,
+    emailKey: `venmo-${row.id}`,
   });
   return true;
 }
@@ -266,7 +271,7 @@ export async function recordVenmoPayment(teamId: string, venmoId: string, family
 
   const playerIds = family.members.filter((m) => m.type === "player").map((m) => m.id);
   const claim = await matchingClaim(teamId, playerIds, row.cents);
-  const { txnId } = await recordPayment({
+  const posted = await recordPayment({
     teamId,
     members: family.members,
     cents: row.cents,
@@ -283,8 +288,9 @@ export async function recordVenmoPayment(teamId: string, venmoId: string, family
   });
   await db
     .update(ledgerVenmoPayments)
-    .set({ status: "recorded", familyKey, txnId, resolvedBy: by, resolvedAt: new Date().toISOString() })
+    .set({ status: "recorded", familyKey, txnId: posted.txnId, resolvedBy: by, resolvedAt: new Date().toISOString() })
     .where(eq(ledgerVenmoPayments.id, row.id));
+  return posted;
 }
 
 export async function dismissVenmoPayment(teamId: string, venmoId: string, by: string) {

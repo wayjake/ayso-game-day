@@ -100,10 +100,14 @@ export function readRefundable(formData: FormData, totalCents: Cents | null) {
 // A fresh key for each render of a page's forms (see LedgerForm)
 export const newFormKey = () => crypto.randomUUID();
 
+// `fn` can return { message } to tell the form how it went (warn: it worked,
+// but something on the side didn't, like a receipt that couldn't be sent)
 export async function runLedgerAction(fn: () => Promise<unknown>) {
   try {
-    await fn();
-    return data({ ok: true as const, error: undefined });
+    const result = await fn();
+    const note = result && typeof result === "object" && "message" in result ? (result as { message?: unknown; warn?: unknown }) : null;
+    const message = typeof note?.message === "string" ? note.message : undefined;
+    return data({ ok: true as const, error: undefined, message, warn: note?.warn === true });
   } catch (e) {
     if (e instanceof LedgerError || e instanceof FormError) {
       return data({ ok: false as const, error: e.message }, { status: 400 });
