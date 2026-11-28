@@ -30,9 +30,9 @@ export default function FamilyMessages({ loaderData }: Route.ComponentProps) {
         </Link>
       </div>
       <p className="mt-1 mb-6 text-muted">
-        Team chat goes to every family and coach. Message a coach or team manager on their own, or start a group with other families: only the people in it see it.
+        Team chat and channels are where the team talks. Message a coach or team manager on their own, or start a group with other families: only the people in it see it.
       </p>
-      <ConversationList items={loaderData.conversations} hrefFor={(id) => `/family/messages/${id}`} />
+      <ConversationList items={loaderData.conversations} hrefFor={(id) => `/family/messages/${id}`} sections />
     </div>
   );
 }

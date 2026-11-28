@@ -366,15 +366,28 @@ export const rsvps = sqliteTable('rsvps', {
 ]);
 
 // A team chat (every coach and parent on the team), a private thread between
-// one family and one staff member, or a group chat (only its members).
+// one family and one staff member, a group chat (only its members), or a
+// channel: a named, lasting conversation that staff make and manage.
 export const conversations = sqliteTable('conversations', {
   id: text('id').primaryKey().$defaultFn(() => newId()),
   teamId: text('team_id').notNull().references(() => teams.id),
-  kind: text('kind', { enum: ['team', 'direct', 'group'] }).notNull(),
+  kind: text('kind', { enum: ['team', 'direct', 'group', 'channel'] }).notNull(),
   // Groups: an optional name (otherwise titled by its members) and who started
   // it. Anyone on the team can start one; members are in conversationMembers.
+  // Channels: always named.
   name: text('name'),
   createdBy: text('created_by').references(() => users.id),
+  // Channels only. Who reads it: 'everyone' (all staff and families, like the
+  // team chat), 'staff', 'families' (all staff plus the families picked in
+  // conversationMembers) or 'private' (only the people in conversationMembers,
+  // staff included: other staff and the owner can't see it).
+  audience: text('audience', { enum: ['everyone', 'staff', 'families', 'private'] }),
+  topic: text('topic'), // Channels: one line on what it's for
+  // Channels: families can react and reply in threads but not post
+  staffOnlyPosts: integer('staff_only_posts', { mode: 'boolean' }).notNull().default(false),
+  // Channels: archived ones are read only and drop out of the lists
+  archivedAt: text('archived_at'),
+  archivedBy: text('archived_by').references(() => users.id),
   // A 'direct' thread is one-to-one: one staff member (staffUserId) and one
   // family. Only those two can read it; other staff can't. The family side is a
   // parent account, a family email, or both. A family that isn't on the app yet
@@ -392,6 +405,7 @@ export const conversations = sqliteTable('conversations', {
   uniqueIndex('conversations_team_chat_idx').on(t.teamId).where(sql`kind = 'team'`),
   uniqueIndex('conversations_direct_staff_idx').on(t.teamId, t.staffUserId, t.parentUserId).where(sql`kind = 'direct'`),
   uniqueIndex('conversations_family_email_staff_idx').on(t.teamId, t.staffUserId, t.familyEmail).where(sql`kind = 'direct' and family_email is not null`),
+  index('conversations_channel_idx').on(t.teamId).where(sql`kind = 'channel'`),
 ]);
 
 export const messages = sqliteTable('messages', {
@@ -424,7 +438,9 @@ export const messages = sqliteTable('messages', {
   index('messages_email_message_idx').on(t.emailMessageId),
 ]);
 
-// Who is in a group chat. Only members can read it, whoever owns the team. A
+// Who is in a group chat, or in a channel for picked families or a private
+// one. Only members can read a group or a private channel, whoever owns the
+// team (every staff member reads a 'families' channel). A
 // member is an account (staff or parent), or a family email for a family not
 // on the app yet: they see the group once they join (claimFamilyConversation
 // fills in userId). Being a member counts only while that person is still on

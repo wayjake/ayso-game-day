@@ -13,6 +13,17 @@ export type Release = {
 export const releases: Release[] = [
   {
     date: "2026-11-27",
+    title: "Channels",
+    summary: "Named, lasting places to talk about one thing, like tournament travel or snacks, alongside the team chat.",
+    changes: [
+      { kind: "new", text: "Coaches: make a channel from Messages (the # button, or New channel). Pick who's in it: everyone on the team, staff only, all staff plus the families you choose, or private, where only the people you pick can see it, other staff included." },
+      { kind: "new", text: "Turn on \"Only staff post\" for an updates channel: families can still react and reply in a thread, but only staff start new messages." },
+      { kind: "new", text: "Staff who can see a channel can rename it, say what it's for, change who's in it, or archive it when the season's done. Archived channels are read only and can be brought back." },
+      { kind: "improved", text: "Messages now lists Channels (the team chat first) above your direct messages and group chats. Group chats are still there for quick, one-off conversations." },
+    ],
+  },
+  {
+    date: "2026-11-27",
     title: "Know when families join",
     summary: "Get a heads-up when a family signs up for BenchTalk, with how many are on the app so far.",
     changes: [

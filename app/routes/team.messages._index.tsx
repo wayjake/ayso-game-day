@@ -5,13 +5,14 @@ import { getUser } from "~/utils/auth.server";
 import { requireTeamAccess } from "~/utils/team-access.server";
 import { listFamilies } from "~/utils/parent-invites.server";
 import { pickerOptions, startConversation } from "~/utils/groups.server";
+import { archivedChannels } from "~/utils/channels.server";
 import { NewMessageForm } from "~/components/PeoplePicker";
 import { familyLabel } from "~/utils/announcements.server";
 import { assignUnmatched, dismissUnmatched, listUnmatched } from "~/utils/inbound-email.server";
 import { formatMessageTime } from "~/utils/dates";
 import { stripQuotedReply } from "~/utils/email-reply";
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass, inputClass } from "~/components/ui";
-import { AddressBook, ChatsCircle, Question } from "@phosphor-icons/react";
+import { AddressBook, Archive, ChatsCircle, Hash, Question } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { parseId } from "~/utils/ids";
 import { teamPath } from "~/utils/team-path";
@@ -36,7 +37,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     preview: stripQuotedReply(u.text ?? "").body.slice(0, 280),
   }));
 
-  return data({ teamId, families, people, unmatched });
+  const archived = await archivedChannels(teamId, user.id);
+
+  return data({ teamId, families, people, unmatched, archived });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -71,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MessagesIndex({ loaderData, actionData, params: routeParams }: Route.ComponentProps) {
-  const { teamId, families, people, unmatched } = loaderData;
+  const { teamId, families, people, unmatched, archived } = loaderData;
   const base = teamPath(routeParams.teamCode);
   const navigation = useNavigation();
   const [params] = useSearchParams();
@@ -90,7 +93,7 @@ export default function MessagesIndex({ loaderData, actionData, params: routePar
           <ChatsCircle size={26} weight="fill" />
         </span>
         <h2 className="mt-3 font-display text-2xl font-bold">Pick a conversation</h2>
-        <p className="mt-1 text-sm text-muted">Choose one on the left, or start a new one below: one family, or several for a group chat.</p>
+        <p className="mt-1 text-sm text-muted">Choose one on the left, or start a new one below: one family, several for a group chat, or a channel.</p>
       </div>
 
       {actionData && "error" in actionData && <p className="mt-6 text-sm text-danger">{actionData.error}</p>}
@@ -166,6 +169,35 @@ export default function MessagesIndex({ loaderData, actionData, params: routePar
               error={actionData && "startError" in actionData ? actionData.startError : null}
             />
           </>
+        )}
+      </Card>
+
+      <Card className="mt-6 p-5">
+        <CardHeader title="Channels" className="mb-1" />
+        <p className="mb-3 text-sm text-muted">
+          A lasting place for one topic, like tournament travel or snacks: for everyone, staff only, some families, or private. Staff make and
+          manage them; group chats are for quick, one-off conversations.
+        </p>
+        <Link to={`${base}/messages/channels/new`} className={buttonClass({ variant: "secondary" })}>
+          <Hash size={18} weight="bold" />
+          New channel
+        </Link>
+        {archived.length > 0 && (
+          <div className="mt-4 border-t border-line pt-3">
+            <h3 className="mb-1 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+              <Archive size={14} />
+              Archived
+            </h3>
+            <ul className="flex flex-wrap gap-2">
+              {archived.map((c) => (
+                <li key={c.id}>
+                  <Link to={`${base}/messages/${c.id}`} className="inline-flex min-h-9 items-center rounded-full bg-surface-2 px-3 text-sm font-semibold text-ink ring-1 ring-line hover:bg-surface pointer-coarse:min-h-11">
+                    # {c.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </Card>
 

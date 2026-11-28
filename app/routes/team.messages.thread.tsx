@@ -30,8 +30,11 @@ import { taskDraftFor } from "~/utils/tasks.server";
 import { getReadReceipts, markConversationRead } from "~/utils/read-receipts.server";
 import { groupView, handleGroupAction } from "~/utils/groups.server";
 import { GroupPanel, type GroupInfo } from "~/components/GroupPanel";
+import { channelView, handleChannelAction } from "~/utils/channels.server";
+import { ChannelPanel } from "~/components/ChannelPanel";
+import type { ChannelInfo } from "~/utils/channels";
 import { Button, cx } from "~/components/ui";
-import { ArrowLeft, Check, NotePencil, SidebarSimple, UsersThree } from "@phosphor-icons/react";
+import { ArrowLeft, Check, Info, NotePencil, SidebarSimple, UsersThree } from "@phosphor-icons/react";
 import { navMotion } from "~/utils/nav-motion";
 import { ackSummaries } from "~/utils/announcements.server";
 import { teamIdFromCode } from "~/utils/team-access.server";
@@ -44,7 +47,7 @@ async function access(request: Request, teamId: string, conversationId: string |
   if (!found || found.viewer !== "coach" || found.conversation.teamId !== teamId) {
     throw new Response("Conversation not found", { status: 404 });
   }
-  return { user, conversation: found.conversation };
+  return { user, conversation: found.conversation, canPost: found.canPost, canReply: found.canReply };
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -60,6 +63,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let familyEmail: string | null = null;
   let delivery: FamilyDelivery = { email: null, pushReady: false };
   let group: GroupInfo | null = null;
+  let channel: ChannelInfo | null = null;
+
+  if (conversation.kind === "channel") {
+    channel = await channelView(conversation, { id: user.id, side: "coach" });
+    title = `# ${channel.name}`;
+    subtitle = channel.topic ? `${channel.summary} · ${channel.topic}` : channel.summary;
+  }
 
   if (conversation.kind === "group") {
     group = await groupView(conversation, user.id);
@@ -118,6 +128,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     title,
     subtitle,
     group,
+    channel,
     kind: conversation.kind,
     messages,
     thread,
@@ -134,9 +145,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { user, conversation } = await access(request, (await teamIdFromCode(params.teamCode)), parseId(params.conversationId));
+  const { user, conversation, canPost, canReply } = await access(request, (await teamIdFromCode(params.teamCode)), parseId(params.conversationId));
   const formData = await request.formData();
   const intent = formData.get("_action");
+
+  const channeled = await handleChannelAction(formData, conversation, { id: user.id, side: "coach" });
+  if (channeled) {
+    if ("left" in channeled) return redirect(teamPath(params.teamCode, "messages"));
+    return data(channeled, { status: "error" in channeled ? 400 : 200 });
+  }
 
   const notes = await handleNoteAction(formData, conversation.teamId, user.id);
   if (notes) return data(notes);
@@ -151,6 +168,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     await setNeedsReply(conversation.id, intent === "undone");
     return data({ ok: true });
   }
+  // An archived channel is read only
+  if (!canReply && (intent === "react" || intent === "send")) return data({ error: "This channel is archived" }, { status: 403 });
   if (intent === "react") {
     await toggleReaction(conversation, user, parseId(formData.get("messageId")), String(formData.get("emoji") ?? ""));
     return data({ ok: true });
@@ -160,9 +179,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return deleted ? data({ ok: true }) : data({ error: "That message can't be deleted" }, { status: 400 });
   }
   if (intent !== "send") return data({ error: "Unknown action" }, { status: 400 });
+  const replyTo = parseId(formData.get("replyTo"));
+  if (!replyTo && !canPost) return data({ error: "You can't post here" }, { status: 403 });
   const message = await postMessage(conversation, user, String(formData.get("body") ?? ""), {
     email: formData.get("alsoEmail") === "1",
-    replyTo: parseId(formData.get("replyTo")),
+    replyTo,
   });
   if (!message) return data({ error: "Write a message first" }, { status: 400 });
   if (message.emailError) return data({ error: `Sent in the app, but the email didn't go out: ${message.emailError}` });
@@ -176,7 +197,7 @@ export function meta({ data }: Route.MetaArgs) {
 export default function CoachThread({ loaderData, params }: Route.ComponentProps) {
   const {
     me, title, subtitle, kind, messages, thread, realtime, needsReply, familyEmail, delivery, notes, conversationId, context, teamContext, teamId, draft, acks, group,
-    receipts,
+    receipts, channel,
   } = loaderData;
   // The draft is in the box now; drop it from the URL so a reload doesn't bring it back
   const [searchParams, setSearchParams] = useSearchParams();
@@ -193,7 +214,7 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
   const done = useFetcher();
   const pending = done.formData?.get("_action");
   const flagged = pending ? pending === "undone" : needsReply;
-  const hasDetails = Boolean(context || teamContext || group);
+  const hasDetails = Boolean(context || teamContext || group || channel);
 
   return (
     // Phones: a page of its own, as before. lg: fills the pane beside the list. xl: plus the family details.
@@ -254,6 +275,20 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
                 <span className="tabular text-muted">{group.members.length}</span>
               </Button>
             )}
+            {channel && (
+              // What it's for and who's in it; in the details pane on wide screens
+              <Button
+                size="sm"
+                variant={showPeople ? "secondary" : "ghost"}
+                onClick={() => setShowPeople((v) => !v)}
+                aria-expanded={showPeople}
+                aria-controls="channel-about"
+                className={cx(showDetails && "xl:hidden")}
+              >
+                <Info size={16} />
+                <span className="hidden sm:inline">About</span>
+              </Button>
+            )}
             {hasDetails && (
               <span className="hidden xl:block">
               <Button
@@ -278,6 +313,11 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
               <GroupPanel group={group} meId={me} />
             </div>
           )}
+          {showPeople && channel && (
+            <div id="channel-about" className={cx("mt-3 max-h-[60dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line", showDetails && "xl:hidden")}>
+              <ChannelPanel channel={channel} meId={me} />
+            </div>
+          )}
           {showNotes && familyEmail && (
             <div id="thread-notes" className="mt-3 max-h-[50dvh] overflow-y-auto rounded-xl bg-surface p-3 ring-1 ring-line">
               <FamilyNotes notes={notes} familyEmail={familyEmail} meId={me} />
@@ -297,9 +337,14 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
               ? "No messages yet. Post something for every family on the team."
               : kind === "group"
                 ? "No messages yet. Only the people in this group see what's written here."
-                : "No messages yet."
+                : channel
+                  ? `No messages yet. ${channel.topic ?? "Start the conversation."}`
+                  : "No messages yet."
           }
-          placeholder={kind === "team" ? "Message every family on the app" : kind === "group" ? "Message the group" : "Message this family"}
+          placeholder={
+            kind === "team" ? "Message every family on the app" : kind === "group" ? "Message the group" : channel ? `Message #${channel.name}` : "Message this family"
+          }
+          readOnly={channel?.archived ? "This channel is archived. Unarchive it from About to post again." : null}
           widthClass="max-w-2xl"
           initialDraft={draft}
           showEmailDetails
@@ -315,12 +360,13 @@ export default function CoachThread({ loaderData, params }: Route.ComponentProps
 
       {hasDetails && showDetails && (
         <aside
-          aria-label={kind === "team" ? "About the team chat" : kind === "group" ? "People in this group" : "About this family"}
+          aria-label={kind === "team" ? "About the team chat" : kind === "group" ? "People in this group" : channel ? "About this channel" : "About this family"}
           className="hidden min-h-0 w-[320px] shrink-0 overflow-y-auto border-l border-line bg-surface xl:block"
         >
           {context && <FamilyContext family={context} teamCode={params.teamCode} meId={me} showNotes={!showNotes} />}
           {teamContext && <TeamChatContext context={teamContext} teamCode={params.teamCode} />}
           {group && <GroupPanel group={group} meId={me} className="p-4" />}
+          {channel && <ChannelPanel channel={channel} meId={me} className="p-4" />}
         </aside>
       )}
     </div>
