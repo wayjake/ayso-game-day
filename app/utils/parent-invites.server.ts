@@ -6,6 +6,8 @@ import { getTeamStaff } from "~/utils/team-access.server";
 import { staffRoleLabel, type StaffRole } from "~/utils/team-roles";
 import { inviteUrl as staffInviteUrl, normalizeEmail } from "~/utils/invites.server";
 import { claimFamilyConversation } from "~/utils/messages.server";
+import { alertStaff } from "~/utils/staff-alerts.server";
+import { teamPath } from "~/utils/team-path";
 
 // Parent invites go out per family: one email address per team, covering every
 // player on the team whose contacts list that address (so siblings come along).
@@ -141,15 +143,64 @@ export async function linkFamily(teamId: string, email: string, userId: string) 
   const already = new Set(existing.map((e) => e.playerId));
   const toLink = kids.filter((k) => !already.has(k.id));
   if (toLink.length > 0) {
+    // Their first kid on this team means they've just joined it
+    const [before] = await db
+      .select({ id: guardians.id })
+      .from(guardians)
+      .where(and(eq(guardians.userId, userId), eq(guardians.teamId, teamId)))
+      .limit(1);
     await db
       .insert(guardians)
       .values(toLink.map((k) => ({ userId, playerId: k.id, teamId })))
       .onConflictDoNothing();
+    if (!before) await alertFamilyJoined(teamId, userId, toLink);
   }
   // Callers have proven this email (invite link or magic link), so any thread
   // the coaches already had with it by email becomes this account's
   await claimFamilyConversation(teamId, normalizeEmail(email), userId);
   return toLink.map((k) => k.id);
+}
+
+// Tells the team's staff (familiesJoined) that a parent just joined, with how
+// many households are on the app now. Never throws: joining mustn't fail on it.
+async function alertFamilyJoined(teamId: string, userId: string, kids: { id: string; name: string }[]) {
+  try {
+    const [user] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+    const [team] = await db.select({ code: teams.code, name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+    if (!user || !team) return;
+    const who = user.name?.trim() || user.email;
+    const kidNames = joinNames(kids.map((k) => k.name.trim().split(/\s+/)[0] || k.name));
+
+    // Households as the Families page groups them: emails with the same kids.
+    // The just-linked kids count as joined whatever email the account has,
+    // since the invite may not be marked accepted yet.
+    const justLinked = new Set(kids.map((k) => k.id));
+    const households = new Map<string, boolean>();
+    for (const f of await listFamilies(null, teamId)) {
+      const key = f.kids.map((k) => k.id).sort().join(",");
+      const joined = f.status === "joined" || f.kids.some((k) => justLinked.has(k.id));
+      households.set(key, (households.get(key) ?? false) || joined);
+    }
+    const total = households.size;
+    const joined = [...households.values()].filter(Boolean).length;
+    const progress = total === 0 ? "" : joined >= total ? "Every family is on the app now." : `${joined} of ${total} families are on the app now.`;
+
+    await alertStaff(
+      teamId,
+      "familiesJoined",
+      {
+        title: `${who} joined ${team.name}`,
+        body: [`Linked to ${kidNames}.`, progress].filter(Boolean).join(" "),
+        emailText: [`${who} joined ${team.name} on BenchTalk and is linked to ${kidNames}.`, progress, "See who's still to join on the team's Families page."].filter(Boolean).join("\n\n"),
+        url: teamPath(team.code, "families"),
+        tag: `family-joined-${teamId}`,
+        emailKey: `joined-${teamId}-${userId}`,
+      },
+      { exclude: userId }
+    );
+  } catch (e) {
+    console.error("Family joined alert failed:", e);
+  }
 }
 
 // Invites one family. If they already have an account linked on this team,

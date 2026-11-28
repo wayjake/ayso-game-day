@@ -6,10 +6,10 @@
 // Stored as JSON overrides in users.notify_prefs, so adding a category later
 // needs no migration: anyone without an override gets its default.
 //
-// A category with `email` can also come by email (staff payment alerts). Its
+// A category with `email` can also come by email (staff payment and join alerts). Its
 // email choice is stored under "email:<kind>", apart from the push one.
 
-export type NotifyKind = "team" | "chat" | "replies" | "reactions" | "posts" | "comments" | "dropouts" | "payments" | "venmo" | "paymentsRecorded";
+export type NotifyKind = "team" | "chat" | "replies" | "reactions" | "posts" | "comments" | "dropouts" | "payments" | "venmo" | "paymentsRecorded" | "familiesJoined";
 export type NotifyChannel = "push" | "email";
 
 export type NotifyCategory = {
@@ -38,6 +38,14 @@ export const NOTIFY_CATEGORIES: NotifyCategory[] = [
   { kind: "reactions", label: "Reactions", detail: "When someone reacts to one of your messages.", default: true },
   { kind: "posts", label: "New photos and videos", detail: "When someone posts to the team feed.", default: false },
   { kind: "comments", label: "Comments on your posts", detail: "When someone comments on a photo or video you posted.", default: true },
+  {
+    kind: "familiesJoined",
+    label: "Families joining the app",
+    detail: "When a family signs up for BenchTalk and is linked to their kids, and how many have joined so far.",
+    coachOnly: true,
+    default: true,
+    email: { default: false },
+  },
   { kind: "dropouts", label: "Players dropping out", detail: "When a family says their player can't make it.", coachOnly: true, default: true },
   { kind: "venmo", label: "Venmo payments to record", detail: "When a forwarded Venmo email shows a family paid.", coachOnly: true, default: true, email: { default: true } },
   { kind: "payments", label: "Families saying they paid", detail: "When a family taps “I sent a payment”.", coachOnly: true, default: true, email: { default: true } },
