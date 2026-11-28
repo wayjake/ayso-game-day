@@ -4,7 +4,7 @@
 import { isId } from "./ids";
 
 export type ReadReceipts = {
-  kind: "team" | "direct" | "group";
+  kind: "team" | "direct" | "group" | "channel";
   participants: number; // People on the app in it, you included; under 2 means nobody else can read
   readers: {
     userId: string;

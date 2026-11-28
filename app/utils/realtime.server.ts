@@ -25,13 +25,15 @@ export function isRealtimeConfigured() {
   return Boolean(process.env.ABLY_API_KEY);
 }
 
-// The team chat lives under team:<id>:, which all staff can read. Direct
-// threads and groups are only for the people in them, so they get a channel
-// outside that namespace (dm:<id>, for either) and only those people are given it.
-type ConversationRef = { id: string; teamId: string; kind: "team" | "direct" | "group" };
+// The team chat and every channel all staff can read live under team:<id>:,
+// which all staff can subscribe to. Direct threads, groups and private
+// channels are only for the people in them, so they get a channel outside
+// that namespace (dm:<id>) and only those people are given it.
+type ConversationRef = { id: string; teamId: string; kind: "team" | "direct" | "group" | "channel"; audience?: string | null };
 
 export function conversationChannel(conversation: ConversationRef) {
-  return conversation.kind === "team" ? `team:${conversation.teamId}:conversation:${conversation.id}` : `dm:${conversation.id}`;
+  const shared = conversation.kind === "team" || (conversation.kind === "channel" && conversation.audience !== "private");
+  return shared ? `team:${conversation.teamId}:conversation:${conversation.id}` : `dm:${conversation.id}`;
 }
 
 // New posts, likes, comments and deletes on a team's photo feed
@@ -67,8 +69,8 @@ export async function publishConversation(conversation: ConversationRef, event: 
 
 // What this person may listen to. Staff: everything under team:<id>: on teams
 // they coach (the team chat and the photo feed), plus their own direct threads
-// there. Parents: the team chat, their own direct threads and the photo feed.
-// Both: the groups they're in.
+// there. Parents: the team chat, their own direct threads, the photo feed and
+// the channels they can read. Both: the groups and private channels they're in.
 async function capabilityFor(userId: string) {
   const capability: Record<string, string[]> = {};
   const allow = ["subscribe", "presence"];
@@ -98,20 +100,40 @@ async function capabilityFor(userId: string) {
   // over this table's partial indexes (see coachConversationIds)
   for (const condition of conditions) {
     const visible = await db
-      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind })
+      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind, audience: conversations.audience })
       .from(conversations)
       .where(condition);
     for (const c of visible) capability[conversationChannel(c)] = allow;
   }
-  // Groups they're in, on teams they're on (a join, not an OR)
+  // Groups and channels they're in, on teams they're on (a join, not an OR).
+  // For staff, the channels that matter here are private ones; the rest are under team:<id>:*.
   const onTeams = [...coachedIds, ...parentTeamIds];
   if (onTeams.length > 0) {
-    const groups = await db
-      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind })
-      .from(conversationMembers)
-      .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
-      .where(and(eq(conversationMembers.userId, userId), eq(conversations.kind, "group"), inArray(conversations.teamId, onTeams)));
-    for (const c of groups) capability[conversationChannel(c)] = allow;
+    // One query per kind, not an IN over it (see above)
+    const joined = [];
+    for (const kind of ["group", "channel"] as const) {
+      joined.push(
+        ...(await db
+          .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind, audience: conversations.audience })
+          .from(conversationMembers)
+          .innerJoin(conversations, eq(conversationMembers.conversationId, conversations.id))
+          .where(and(eq(conversationMembers.userId, userId), eq(conversations.kind, kind), inArray(conversations.teamId, onTeams))))
+      );
+    }
+    for (const c of joined) {
+      // A member row in a channel that's no longer picked-people (now everyone or staff) gives nothing
+      if (c.kind === "channel" && c.audience !== "families" && c.audience !== "private") continue;
+      if (c.kind === "channel" && c.audience === "families" && coachedIds.has(c.teamId)) continue;
+      capability[conversationChannel(c)] = allow;
+    }
+  }
+  // Channels every family reads, on teams they're a parent on
+  if (parentTeamIds.length > 0) {
+    const everyone = await db
+      .select({ id: conversations.id, teamId: conversations.teamId, kind: conversations.kind, audience: conversations.audience })
+      .from(conversations)
+      .where(and(inArray(conversations.teamId, parentTeamIds), eq(conversations.kind, "channel"), eq(conversations.audience, "everyone")));
+    for (const c of everyone) capability[conversationChannel(c)] = allow;
   }
   return capability;
 }

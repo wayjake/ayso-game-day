@@ -2,7 +2,7 @@ import { db, conversationMembers, conversationReadMarks, conversationReads, type
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { getCoachUserIds, getParentUserIds, getUserNames } from "~/utils/family.server";
 import type { ReadReceipts } from "~/utils/read-receipts";
-import { latestMessageId, markRead } from "~/utils/messages.server";
+import { conversationReaderIds, latestMessageId, markRead } from "~/utils/messages.server";
 import { publishConversation } from "~/utils/realtime.server";
 
 // Who has read how far in a conversation, for read receipts. Sent once per
@@ -24,17 +24,22 @@ async function participants(conversation: Conversation) {
       .where(and(eq(conversationMembers.conversationId, conversation.id), isNotNull(conversationMembers.userId)));
     return rows.map((r) => r.userId!);
   }
+  // Whoever can read it now, by its audience
+  if (conversation.kind === "channel") return conversationReaderIds(conversation);
   const [staff, parents] = await Promise.all([getCoachUserIds(conversation.teamId), getParentUserIds(conversation.teamId)]);
   return [...new Set([...staff, ...parents])];
 }
 
 // Everything in the conversation counts as read once its page loads. When
-// that moves this person's marker in a direct thread or group, the others'
-// open pages reload to show the read receipt. Not in the team chat: every
-// family reloading on every read would be too much, and its polling covers it.
+// that moves this person's marker in a direct thread, group or private
+// channel, the others' open pages reload to show the read receipt. Not in the
+// team chat or other channels: everyone reloading on every read would be too
+// much, and their polling covers it.
+const livesReceipts = (c: Conversation) => c.kind === "direct" || c.kind === "group" || (c.kind === "channel" && c.audience === "private");
+
 export async function markConversationRead(conversation: Conversation, userId: string) {
   const moved = await markRead(conversation.id, userId, await latestMessageId(conversation.id));
-  if (moved && conversation.kind !== "team") await publishConversation(conversation, { kind: "read" });
+  if (moved && livesReceipts(conversation)) await publishConversation(conversation, { kind: "read" });
 }
 
 export async function getReadReceipts(conversation: Conversation): Promise<ReadReceipts> {

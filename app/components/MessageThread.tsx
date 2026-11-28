@@ -77,6 +77,7 @@ export function MessageThread({
   layout = "window",
   initialDraft = null,
   readOnly = null,
+  postNote = null,
   acks,
   ackHref,
   receipts = null,
@@ -95,6 +96,8 @@ export function MessageThread({
   ackHref?: (announcementId: string) => string;
   /** Shown instead of the composer when nobody can write here any more */
   readOnly?: string | null;
+  /** Shown instead of the main composer when you can't start a message but can still reply and react ("Only staff post") */
+  postNote?: string | null;
   messages: ThreadMessageView[];
   /** Ably channel for this conversation and my name for typing indicators; null polls instead */
   realtime?: RealtimeConfig;
@@ -189,14 +192,14 @@ export function MessageThread({
         )}
       </div>
 
-      {readOnly ? (
+      {readOnly || postNote ? (
         <p
           className={cx(
             "fixed inset-x-0 bottom-0 z-20 border-t border-line bg-canvas/95 px-safe pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-sm text-muted backdrop-blur",
             pane && "lg:static lg:z-auto lg:shrink-0 lg:pb-4"
           )}
         >
-          {readOnly}
+          {readOnly || postNote}
         </p>
       ) : (
         <Composer

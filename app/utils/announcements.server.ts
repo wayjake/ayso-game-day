@@ -449,7 +449,7 @@ async function parentRecipients(conversation: typeof conversations.$inferSelect,
 
 // A parent tapping "Got it" on the copy in their thread or the team chat
 export async function acknowledgeFromThread(messageId: string | null, conversation: typeof conversations.$inferSelect, userId: string) {
-  if (conversation.kind === "group" || !messageId) return false;
+  if (conversation.kind === "group" || conversation.kind === "channel" || !messageId) return false;
   const rows = await db
     .select({ id: announcementRecipients.id })
     .from(announcementRecipients)
@@ -460,7 +460,7 @@ export async function acknowledgeFromThread(messageId: string | null, conversati
 
 /** Announcement copies this parent has answered "Got it" to here */
 export async function acknowledgedMessageIds(conversation: typeof conversations.$inferSelect, userId: string) {
-  if (conversation.kind === "group") return []; // Announcements never land in a group
+  if (conversation.kind === "group" || conversation.kind === "channel") return []; // Announcements never land in a group or channel
   const rows = await db
     .select({ messageId: announcementRecipients.messageId })
     .from(announcementRecipients)

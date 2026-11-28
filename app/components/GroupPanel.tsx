@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useFetcher } from "react-router";
+import { Form, useFetcher } from "react-router";
 import { PencilSimple, SignOut, UserPlus, X } from "@phosphor-icons/react";
 import { PeopleChecklist } from "~/components/PeoplePicker";
 import { StaffBadge } from "~/components/StaffBadge";
@@ -143,12 +143,13 @@ export function GroupPanel({ group, meId, className }: { group: GroupInfo; meId:
 
       <div className="border-t border-line pt-3">
         {confirmLeave ? (
-          <fetcher.Form method="post" className="flex flex-wrap items-center gap-2">
+          // A navigation, not a fetcher: the page is gone afterwards and the action redirects to the list
+          <Form method="post" className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="_action" value="groupLeave" />
             <span className="text-sm">Leave this group? You won't see it anymore.</span>
-            <Button type="submit" size="sm" variant="danger" disabled={busy}>Leave</Button>
+            <Button type="submit" size="sm" variant="danger">Leave</Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmLeave(false)}>Cancel</Button>
-          </fetcher.Form>
+          </Form>
         ) : (
           <Button size="sm" variant="danger-soft" onClick={() => setConfirmLeave(true)}>
             <SignOut size={14} />

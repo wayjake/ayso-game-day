@@ -1,14 +1,17 @@
 import { Link } from "react-router";
-import { ChatsCircle, EnvelopeSimple, UserCircle, UsersThree } from "@phosphor-icons/react";
+import { ChatsCircle, EnvelopeSimple, Hash, LockSimple, UserCircle, UsersThree } from "@phosphor-icons/react";
 import { formatMessageTime } from "~/utils/dates";
 import { Badge, Card, cx } from "~/components/ui";
 import { navMotion } from "~/utils/nav-motion";
 import { StaffBadge } from "~/components/StaffBadge";
 import type { StaffRole } from "~/utils/team-roles";
+import type { ChannelAudience } from "~/utils/channels";
 
 export type ConversationListItem = {
   id: string;
-  kind: "team" | "direct" | "group";
+  kind: "team" | "direct" | "group" | "channel";
+  /** Channels: private ones show a lock instead of a # */
+  audience?: ChannelAudience | null;
   title: string;
   subtitle: string;
   lastMessageAt: string | null;
@@ -22,23 +25,42 @@ export type ConversationListItem = {
   href?: string;
 };
 
+/** The team chat and channels are the team's lasting places; the rest is people */
+export const isChannelish = (c: Pick<ConversationListItem, "kind">) => c.kind === "team" || c.kind === "channel";
+
 export function ConversationList({
   items,
   hrefFor,
   selectedId,
   prefetch = "intent",
   className,
+  sections = false,
 }: {
   items: ConversationListItem[];
   hrefFor: (id: string) => string;
   selectedId?: string | null; // Highlighted when the list sits beside the open thread
   prefetch?: "intent" | "none"; // "none" where opening a thread marks it read
   className?: string;
+  /** Head the list with Channels (team chat and channels) and Direct messages (threads and groups) */
+  sections?: boolean;
 }) {
+  const parts = sections
+    ? [
+        { title: "Channels", items: items.filter(isChannelish) },
+        { title: "Direct messages", items: items.filter((c) => !isChannelish(c)) },
+      ].filter((p) => p.items.length > 0)
+    : [{ title: null, items }];
   return (
     <Card className={className}>
+      {parts.map((part) => (
+      <section key={part.title ?? "all"} aria-label={part.title ?? undefined} className="border-t border-line first:border-t-0">
+      {part.title && (
+        <h2 className="border-b border-line bg-surface-2/60 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase sm:px-5">
+          {part.title}
+        </h2>
+      )}
       <ul className="divide-y divide-line">
-        {items.map((c) => {
+        {part.items.map((c) => {
           const selected = c.id === selectedId;
           // The open thread is being read, even if the list hasn't caught up
           const unread = selected ? 0 : c.unread;
@@ -58,11 +80,13 @@ export function ConversationList({
               <span
                 className={cx(
                   "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                  c.kind === "team" ? "bg-primary-soft text-primary" : "bg-surface-2 text-muted"
+                  isChannelish(c) ? "bg-primary-soft text-primary" : "bg-surface-2 text-muted"
                 )}
               >
                 {c.kind === "team" ? (
                   <ChatsCircle size={24} weight="fill" />
+                ) : c.kind === "channel" ? (
+                  c.audience === "private" ? <LockSimple size={22} weight="bold" /> : <Hash size={22} weight="bold" />
                 ) : c.kind === "group" ? (
                   <UsersThree size={24} weight="fill" />
                 ) : c.emailOnly ? (
@@ -106,6 +130,8 @@ export function ConversationList({
           );
         })}
       </ul>
+      </section>
+      ))}
     </Card>
   );
 }

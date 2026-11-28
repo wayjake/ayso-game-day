@@ -75,6 +75,7 @@ export default [
       // List beside the open thread on desktop; one at a time on phones
       route("messages", "routes/team.messages.tsx", [
         index("routes/team.messages._index.tsx"),
+        route("channels/new", "routes/team.messages.channels-new.tsx"),
         route(":conversationId", "routes/team.messages.thread.tsx"),
       ]),
       route("feed", "routes/team.feed.tsx"),

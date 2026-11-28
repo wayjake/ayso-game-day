@@ -8,7 +8,7 @@ import { countUnmatched } from "~/utils/inbound-email.server";
 import { ConversationList } from "~/components/ConversationList";
 import { MessagesTabs } from "~/components/MessagesTabs";
 import { Card, EmptyState, buttonClass, cx } from "~/components/ui";
-import { CaretRight, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, Plus } from "@phosphor-icons/react";
+import { CaretRight, EnvelopeSimple, Hash, MagnifyingGlass, PaperPlaneTilt, Plus } from "@phosphor-icons/react";
 import { teamIdFromCode } from "~/utils/team-access.server";
 import { parseId } from "~/utils/ids";
 import { teamPath } from "~/utils/team-path";
@@ -45,6 +45,8 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const openId = params.conversationId ? parseId(params.conversationId) : null;
+  // New channel fills the screen on phones, like a thread
+  const paneOpen = openId !== null || location.pathname.endsWith("/messages/channels/new");
 
   const filterParam = searchParams.get("filter");
   const filter: Filter = filterParam === "needs-reply" || filterParam === "unread" || filterParam === "email" ? filterParam : "all";
@@ -75,7 +77,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
         className={cx(
           "mx-auto w-full max-w-2xl px-safe pt-6 sm:pt-8",
           "lg:mx-0 lg:flex lg:w-[340px] lg:max-w-none lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:p-0",
-          openId !== null && "hidden"
+          paneOpen && "hidden"
         )}
       >
         <div className="lg:border-b lg:border-line lg:px-4 lg:pt-4 lg:pb-3">
@@ -86,6 +88,12 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
                 <PaperPlaneTilt size={18} />
                 Announcement
               </Link>
+              <span className="hidden lg:block">
+                <Link to={`${base}/messages/channels/new`} className={buttonClass({ size: "icon-sm", variant: "secondary" })} title="New channel">
+                  <Hash size={16} weight="bold" />
+                  <span className="sr-only">New channel</span>
+                </Link>
+              </span>
               <span className="hidden lg:block">
                 <Link to={`${base}/messages?compose=1`} className={buttonClass({ size: "sm" })} title="New message">
                   <Plus size={16} weight="bold" />
@@ -143,6 +151,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
               selectedId={openId}
               // Opening a thread marks it read, so hovering mustn't load it
               prefetch="none"
+              sections
               className="lg:rounded-none lg:shadow-none lg:ring-0"
             />
           )}
@@ -162,7 +171,7 @@ export default function MessagesLayout({ loaderData }: Route.ComponentProps) {
       </div>
 
       {/* Thread or index. Keyed so drafts and scroll never carry over to another family. */}
-      <div key={openId ?? "index"} className="lg:flex lg:min-h-0 lg:min-w-0 lg:flex-1 lg:flex-col">
+      <div key={openId ?? (paneOpen ? "new-channel" : "index")} className="lg:flex lg:min-h-0 lg:min-w-0 lg:flex-1 lg:flex-col">
         <Outlet />
       </div>
     </div>

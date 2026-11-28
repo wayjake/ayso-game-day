@@ -29,7 +29,7 @@ const publishGroupChange = (conversation: typeof conversations.$inferSelect) => 
 
 const MAX_GROUP_SIZE = 60;
 
-type Resolved = { option: PickerOption; userIds: string[]; familyEmail: string | null };
+export type Resolved = { option: PickerOption; userIds: string[]; familyEmail: string | null };
 
 function familyKey(teamId: string, email: string) {
   const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
@@ -42,7 +42,7 @@ const firstNames = (names: string[]) => {
 };
 
 // Everyone on the team the viewer could start a conversation with, by key
-async function resolvable(teamId: string, viewerId: string) {
+export async function resolvable(teamId: string, viewerId: string) {
   const [staff, families] = await Promise.all([getTeamStaff(teamId), listFamilies(null, teamId)]);
   const byKey = new Map<string, Resolved>();
   for (const m of staff) {
@@ -79,10 +79,10 @@ export async function pickerOptions(teamId: string, viewerId: string) {
   return [...(await resolvable(teamId, viewerId)).values()].map((r) => r.option);
 }
 
-type Seat = { userId: string | null; familyEmail: string | null };
+export type Seat = { userId: string | null; familyEmail: string | null };
 
 // One seat per account; a family not on the app is one email-only seat
-function seatsFor(picked: Resolved[], exclude: Seat[] = []) {
+export function seatsFor(picked: Resolved[], exclude: Seat[] = []) {
   const seats: Seat[] = [];
   const users = new Set(exclude.flatMap((s) => (s.userId ? [s.userId] : [])));
   const emails = new Set(exclude.flatMap((s) => (!s.userId && s.familyEmail ? [s.familyEmail] : [])));
@@ -107,7 +107,7 @@ const signature = (seats: Seat[]) =>
     .sort()
     .join(",");
 
-async function resolveKeys(teamId: string, viewerId: string, keys: string[]) {
+export async function resolveKeys(teamId: string, viewerId: string, keys: string[]) {
   const byKey = await resolvable(teamId, viewerId);
   const picked = [...new Set(keys)].map((k) => byKey.get(k));
   if (picked.some((p) => !p)) return null; // Someone left the team since the page loaded
